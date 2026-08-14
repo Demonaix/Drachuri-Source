@@ -165,4 +165,14 @@ test("live session refresh uses one connection and selects the current player", 
   stopifnot(identical(snapshot$combat$round_number[[1L]], 2L))
 })
 
+test("combat map renderer uses the current encounter actors reactive", {
+  combat_module_file <- file.path(
+    project_dir,
+    "DND APP Drachuri Edition Player_v2", "server", "debug_combat_module.R"
+  )
+  combat_source <- paste(readLines(combat_module_file, warn = FALSE), collapse = "\n")
+  stopifnot(grepl("actors_lookup <- encounter_actors_tbl()", combat_source, fixed = TRUE))
+  stopifnot(!grepl("encounter_actors_r()", combat_source, fixed = TRUE))
+})
+
 cat("\n", tests_run, " tests passed.\n", sep = "")

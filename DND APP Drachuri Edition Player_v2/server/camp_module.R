@@ -293,7 +293,7 @@ campUI <- function(id) {
               "left: 58%; top: 36%;"),
       
       # Combat (armour + tent)
-      hotspot("go_debug_combat", "Debug Combat",
+      hotspot("go_debug_combat", "Combat",
               "left: 24%; top: 50%; width: 12%; height: 12%;",
               "left: 24%; top: 50%;"),
       

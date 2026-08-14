@@ -1385,7 +1385,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       
      # render_df <- add_3d_models_to_render_df(render_df)
       
-      actors_lookup <- encounter_actors_r()
+      actors_lookup <- encounter_actors_tbl()
       
       if (!"occupant_name" %in% names(render_df)) {
         render_df$occupant_name <- ""
