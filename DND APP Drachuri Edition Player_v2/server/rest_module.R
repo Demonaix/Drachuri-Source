@@ -704,6 +704,7 @@ restTabServer <- function(
       x$status$has_fire <- FALSE   # extinguish on long rest
       
       x <- restore_sindre(x, hours = 12, add_log = add_log)
+      x <- reset_class_uses_for_rest(x, "long_rest")
       
       state$char <- advance_day_all(x, add_log, state = state)
       clamp_session_hp_to_max(state)
@@ -725,7 +726,10 @@ restTabServer <- function(
         log_safe("⚠️ Short Rest healing failed.", TRUE, "red")
         return()
       }
+      x <- validate_character(state$char)
       x <- restore_sindre(x, hours = 6, add_log = add_log)
+      x <- reset_class_uses_for_rest(x, "short_rest")
+      state$char <- x
       
       gained <- res$hp_after - res$hp_before
       log_safe(paste0("🛌 Rested +", gained, " HP"), TRUE, "green")

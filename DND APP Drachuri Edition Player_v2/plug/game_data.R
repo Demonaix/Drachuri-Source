@@ -1594,6 +1594,12 @@ LEVEL_OPTIONS <- list(
 )
 )
 
+LEVEL_OPTIONS[["Fighter"]][["1"]] <- list(list(
+  id = "fighting_style",
+  label = "Fighting Style",
+  options = c("Archery", "Defence", "Dueling", "Great Weapon Fighting")
+))
+
 # Complete the shared ability-score progression for full 20-level classes.
 # Sparse class levels are valid: a level may grant only scaling plus its ASI.
 for (class_name in c("Hanianol Sorcerer", "Na'Haran Sorcerer")) {

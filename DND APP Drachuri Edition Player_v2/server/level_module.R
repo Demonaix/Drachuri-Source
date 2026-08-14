@@ -208,7 +208,8 @@ levelTabUI <- function(id) {
           div(h3("Character Progression"), uiOutput(ns("character_level_heading_ui"))),
           actionButton(ns("open_level_up"), "Level Up", class = "btn btn-primary level-up-open")
         ),
-        uiOutput(ns("current_classes_ui"))
+        uiOutput(ns("current_classes_ui")),
+        uiOutput(ns("starting_choices_ui"))
       ),
       div(
         class = "levelup-card",
@@ -333,6 +334,54 @@ levelTabServer <- function(id, state, restoring, add_log, char_rev) {
         trait("Condition immunities", profile$condition_immunities)
       )
     })
+
+    needs_fighting_style_r <- reactive({
+      char <- display_character_r()
+      has_fighter <- any(vapply(classes_r(), function(entry) {
+        identical(as.character(entry$class %||% ""), "Fighter") &&
+          as.integer(entry$level %||% 0L) >= 1L
+      }, logical(1)))
+      selected <- as.character(
+        char$build$level_choices$Fighter[["1"]]$fighting_style %||% ""
+      )
+      has_fighter && !nzchar(selected)
+    })
+
+    output$starting_choices_ui <- renderUI({
+      if (!needs_fighting_style_r()) return(NULL)
+      style_choice <- level_options_for("Fighter", 1L)[[1L]]
+      tagList(
+        tags$hr(),
+        div(class = "alert alert-warning",
+            tags$strong("Complete starting class choices"),
+            p("This character predates the guided progression system. Save these choices once to activate their mechanics.")),
+        div(
+          class = "levelup-choice",
+          selectInput(session$ns("starting_fighting_style"), "Fighter — Fighting Style",
+                      choices = c("Choose…" = "", style_choice$options)),
+          actionButton(session$ns("save_starting_fighting_style"),
+                       "Save Choice", class = "btn btn-primary btn-sm")
+        )
+      )
+    })
+
+    observeEvent(input$save_starting_fighting_style, {
+      selected <- as.character(input$starting_fighting_style %||% "")
+      allowed <- as.character(level_options_for("Fighter", 1L)[[1L]]$options %||% character())
+      if (!selected %in% allowed) {
+        showNotification("Choose a Fighting Style before saving.", type = "error")
+        return()
+      }
+      char <- validate_character(state$char)
+      char$build$level_choices <- char$build$level_choices %||% list()
+      char$build$level_choices$Fighter <- char$build$level_choices$Fighter %||% list()
+      char$build$level_choices$Fighter[["1"]] <- char$build$level_choices$Fighter[["1"]] %||% list()
+      char$build$level_choices$Fighter[["1"]]$fighting_style <- selected
+      state$char <- char
+      if (is.function(char_rev)) char_rev(isolate(char_rev()) + 1L)
+      log_safe(paste0("⚔️ Fighter selected ", selected, "."))
+      showNotification(paste("Saved", selected), type = "message")
+    }, ignoreInit = TRUE)
 
     observeEvent(input$open_level_up, {
       showModal(modalDialog(

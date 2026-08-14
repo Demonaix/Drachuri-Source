@@ -2061,7 +2061,13 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       if (!length(actions)) return()
       actors <- encounter_actors_tbl()
       targets <- actors[as.character(actors$actor_type %||% "") == "enemy", , drop = FALSE]
-      if (!is.data.frame(targets) || nrow(targets) == 0L) {
+      needs_enemy <- any(vapply(actions, function(feature) {
+        identical(as.character(feature$action$target %||% "enemy"), "enemy")
+      }, logical(1)))
+      has_self_action <- any(vapply(actions, function(feature) {
+        identical(as.character(feature$action$target %||% "enemy"), "self")
+      }, logical(1)))
+      if (needs_enemy && !has_self_action && (!is.data.frame(targets) || nrow(targets) == 0L)) {
         log_safe("⚠️ There are no enemy targets in this encounter.")
         return()
       }
@@ -2070,15 +2076,10 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         as.character(seq_along(actions)),
         vapply(actions, function(feature) as.character(feature$action$name %||% feature$name), character(1))
       )
-      target_choices <- stats::setNames(
-        as.character(targets$actor_id),
-        as.character(targets$display_name %||% targets$actor_id)
-      )
-
       showModal(modalDialog(
         title = "Use Combat Ability",
         selectInput(session$ns("class_action_index"), "Ability", choices = action_choices),
-        selectInput(session$ns("class_action_target"), "Target", choices = target_choices),
+        uiOutput(session$ns("class_action_target_ui")),
         uiOutput(session$ns("class_action_preview_ui")),
         footer = tagList(
           modalButton("Cancel"),
@@ -2087,6 +2088,25 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         easyClose = TRUE
       ))
     }, ignoreInit = TRUE)
+
+    output$class_action_target_ui <- renderUI({
+      actions <- class_combat_actions()
+      idx <- suppressWarnings(as.integer(input$class_action_index %||% 1L))
+      if (is.na(idx) || idx < 1L || idx > length(actions)) return(NULL)
+      action <- actions[[idx]]$action
+      if (identical(as.character(action$target %||% "enemy"), "self")) {
+        return(tags$p(class = "confirm-note", "Target: Self"))
+      }
+      actors <- encounter_actors_tbl()
+      targets <- actors[as.character(actors$actor_type %||% "") == "enemy", , drop = FALSE]
+      if (!is.data.frame(targets) || nrow(targets) == 0L) {
+        return(tags$p(class = "confirm-note", "No enemy targets are available."))
+      }
+      selectInput(
+        session$ns("class_action_target"), "Target",
+        choices = stats::setNames(as.character(targets$actor_id), as.character(targets$display_name %||% targets$actor_id))
+      )
+    })
 
     output$class_action_preview_ui <- renderUI({
       actions <- class_combat_actions()
@@ -2110,20 +2130,22 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       req(isTRUE(is_players_turn()))
       actions <- class_combat_actions()
       idx <- suppressWarnings(as.integer(input$class_action_index %||% NA))
-      target_id <- as.character(input$class_action_target %||% "")
-      if (is.na(idx) || idx < 1L || idx > length(actions) || !nzchar(target_id)) return()
+      if (is.na(idx) || idx < 1L || idx > length(actions)) return()
 
       feature <- actions[[idx]]
       action <- feature$action
+      target_mode <- as.character(action$target %||% "enemy")
+      target_id <- if (identical(target_mode, "self")) {
+        as.character(core$state$char_id %||% "self")
+      } else as.character(input$class_action_target %||% "")
+      if (!nzchar(target_id)) return()
       damage <- action$damage %||% list()
-      target_row <- get_actor_row(target_id, "enemy")
-      if (!is.data.frame(target_row) || nrow(target_row) == 0L) {
-        log_safe("⚠️ That target is no longer available.")
-        removeModal()
-        return()
-      }
 
       char <- validate_character(core$state$char)
+      if (!class_action_use_available(char, action)) {
+        log_safe(paste0("⚠️ ", action$name %||% feature$name, " has already been used and needs a rest."))
+        return()
+      }
       resource <- action$resource %||% list()
       if (length(resource) && identical(as.character(resource$name %||% ""), "sindre")) {
         cost <- suppressWarnings(as.integer(resource$cost %||% 0L))
@@ -2135,6 +2157,36 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
           return()
         }
         char$resources$sindre$cur <- available - cost
+      }
+
+      if (identical(target_mode, "self") && is.list(action$healing)) {
+        healing <- resolve_class_action_healing(action, char)
+        char <- mark_class_action_used(char, action)
+        core$state$char <- char
+        result <- apply_healing_to_state(core$state, healing)
+        if (is.null(result)) {
+          log_safe("⚠️ The healing ability could not be applied.")
+          return()
+        }
+        ability_name <- as.character(action$name %||% feature$name)
+        gained <- as.integer(result$hp_after %||% 0L) - as.integer(result$hp_before %||% 0L)
+        log_game_event(
+          encounter_id = current_encounter_id(), event_type = "ability",
+          actor_type = "player", actor_id = as.character(core$state$char_id %||% ""),
+          target_id = target_id,
+          payload = list(ability_name = ability_name, healing_rolled = healing, healing = gained)
+        )
+        removeModal()
+        log_safe(paste0("✨ ", ability_name, " restores ", gained, " HP."))
+        bump_refresh()
+        return()
+      }
+
+      target_row <- get_actor_row(target_id, "enemy")
+      if (!is.data.frame(target_row) || nrow(target_row) == 0L) {
+        log_safe("⚠️ That target is no longer available.")
+        removeModal()
+        return()
       }
 
       max_hp <- suppressWarnings(as.integer(target_row$hp_max[1] %||% target_row$max_hp[1] %||% 1L))
@@ -2158,7 +2210,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         return()
       }
 
-      core$state$char <- char
+      core$state$char <- mark_class_action_used(char, action)
       ability_name <- as.character(action$name %||% feature$name)
       target_name <- get_actor_display_name(target_id, "enemy")
       log_game_event(

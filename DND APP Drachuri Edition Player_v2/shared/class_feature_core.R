@@ -11,10 +11,10 @@ CLASS_FEATURE_INTEGRATION <- list(
     status = "manual", note = "A narrative language feature; shown on the sheet and adjudicated through roleplay."
   ),
   "Fighter::1::fighting_style" = list(
-    status = "missing", note = "The style choice is not saved and its bonus is not yet applied."
+    status = "partial", note = "The choice is saved; Defence applies +1 AC in armour. Weapon classification is still needed to automate the other three styles safely."
   ),
   "Fighter::1::second_wind" = list(
-    status = "missing", note = "Healing and once-per-rest recharge are not yet available as an action."
+    status = "working", note = "Available in combat as a self-heal and automatically recharges on a short or long rest."
   ),
   "Barbarian::1::rage" = list(
     status = "partial", note = "Conditional resistances are defined; combat still needs a Rage toggle, damage bonus and Strength advantage."
@@ -336,6 +336,15 @@ get_unlocked_class_spells <- function(char, spell_defs = CLASS_SPELL_DEFINITIONS
 }
 
 CLASS_FEATURE_MECHANICS <- list(
+  "Fighter::1::second_wind" = list(
+    tags = c("ability", "combat", "healing"),
+    action = list(
+      name = "Second Wind",
+      target = "self",
+      healing = list(mode = "dice_plus_class_level", value = "1d10", class = "Fighter"),
+      usage = list(key = "second_wind", recharge = "short_rest", uses = 1L)
+    )
+  ),
   "Hanianol Sorcerer::1::fae_blooded" = list(
     tags = c("passive", "utility"),
     effects = list(skills = c("survival" = "Expertise"))
@@ -515,6 +524,48 @@ resolve_class_action_damage <- function(action, target_max_hp, char,
     amount = as.integer(amount),
     damage_type = as.character(damage$type %||% "")
   )
+}
+
+resolve_class_action_healing <- function(action, char, roll_function = roll_dice_expr) {
+  healing <- action$healing %||% list()
+  mode <- as.character(healing$mode %||% "fixed")
+  amount <- switch(
+    mode,
+    dice_plus_class_level = {
+      rolled <- roll_function(as.character(healing$value %||% "1d4"))
+      class_name <- as.character(healing$class %||% "")
+      classes <- normalise_character_classes(char)
+      class_level <- sum(vapply(classes, function(entry) {
+        if (identical(as.character(entry$class %||% ""), class_name)) {
+          as.integer(entry$level %||% 0L)
+        } else 0L
+      }, integer(1)))
+      as.integer(rolled$total %||% 0L) + class_level
+    },
+    suppressWarnings(as.integer(healing$value %||% 0L))
+  )
+  if (is.na(amount)) amount <- 0L
+  max(0L, as.integer(amount))
+}
+
+class_action_use_available <- function(char, action) {
+  usage <- action$usage %||% list()
+  key <- as.character(usage$key %||% "")
+  if (!nzchar(key)) return(TRUE)
+  !isTRUE(char$resources$class_uses[[key]]$used %||% FALSE)
+}
+
+mark_class_action_used <- function(char, action) {
+  usage <- action$usage %||% list()
+  key <- as.character(usage$key %||% "")
+  if (!nzchar(key)) return(char)
+  char$resources <- char$resources %||% list()
+  char$resources$class_uses <- char$resources$class_uses %||% list()
+  char$resources$class_uses[[key]] <- list(
+    used = TRUE,
+    recharge = as.character(usage$recharge %||% "long_rest")
+  )
+  char
 }
 
 apply_unlocked_class_effects <- function(char, class_defs = CLASSES) {

@@ -34,7 +34,10 @@ load_functions <- function(path, names) {
   }
 }
 
-load_functions(global_file, c("character_save_payload", "restore_sindre", "calc_auto_ac_for_char"))
+load_functions(global_file, c(
+  "character_save_payload", "restore_sindre", "reset_class_uses_for_rest",
+  "calc_auto_ac_for_char"
+))
 load_functions(
   session_file,
   c(
@@ -55,7 +58,9 @@ load_functions(
     "get_unlocked_class_spells", "CLASS_FEATURE_MECHANICS",
     "infer_class_feature_tags", "class_feature_metadata",
     "get_unlocked_class_features", "get_unlocked_combat_actions",
-    "resolve_class_action_damage", "apply_unlocked_class_effects"
+    "resolve_class_action_damage", "resolve_class_action_healing",
+    "class_action_use_available", "mark_class_action_used",
+    "apply_unlocked_class_effects"
   )
 )
 load_functions(
@@ -330,6 +335,48 @@ test("Barbarian Unarmoured Defence adds Constitution to AC", {
   fighter$build$class <- "Fighter"
   stopifnot(test_env$calc_auto_ac_for_char(barbarian) == 15L)
   stopifnot(test_env$calc_auto_ac_for_char(fighter) == 12L)
+})
+
+test("Defence Fighting Style adds one AC only while armoured", {
+  test_env$validate_character <- identity
+  test_env$get_character_ability_mod <- function(char, stat) 2L
+  test_env$get_character_prof_bonus <- function(char) 2L
+  test_env$inventory_normalize <- function(items) items
+  test_env$armor_meta_defaults_global <- identity
+  armour <- data.frame(
+    type = "armor", equipped = TRUE, in_bag = FALSE,
+    stringsAsFactors = FALSE
+  )
+  armour$meta <- I(list(list(base_ac = 12, type = "Light", proficient = FALSE)))
+  fighter <- list(
+    build = list(
+      class = "Fighter",
+      level_choices = list(Fighter = list("1" = list(fighting_style = "Defence")))
+    ),
+    abilities = list(dex = 14L, con = 12L), inventory = list(items = armour)
+  )
+  no_style <- fighter
+  no_style$build$level_choices <- list()
+  stopifnot(test_env$calc_auto_ac_for_char(fighter) == 15L)
+  stopifnot(test_env$calc_auto_ac_for_char(no_style) == 14L)
+})
+
+test("Second Wind heals by die plus Fighter level and recharges on a short rest", {
+  test_env$normalise_character_classes <- function(char, class_defs = NULL) char$build$classes
+  character <- list(
+    build = list(classes = list(list(class = "Fighter", level = 4L))),
+    resources = list(class_uses = list())
+  )
+  action <- test_env$CLASS_FEATURE_MECHANICS[["Fighter::1::second_wind"]]$action
+  healing <- test_env$resolve_class_action_healing(
+    action, character, roll_function = function(expr) list(total = 6L)
+  )
+  stopifnot(healing == 10L)
+  character <- test_env$mark_class_action_used(character, action)
+  stopifnot(!test_env$class_action_use_available(character, action))
+  test_env$validate_character <- identity
+  character <- test_env$reset_class_uses_for_rest(character, "short_rest")
+  stopifnot(test_env$class_action_use_available(character, action))
 })
 
 test("level up requires and stores a subclass choice", {

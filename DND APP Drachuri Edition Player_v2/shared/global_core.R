@@ -622,6 +622,21 @@ restore_sindre <- function(x, hours = 0, full = FALSE, add_log = NULL) {
   x
 }
 
+reset_class_uses_for_rest <- function(char, rest_type = c("short_rest", "long_rest")) {
+  rest_type <- match.arg(rest_type)
+  char <- validate_character(char)
+  uses <- char$resources$class_uses %||% list()
+  if (!length(uses)) return(char)
+  for (key in names(uses)) {
+    recharge <- as.character(uses[[key]]$recharge %||% "long_rest")
+    if (identical(rest_type, "long_rest") || identical(recharge, "short_rest")) {
+      uses[[key]]$used <- FALSE
+    }
+  }
+  char$resources$class_uses <- uses
+  char
+}
+
 COMBAT_ARMOR_TYPES <- c("Light", "Medium", "Heavy", "Custom")
 COMBAT_WEAPON_STATS <- c("str", "dex", "con", "int", "bld_str", "cha")
 
@@ -1655,6 +1670,9 @@ calc_auto_ac_for_char <- function(char) {
     tolower(trimws(as.character(char$build$class %||% "")))
   }
   has_unarmoured_defence <- "barbarian" %in% class_names
+  fighting_style <- as.character(
+    char$build$level_choices$Fighter[["1"]]$fighting_style %||% ""
+  )
   unarmoured_ac <- function() {
     ac <- 10L + get_character_ability_mod(char, "dex")
     if (has_unarmoured_defence) ac <- ac + get_character_ability_mod(char, "con")
@@ -1702,7 +1720,8 @@ calc_auto_ac_for_char <- function(char) {
   )
   
   dex_add <- min(dex_mod, max_dex)
-  as.integer(base_ac + dex_add + if (prof) pb else 0)
+  defence_bonus <- if (identical(fighting_style, "Defence")) 1L else 0L
+  as.integer(base_ac + dex_add + if (prof) pb else 0L) + defence_bonus
 }
 
 roll_dice_expr <- function(expr) {
