@@ -3,6 +3,274 @@ CLASS_FEATURE_TAGS <- c(
   "reaction", "movement", "healing", "utility", "subclass"
 )
 
+# Canonical rules for fixed class magic. Descriptions in game_data.R remain the
+# player-facing lore; these records are deliberately explicit enough for the
+# combat engine to resolve without interpreting prose.
+CLASS_SPELL_DEFINITIONS <- list(
+  grasping_vines = list(
+    name = "Grasping Vines", class = "Hanianol Sorcerer", level = 2L,
+    choice = c(natural_specialty = "Plants"), tags = c("spell", "combat", "control"),
+    action_type = "action", cost = 20L, range_ft = 60L,
+    target = list(type = "area", shape = "radius", size_ft = 20L, affects = "enemies"),
+    resolution = list(type = "saving_throw", ability = "str", on_success = "not_restrained"),
+    effects = list(
+      list(type = "terrain", value = "difficult", duration = "1_minute"),
+      list(type = "condition", value = "restrained", duration = "1_minute",
+           repeat_save = "end_of_turn")
+    ),
+    duration = "1_minute", concentration = TRUE,
+    description = "Vines fill a 20-foot-radius area. Enemies that fail a Strength save are restrained and may repeat the save at the end of each turn; the whole area is difficult terrain."
+  ),
+  calling_rain = list(
+    name = "Calling Rain", class = "Hanianol Sorcerer", level = 2L,
+    choice = c(natural_specialty = "Rain"), tags = c("spell", "combat", "control"),
+    action_type = "action", cost = 20L, range_ft = 120L,
+    target = list(type = "area", shape = "radius", size_ft = 40L, affects = "all"),
+    resolution = list(type = "automatic"),
+    effects = list(
+      list(type = "damage_modifier", damage_type = "fire", value = -4L, minimum = 0L),
+      list(type = "damage_modifier", damage_type = c("cold", "lightning"), value = 2L)
+    ),
+    duration = "1_hour", concentration = TRUE,
+    description = "A storm fills a 40-foot-radius area. Fire damage dealt inside it is reduced by 4; cold and lightning damage is increased by 2."
+  ),
+  call_beast = list(
+    name = "Call Beast", class = "Hanianol Sorcerer", level = 2L,
+    choice = c(natural_specialty = "Animals"), tags = c("spell", "combat", "summoning"),
+    action_type = "action", cost = 20L, range_ft = 30L,
+    target = list(type = "point", affects = "empty_space"),
+    resolution = list(type = "automatic"),
+    effects = list(list(type = "summon", allegiance = "friendly", creature_type = "beast",
+                        scaling = list(`2` = "CR 1/2", `11` = "CR 1", `15` = "CR 2"))),
+    duration = "30_minutes", concentration = TRUE,
+    description = "Summon a friendly beast in an empty space. Its maximum CR is 1/2, becoming CR 1 at level 11 and CR 2 at level 15. It acts immediately after you."
+  ),
+  wasting_sickness = list(
+    name = "Wasting Sickness", class = "Hanianol Sorcerer", level = 2L,
+    choice = c(natural_specialty = "Disease"), tags = c("spell", "combat", "condition"),
+    action_type = "action", cost = 20L, range_ft = 0L,
+    target = list(type = "area", shape = "radius", size_ft = 60L, origin = "self", affects = "enemies"),
+    resolution = list(type = "saving_throw", ability = "con", on_success = "no_effect"),
+    effects = list(list(type = "condition", value = "poisoned", duration = "1_minute",
+                        repeat_save = "end_of_turn")),
+    duration = "1_minute", concentration = TRUE,
+    description = "Enemies within 60 feet make a Constitution save or become poisoned for up to 1 minute, repeating the save at the end of each turn."
+  ),
+  mind_bender = list(
+    name = "Mind Bender", class = "Na'Haran Sorcerer", level = 2L,
+    tags = c("spell", "utility", "social"), action_type = "action",
+    cost = 10L, range_ft = 30L,
+    target = list(type = "creature", count = 1L, affects = "non_hostile_creature"),
+    resolution = list(type = "automatic"),
+    effects = list(list(type = "advantage", applies_to = "next_persuasion_check",
+                        restriction = "directed_at_target")),
+    duration = "10_minutes", concentration = TRUE,
+    description = "For 10 minutes, gain advantage on your next Persuasion check directed at one non-hostile creature you can see. The effect ends after that check."
+  ),
+  detect_undead = list(
+    name = "Detect Undead", class = "Na'Haran Sorcerer", level = 2L,
+    tags = c("spell", "utility", "detection"), action_type = "action",
+    cost = 10L, range_ft = 0L,
+    target = list(type = "area", shape = "radius", size_ft = 60L, origin = "self"),
+    resolution = list(type = "automatic"),
+    effects = list(list(type = "detect", creature_type = "undead",
+                        information = c("direction", "distance"), blocked_by = "total_cover")),
+    duration = "10_minutes", concentration = TRUE,
+    description = "Sense the direction and distance of undead within 60 feet for 10 minutes. Total cover blocks the sense."
+  ),
+  exothermic_burst = list(
+    name = "Exothermic Burst", class = "Na'Haran Sorcerer", level = 5L,
+    choice = c(thermal_path = "Exothermic"), tags = c("spell", "combat", "damage"),
+    action_type = "action", cost = 20L, range_ft = 60L,
+    target = list(type = "creature", count = 1L, affects = "enemy"),
+    resolution = list(type = "saving_throw", ability = "dex", on_success = "half_damage"),
+    damage = list(dice = "2d8", type = "fire", scaling = list(`11` = "3d8", `17` = "4d8")),
+    duration = "instantaneous", concentration = FALSE,
+    description = "Release stored heat at one creature. It makes a Dexterity save, taking half damage on success."
+  ),
+  endothermic_grasp = list(
+    name = "Endothermic Grasp", class = "Na'Haran Sorcerer", level = 5L,
+    choice = c(thermal_path = "Endothermic"), tags = c("spell", "combat", "damage", "control"),
+    action_type = "action", cost = 20L, range_ft = 60L,
+    target = list(type = "creature", count = 1L, affects = "enemy"),
+    resolution = list(type = "saving_throw", ability = "con", on_success = "half_damage_no_slow"),
+    damage = list(dice = "2d8", type = "cold", scaling = list(`11` = "3d8", `17` = "4d8")),
+    effects = list(list(type = "speed_modifier", value_ft = -10L, duration = "until_casters_next_turn")),
+    duration = "until_casters_next_turn", concentration = FALSE,
+    description = "Draw heat from one creature. On a failed Constitution save it also loses 10 feet of speed until your next turn."
+  ),
+  flesh_witherer = list(
+    name = "Flesh Witherer", class = "Na'Haran Sorcerer", level = 6L,
+    choice = c(electromagnetic_path = "Flesh Witherer"), tags = c("spell", "combat", "damage"),
+    action_type = "action", cost = 25L, range_ft = 60L,
+    target = list(type = "creature", count = 1L, affects = "enemy"),
+    resolution = list(type = "saving_throw", ability = "con", on_success = "half_damage"),
+    damage = list(dice = "3d8", type = "necrotic", scaling = list(`11` = "4d8", `17` = "5d8")),
+    effects = list(list(type = "healing_block", duration = "until_casters_next_turn")),
+    duration = "until_casters_next_turn", concentration = FALSE,
+    description = "Wither a creature's flesh. A successful Constitution save halves the damage; on failure it cannot regain HP until your next turn."
+  ),
+  lightbringer = list(
+    name = "Lightbringer", class = "Na'Haran Sorcerer", level = 6L,
+    choice = c(electromagnetic_path = "Lightbringer"), tags = c("spell", "combat", "damage", "condition"),
+    action_type = "action", cost = 25L, range_ft = 60L,
+    target = list(type = "creature", count = 1L, affects = "enemy"),
+    resolution = list(type = "saving_throw", ability = "dex", on_success = "half_damage_no_condition"),
+    damage = list(dice = "3d8", type = "radiant", scaling = list(`11` = "4d8", `17` = "5d8")),
+    effects = list(list(type = "condition", value = "blinded", duration = "until_casters_next_turn")),
+    duration = "until_casters_next_turn", concentration = FALSE,
+    description = "Strike one creature with searing light. A successful Dexterity save halves the damage; on failure it is blinded until your next turn."
+  ),
+  shadow_step = list(
+    name = "Shadow Step", class = "Hanianol Sorcerer", subclass = "Heart Eater", level = 3L,
+    tags = c("spell", "combat", "movement"), action_type = "bonus_action",
+    cost = 10L, range_ft = "movement_speed",
+    target = list(type = "point", affects = "unoccupied_space_in_dim_light_or_darkness"),
+    resolution = list(type = "automatic"),
+    effects = list(list(type = "teleport", scaling = list(
+      `3` = "movement_speed", `10` = "double_movement_speed", `18` = "reaction_or_bonus_action"
+    ))),
+    duration = "instantaneous", concentration = FALSE,
+    description = "Teleport between shadows to an unoccupied space you can see within your movement speed. At level 10 the range doubles; at level 18 it may also be used as a reaction when targeted by an attack."
+  ),
+  ancestral_elemental = list(
+    name = "Conjure Ancestral Elemental", class = "Hanianol Sorcerer",
+    subclass = "Path of the Ancestor", level = 10L,
+    tags = c("spell", "combat", "summoning"), action_type = "action",
+    cost = 40L, range_ft = 60L,
+    target = list(type = "point", affects = "empty_space"), resolution = list(type = "automatic"),
+    effects = list(list(type = "summon", allegiance = "friendly", creature_type = "elemental",
+                        scaling = list(`10` = "CR 5", `15` = "CR 7", `17` = "CR 9"))),
+    duration = "1_hour", concentration = TRUE,
+    description = "Summon a friendly ancestral elemental (maximum CR 5) which acts immediately after you. Its limit becomes CR 7 at level 15 and CR 9 at level 17."
+  ),
+  flesh_witherers_hand = list(
+    name = "Flesh Witherer's Hand", class = "Na'Haran Sorcerer",
+    subclass = "Path of the Warrior", level = 6L,
+    choice = c(electromagnetic_path = "Flesh Witherer"),
+    tags = c("spell", "combat", "damage", "aura"), action_type = "bonus_action",
+    cost = 25L, range_ft = 0L,
+    target = list(type = "area", shape = "radius", size_ft = 10L, origin = "self", affects = "enemies"),
+    resolution = list(type = "saving_throw", ability = "con", on_success = "half_damage"),
+    damage = list(dice = "3d8", type = "necrotic", scaling = list(`11` = "4d8", `17` = "5d8")),
+    duration = "instantaneous", concentration = FALSE,
+    description = "Pulse decay through enemies within 10 feet as a bonus action. A Constitution save halves the necrotic damage."
+  ),
+  lightbringers_sword = list(
+    name = "Lightbringer's Sword", class = "Na'Haran Sorcerer",
+    subclass = "Path of the Warrior", level = 6L,
+    choice = c(electromagnetic_path = "Lightbringer"),
+    tags = c("spell", "combat", "damage", "condition"), action_type = "action",
+    cost = 25L, range_ft = 5L,
+    target = list(type = "creature", count = 1L, affects = "enemy"),
+    resolution = list(type = "spell_attack", ability = "cha", on_miss = "no_effect"),
+    damage = list(dice = "4d8", type = "radiant", scaling = list(`11` = "5d8", `17` = "6d8")),
+    effects = list(list(type = "condition_save", value = "blinded", save = "con",
+                        duration = "until_casters_next_turn")),
+    duration = "until_casters_next_turn", concentration = FALSE,
+    description = "Make a melee spell attack with a radiant blade. On a hit, the target also makes a Constitution save or is blinded until your next turn."
+  ),
+  mislead = list(
+    name = "Mislead", class = "Na'Haran Sorcerer", subclass = "Path of the Prophet", level = 6L,
+    tags = c("spell", "combat", "illusion"), action_type = "action",
+    cost = 25L, range_ft = 0L, target = list(type = "self"),
+    resolution = list(type = "automatic"),
+    effects = list(
+      list(type = "condition", value = "invisible", ends_on = c("attack", "damage", "spell")),
+      list(type = "illusory_double", range_ft = 60L, movement_ft = 30L)
+    ),
+    duration = "1_minute", concentration = TRUE,
+    description = "Become invisible and create an illusory double for up to 1 minute. The invisibility ends when you attack, deal damage or cast another spell; the double can move 30 feet on your turn."
+  ),
+  shield_of_sindre = list(
+    name = "Shield of Sindre", class = "Na'Haran Sorcerer", level = 9L,
+    tags = c("spell", "combat", "reaction", "defence"), action_type = "reaction",
+    trigger = "targeted_by_spell_or_magical_effect", cost = 20L, range_ft = 0L,
+    target = list(type = "self"), resolution = list(type = "automatic"),
+    effects = list(
+      list(type = "saving_throw_advantage", against = "triggering_effect"),
+      list(type = "resistance", damage_type = "triggering_damage", duration = "until_end_of_triggering_effect")
+    ),
+    duration = "triggering_effect", concentration = FALSE,
+    description = "As a reaction when magic targets you, gain advantage on its saving throw and resistance to damage from that effect."
+  ),
+  predict_spell = list(
+    name = "Predict Spell", class = "Na'Haran Sorcerer", level = 10L,
+    tags = c("spell", "combat", "control"), action_type = "bonus_action",
+    cost = 15L, range_ft = 60L,
+    target = list(type = "creature", count = 1L, affects = "enemy"),
+    resolution = list(type = "saving_throw", ability = "wis", on_success = "no_effect"),
+    effects = list(list(type = "disadvantage", applies_to = "next_attack_or_ability_check",
+                        duration = "until_end_of_targets_next_turn")),
+    duration = "until_end_of_targets_next_turn", concentration = FALSE,
+    description = "Read one enemy's immediate future. On a failed Wisdom save, its next attack roll or ability check is made with disadvantage."
+  )
+)
+
+character_level_choice <- function(char, class_name, level, choice_id) {
+  choices <- char$build$level_choices[[class_name]][[as.character(level)]] %||% list()
+  as.character(choices[[choice_id]] %||% "")
+}
+
+class_spellcasting_ability <- function(class_name) {
+  switch(
+    as.character(class_name %||% ""),
+    "Hanianol Sorcerer" = "int",
+    "Na'Haran Sorcerer" = "cha",
+    "int"
+  )
+}
+
+character_proficiency_bonus <- function(char) {
+  classes <- normalise_character_classes(char)
+  total_level <- sum(vapply(classes, function(entry) {
+    level <- suppressWarnings(as.integer(entry$level %||% 0L))
+    if (is.na(level)) 0L else max(0L, level)
+  }, integer(1)))
+  2L + max(0L, floor((max(1L, total_level) - 1L) / 4L))
+}
+
+class_spell_save_dc <- function(char, spell) {
+  ability_name <- as.character(spell$casting_ability %||%
+    class_spellcasting_ability(spell$class))
+  score <- suppressWarnings(as.integer(char$abilities[[ability_name]] %||% 10L))
+  if (is.na(score)) score <- 10L
+  8L + character_proficiency_bonus(char) + floor((score - 10L) / 2L)
+}
+
+spell_choice_is_unlocked <- function(spell, char) {
+  required <- spell$choice %||% character()
+  if (!length(required)) return(TRUE)
+  all(vapply(names(required), function(choice_id) {
+    identical(
+      character_level_choice(char, spell$class, spell$level, choice_id),
+      as.character(required[[choice_id]])
+    )
+  }, logical(1)))
+}
+
+spell_subclass_is_unlocked <- function(spell, char) {
+  required <- as.character(spell$subclass %||% "")
+  if (!nzchar(required)) return(TRUE)
+  classes <- normalise_character_classes(char)
+  any(vapply(classes, function(entry) {
+    identical(as.character(entry$class %||% ""), as.character(spell$class %||% "")) &&
+      identical(as.character(entry$subclass %||% ""), required)
+  }, logical(1)))
+}
+
+get_unlocked_class_spells <- function(char, spell_defs = CLASS_SPELL_DEFINITIONS) {
+  classes <- normalise_character_classes(char)
+  class_levels <- vapply(classes, function(entry) as.integer(entry$level %||% 0L), integer(1))
+  names(class_levels) <- vapply(classes, function(entry) as.character(entry$class %||% ""), character(1))
+  Filter(function(spell) {
+    class_name <- as.character(spell$class %||% "")
+    level <- if (class_name %in% names(class_levels)) class_levels[[class_name]] else 0L
+    level >= as.integer(spell$level %||% 99L) &&
+      spell_subclass_is_unlocked(spell, char) && spell_choice_is_unlocked(spell, char)
+  }, spell_defs)
+}
+
 CLASS_FEATURE_MECHANICS <- list(
   "Hanianol Sorcerer::1::fae_blooded" = list(
     tags = c("passive", "utility"),

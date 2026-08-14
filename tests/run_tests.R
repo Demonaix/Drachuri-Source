@@ -46,7 +46,11 @@ load_functions(
 load_functions(
   feature_file,
   c(
-    "CLASS_FEATURE_TAGS", "CLASS_FEATURE_MECHANICS",
+    "CLASS_FEATURE_TAGS", "CLASS_SPELL_DEFINITIONS",
+    "character_level_choice", "class_spellcasting_ability",
+    "character_proficiency_bonus", "class_spell_save_dc", "spell_choice_is_unlocked",
+    "spell_subclass_is_unlocked",
+    "get_unlocked_class_spells", "CLASS_FEATURE_MECHANICS",
     "infer_class_feature_tags", "class_feature_metadata",
     "get_unlocked_class_features", "get_unlocked_combat_actions",
     "resolve_class_action_damage", "apply_unlocked_class_effects"
@@ -396,6 +400,59 @@ test("class combat actions resolve fixed-percent and dice damage", {
     roll_function = function(expr) list(total = 5L)
   )
   stopifnot(dice$amount == 8L)
+})
+
+test("fixed class spells are gated by level and saved speciality", {
+  test_env$normalise_character_classes <- function(char, class_defs = NULL) char$build$classes
+  character <- list(build = list(
+    classes = list(list(class = "Hanianol Sorcerer", level = 2L, subclass = "")),
+    level_choices = list("Hanianol Sorcerer" = list(
+      "2" = list(natural_specialty = "Disease")
+    ))
+  ))
+  spells <- test_env$get_unlocked_class_spells(character)
+  stopifnot(identical(names(spells), "wasting_sickness"))
+  stopifnot(spells$wasting_sickness$cost == 20L)
+  stopifnot(identical(spells$wasting_sickness$resolution$ability, "con"))
+})
+
+test("offensive magic includes executable resolution and level scaling", {
+  spell <- test_env$CLASS_SPELL_DEFINITIONS$lightbringer
+  stopifnot(identical(spell$action_type, "action"))
+  stopifnot(spell$range_ft == 60L)
+  stopifnot(identical(spell$resolution$type, "saving_throw"))
+  stopifnot(identical(spell$damage$dice, "3d8"))
+  stopifnot(identical(spell$damage$scaling[["17"]], "5d8"))
+  stopifnot(identical(spell$effects[[1L]]$value, "blinded"))
+})
+
+test("fixed spells use class-appropriate save DC and multiclass proficiency", {
+  test_env$normalise_character_classes <- function(char, class_defs = NULL) char$build$classes
+  character <- list(
+    build = list(classes = list(
+      list(class = "Na'Haran Sorcerer", level = 6L),
+      list(class = "Rogue", level = 3L)
+    )),
+    abilities = list(int = 12L, cha = 18L)
+  )
+  dc <- test_env$class_spell_save_dc(
+    character, test_env$CLASS_SPELL_DEFINITIONS$lightbringer
+  )
+  stopifnot(test_env$character_proficiency_bonus(character) == 4L)
+  stopifnot(dc == 16L)
+})
+
+test("subclass magic requires the matching subclass", {
+  test_env$normalise_character_classes <- function(char, class_defs = NULL) char$build$classes
+  ancestor <- list(build = list(
+    classes = list(list(class = "Hanianol Sorcerer", level = 10L, subclass = "Path of the Ancestor")),
+    level_choices = list("Hanianol Sorcerer" = list("2" = list(natural_specialty = "Plants")))
+  ))
+  heart_eater <- ancestor
+  heart_eater$build$classes[[1L]]$subclass <- "Heart Eater"
+  stopifnot("ancestral_elemental" %in% names(test_env$get_unlocked_class_spells(ancestor)))
+  stopifnot(!"shadow_step" %in% names(test_env$get_unlocked_class_spells(ancestor)))
+  stopifnot("shadow_step" %in% names(test_env$get_unlocked_class_spells(heart_eater)))
 })
 
 test("unlocked class effects grant proficiency without downgrading expertise", {
