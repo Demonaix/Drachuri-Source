@@ -17,8 +17,16 @@ source("server/level_module.R")
 source("server/HUD.R")
 source("server/debug_combat_module.R")
 source("server/party_hud_module.R")
-source("server/character_3d_module.R")
 source("server/rune_crafting_module.R")
+
+dnd_3d_enabled <- identical(tolower(Sys.getenv("DND_ENABLE_3D", "false")), "true")
+if (dnd_3d_enabled) {
+  source("server/character_3d_module.R", local = FALSE)
+} else {
+  # Keep the navigation contract stable while avoiding the large model and
+  # colourpicker dependency chain until the 3D module is deliberately enabled.
+  source("server/character_3d_disabled_module.R", local = FALSE)
+}
 
 ui_player <- fluidPage(
   responsive = TRUE,

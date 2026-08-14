@@ -73,7 +73,9 @@ if (needs_restore) {
   log_message("Dependencies already match this application version")
 }
 
-required_packages <- c("shiny", "DBI", "RPostgres", "pool")
+required_packages <- c(
+  "shiny", "shinyjs", "dplyr", "jsonlite", "DBI", "RPostgres", "pool"
+)
 missing_packages <- required_packages[!vapply(
   required_packages,
   requireNamespace,

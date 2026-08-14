@@ -259,6 +259,19 @@ landingTabServer <- function(
       state$char <- validate_character(x)
       state$char_id <- char_id
       state$sync_enabled <- TRUE
+
+      membership <- tryCatch(
+        get_active_session_for_character(char_id),
+        error = function(e) data.frame()
+      )
+      if (is.data.frame(membership) && nrow(membership) > 0L) {
+        state$active_session_id <- as.integer(membership$session_id[[1L]])
+        encounter_id <- suppressWarnings(as.integer(membership$active_encounter_id[[1L]]))
+        state$active_encounter_id <- if (is.na(encounter_id)) NULL else encounter_id
+      } else {
+        state$active_session_id <- NULL
+        state$active_encounter_id <- NULL
+      }
       
       if (is.function(hydrate_core_ui)) hydrate_core_ui()
       if (is.function(bump_char_rev)) bump_char_rev()

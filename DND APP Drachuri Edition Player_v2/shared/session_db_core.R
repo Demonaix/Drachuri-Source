@@ -144,6 +144,42 @@ get_session_players <- function(session_id) {
   )
 }
 
+get_active_session_for_character <- function(character_id) {
+  character_id <- as.character(character_id %||% "")
+  if (!nzchar(character_id)) return(data.frame())
+
+  con <- get_db_connection()
+  if (is.null(con)) return(data.frame())
+  on.exit(safe_db_disconnect(con), add = TRUE)
+
+  tryCatch(
+    DBI::dbGetQuery(
+      con,
+      "
+      SELECT
+        gs.id AS session_id,
+        gs.active_encounter_id,
+        gs.active_map_id,
+        gs.mode,
+        gs.status
+      FROM session_players sp
+      INNER JOIN game_sessions gs
+        ON gs.id = sp.session_id
+      WHERE sp.character_id = $1
+        AND sp.is_active = TRUE
+        AND gs.status = 'active'
+      ORDER BY gs.updated_at DESC NULLS LAST, gs.id DESC
+      LIMIT 1
+      ",
+      params = list(character_id)
+    ),
+    error = function(e) {
+      message("get_active_session_for_character failed: ", e$message)
+      data.frame()
+    }
+  )
+}
+
 get_combat_state <- function(encounter_id) {
   encounter_id <- suppressWarnings(as.integer(encounter_id))
   if (is.na(encounter_id) || encounter_id < 1) return(data.frame())

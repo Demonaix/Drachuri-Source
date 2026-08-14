@@ -18,11 +18,16 @@ Supabase was dumped locally and its archive catalogue verified before the
 one-time validated baseline was recorded. Live migration status now reports
 schema `001` applied and up to date.
 
-## 3. Complete multiplayer regression
+## 3. Complete multiplayer regression — complete
 
 - Run one control process and two independent player processes locally.
 - Verify character load/save, HP changes, combat turns, encounter positions,
   reconnect behaviour, and clean shutdown.
+
+Verified with one control client and two independent browser-backed player
+clients against isolated PostgreSQL. The regression also caught and fixed
+disabled-3D dependency loading and missing active-session binding during
+Continue Adventure.
 
 ## Later improvements
 
