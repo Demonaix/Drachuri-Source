@@ -359,10 +359,20 @@ levelTabServer <- function(id, state, restoring, add_log, char_rev) {
       has_hanianol_two && !nzchar(selected)
     })
 
+    missing_subclass_r <- reactive({
+      classes <- classes_r()
+      missing <- Filter(function(entry) {
+        as.integer(entry$level %||% 0L) >= 3L && !nzchar(as.character(entry$subclass %||% "")) &&
+          length(CLASSES[[as.character(entry$class %||% "")]]$subclasses %||% list()) > 0L
+      }, classes)
+      if (length(missing)) missing[[1L]] else NULL
+    })
+
     output$starting_choices_ui <- renderUI({
       needs_style <- needs_fighting_style_r()
       needs_natural <- needs_natural_specialty_r()
-      if (!needs_style && !needs_natural) return(NULL)
+      missing_subclass <- missing_subclass_r()
+      if (!needs_style && !needs_natural && is.null(missing_subclass)) return(NULL)
       style_choice <- level_options_for("Fighter", 1L)[[1L]]
       natural_choices <- level_options_for("Hanianol Sorcerer", 2L)
       natural_choice <- Filter(function(choice) {
@@ -387,6 +397,14 @@ levelTabServer <- function(id, state, restoring, add_log, char_rev) {
                       choices = c("Choose…" = "", natural_choice[[1L]]$options)),
           actionButton(session$ns("save_starting_natural_specialty"),
                        "Save Choice", class = "btn btn-primary btn-sm")
+        ),
+        if (!is.null(missing_subclass)) div(
+          class = "levelup-choice",
+          selectInput(session$ns("legacy_subclass_choice"),
+                      paste(missing_subclass$class, "— Subclass"),
+                      choices = c("Choose…" = "", names(CLASSES[[missing_subclass$class]]$subclasses))),
+          actionButton(session$ns("save_legacy_subclass"), "Save Subclass",
+                       class = "btn btn-primary btn-sm")
         )
       )
     })
@@ -432,6 +450,36 @@ levelTabServer <- function(id, state, restoring, add_log, char_rev) {
       if (is.function(char_rev)) char_rev(isolate(char_rev()) + 1L)
       log_safe(paste0("🌿 Hanianol Sorcerer selected ", selected, " Natural Magic."))
       showNotification(paste("Saved", selected, "Natural Magic"), type = "message")
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$save_legacy_subclass, {
+      entry <- missing_subclass_r()
+      if (is.null(entry)) return()
+      selected <- as.character(input$legacy_subclass_choice %||% "")
+      allowed <- names(CLASSES[[entry$class]]$subclasses %||% list())
+      if (!selected %in% allowed) {
+        showNotification("Choose a subclass before saving.", type = "error")
+        return()
+      }
+      char <- validate_character(state$char)
+      classes <- normalise_character_classes(char)
+      index <- which(vapply(classes, function(item) {
+        identical(as.character(item$class %||% ""), as.character(entry$class)) &&
+          !nzchar(as.character(item$subclass %||% ""))
+      }, logical(1)))[1L]
+      if (is.na(index)) return()
+      classes[[index]]$subclass <- selected
+      char$build$classes <- classes
+      if (index == 1L) char$build$path <- selected
+      char$build$level_choices <- char$build$level_choices %||% list()
+      char$build$level_choices[[entry$class]] <- char$build$level_choices[[entry$class]] %||% list()
+      char$build$level_choices[[entry$class]][["3"]] <- char$build$level_choices[[entry$class]][["3"]] %||% list()
+      char$build$level_choices[[entry$class]][["3"]]$subclass <- selected
+      char <- apply_unlocked_class_effects(char)
+      state$char <- char
+      if (is.function(char_rev)) char_rev(isolate(char_rev()) + 1L)
+      log_safe(paste0("🛡️ ", entry$class, " selected ", selected, "."))
+      showNotification(paste("Saved", selected), type = "message")
     }, ignoreInit = TRUE)
 
     observeEvent(input$open_level_up, {

@@ -178,6 +178,12 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       }, logical(1)))
     }
 
+    character_has_feature <- function(char, feature_id) {
+      any(vapply(get_unlocked_class_features(char), function(feature) {
+        identical(as.character(feature$id %||% ""), feature_id)
+      }, logical(1)))
+    }
+
     current_turn_key <- reactive({
       combat <- combat_tbl()
       paste(
@@ -1385,15 +1391,26 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       attack_total <- as.integer(attack_roll + attack_bonus)
       target_ac <- get_effective_actor_ac(target_id, target_type, target_char)
       
-      is_crit <- identical(attack_roll, 20L)
+      critical_threshold <- if (character_has_feature(attacker_char, "improved_critical")) 19L else 20L
+      is_crit <- attack_roll >= critical_threshold
       is_hit <- is_crit || (attack_total >= target_ac)
       
       damage_parts <- list()
+
+      roll_attack_damage <- function(expr) {
+        first <- roll_dice_expr(expr)
+        if (!isTRUE(is_crit)) return(first)
+        extra <- roll_dice_expr(expr)
+        list(
+          rolls = c(first$rolls, extra$rolls),
+          total = as.integer(first$total + extra$total)
+        )
+      }
       
       if (isTRUE(is_hit)) {
         dmg1_expr <- as.character(weapon_row$damage1[1] %||% "")
         if (nzchar(dmg1_expr)) {
-          d1 <- roll_dice_expr(dmg1_expr)
+          d1 <- roll_attack_damage(dmg1_expr)
           damage_parts <- c(damage_parts, list(list(
             source = "Weapon",
             expr = dmg1_expr,
@@ -1405,7 +1422,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         
         dmg2_expr <- as.character(weapon_row$damage2[1] %||% "")
         if (nzchar(dmg2_expr)) {
-          d2 <- roll_dice_expr(dmg2_expr)
+          d2 <- roll_attack_damage(dmg2_expr)
           damage_parts <- c(damage_parts, list(list(
             source = "Weapon Extra",
             expr = dmg2_expr,
@@ -1419,7 +1436,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       sneak_expr <- get_sneak_attack_expr(attacker_char)
       sneak_part <- NULL
       if (nzchar(sneak_expr) && isTRUE(is_hit)) {
-        sa <- roll_dice_expr(sneak_expr)
+        sa <- roll_attack_damage(sneak_expr)
         sneak_part <- list(
           source = "Sneak Attack",
           expr = sneak_expr,
@@ -3175,6 +3192,11 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         dmg_expr <- as.character(attacker_char$combat_profile$damage_expr %||% "1d6")
         dmg_type <- as.character(attacker_char$combat_profile$damage_type %||% "slashing")
         dr <- roll_dice_expr(dmg_expr)
+        if (isTRUE(is_crit)) {
+          extra <- roll_dice_expr(dmg_expr)
+          dr$rolls <- c(dr$rolls, extra$rolls)
+          dr$total <- as.integer(dr$total + extra$total)
+        }
         
         damage_parts <- list(list(
           source = "Enemy Attack",
@@ -3268,6 +3290,13 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         attacker_id = attacker_id,
         target_id = target_id
       )
+      if (character_has_feature(attacker_char, "assassinate") &&
+          as.integer(combat_tbl()$round_number[1] %||% 1L) == 1L) {
+        target_row <- get_actor_row(target_id, target_type)
+        current_order <- as.integer(combat_tbl()$current_turn_order[1] %||% 0L)
+        target_order <- if (nrow(target_row)) as.integer(target_row$turn_order[1] %||% 0L) else 0L
+        if (target_order > current_order) adv_mode <- "Advantage"
+      }
       weapon_stat <- tolower(as.character(weapon_row$stat[1] %||% "str"))
       if (isTRUE(reckless_active()) && identical(weapon_stat, "str") &&
           identical(as.character(input$attack_adv_mode %||% "auto"), "auto")) {

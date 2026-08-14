@@ -60,7 +60,26 @@ CLASS_FEATURE_INTEGRATION <- list(
   ),
   "Na'Haran Sorcerer::2::detect_undead" = list(
     status = "partial", note = "Usable in combat for 10 Sindre and reports recognised undead; explicit enemy creature-type data is still needed for perfect detection."
-  )
+  ),
+  "Rogue::3::subclass_unlock" = list(status = "working", note = "Subclass choice is required, saved and restored."),
+  "Fighter::3::subclass_unlock" = list(status = "working", note = "Subclass choice is required, saved and restored."),
+  "Barbarian::3::subclass_unlock" = list(status = "working", note = "Subclass choice is required, saved and restored."),
+  "Hanianol Sorcerer::3::subclass_unlock" = list(status = "working", note = "Subclass choice is required, saved and restored."),
+  "Na'Haran Sorcerer::3::subclass_unlock" = list(status = "working", note = "Subclass choice is required, saved and restored."),
+  "Rogue::3::fast_hands" = list(status = "partial", note = "Bonus-action tracking exists; object use and Sleight of Hand still need a combat entry point."),
+  "Rogue::3::second_story_work" = list(status = "missing", note = "Map movement does not yet distinguish climbing and jumping."),
+  "Rogue::3::assassinate" = list(status = "partial", note = "First-round advantage against creatures that have not acted is automatic; surprise is not yet stored."),
+  "Rogue::3::bonus_proficiencies" = list(status = "working", note = "Disguise kit and poisoner's kit proficiency are derived automatically."),
+  "Fighter::3::improved_critical" = list(status = "working", note = "Weapon attacks now score critical hits on natural 19 or 20."),
+  "Fighter::3::combat_superiority" = list(status = "missing", note = "Superiority dice and manoeuvre choices need definitions and a resource pool."),
+  "Fighter::3::student_of_war" = list(status = "missing", note = "The artisan's tool choice is not yet collected or granted."),
+  "Barbarian::3::frenzy" = list(status = "missing", note = "Requires the Rage activation state before granting a bonus-action attack."),
+  "Barbarian::3::spirit_totem" = list(status = "missing", note = "The Bear, Wolf and Eagle choice and their exact homebrew effects are not yet stored."),
+  "Hanianol Sorcerer::3::seer" = list(status = "missing", note = "Maps do not yet mark Mandred convergence points."),
+  "Hanianol Sorcerer::3::exquisite_taste" = list(status = "partial", note = "Blood and heart consumption exist; HP restoration, full Sindre and overheal are not fully connected."),
+  "Hanianol Sorcerer::3::shadow_step" = list(status = "partial", note = "The complete scaling rule is defined; map teleport activation is not yet connected."),
+  "Na'Haran Sorcerer::3::spellsword" = list(status = "missing", note = "The amount and duration of resistance or immunity reduction need an explicit rule."),
+  "Na'Haran Sorcerer::3::wild_insight" = list(status = "partial", note = "Wild Magic rolling exists; bonus-action activation is not yet connected to combat.")
 )
 
 class_feature_integration <- function(class_name, level, feature_id) {
@@ -74,15 +93,29 @@ audit_class_level_integration <- function(level, class_defs = CLASSES) {
   level <- as.integer(level)
   rows <- list()
   for (class_name in names(class_defs)) {
-    features <- class_defs[[class_name]]$levels[[as.character(level)]]$features %||% list()
-    for (feature_id in names(features)) {
-      review <- class_feature_integration(class_name, level, feature_id)
-      rows[[length(rows) + 1L]] <- data.frame(
-        class = class_name, level = level, feature_id = feature_id,
-        feature = as.character(features[[feature_id]]$name %||% feature_id),
-        status = as.character(review$status), note = as.character(review$note),
-        stringsAsFactors = FALSE
+    feature_sets <- list(
+      list(subclass = "", features = class_defs[[class_name]]$levels[[as.character(level)]]$features %||% list())
+    )
+    subclasses <- class_defs[[class_name]]$subclasses %||% list()
+    for (subclass_name in names(subclasses)) {
+      feature_sets[[length(feature_sets) + 1L]] <- list(
+        subclass = subclass_name,
+        features = subclasses[[subclass_name]]$levels[[as.character(level)]]$features %||% list()
       )
+    }
+
+    for (feature_set in feature_sets) {
+      for (feature_id in names(feature_set$features)) {
+        feature <- feature_set$features[[feature_id]]
+        review <- class_feature_integration(class_name, level, feature_id)
+        rows[[length(rows) + 1L]] <- data.frame(
+          class = class_name, subclass = feature_set$subclass, level = level,
+          feature_id = feature_id,
+          feature = as.character(feature$name %||% feature_id),
+          status = as.character(review$status), note = as.character(review$note),
+          stringsAsFactors = FALSE
+        )
+      }
     }
   }
   if (!length(rows)) return(data.frame())

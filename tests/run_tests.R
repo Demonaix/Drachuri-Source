@@ -332,6 +332,53 @@ test("every level-two class feature has an integration review", {
   stopifnot(identical(audit$status[audit$feature_id == "action_surge"], "working"))
 })
 
+test("every level-three base and subclass feature has an integration review", {
+  feature <- function(id) setNames(list(list(name = id)), id)
+  subclass <- function(...) list(levels = list("3" = list(features = do.call(c, list(...)))))
+  class_defs <- list(
+    Rogue = list(
+      levels = list("3" = list(features = feature("subclass_unlock"))),
+      subclasses = list(
+        Thief = subclass(feature("fast_hands"), feature("second_story_work")),
+        Assassin = subclass(feature("assassinate"), feature("bonus_proficiencies"))
+      )
+    ),
+    Fighter = list(
+      levels = list("3" = list(features = feature("subclass_unlock"))),
+      subclasses = list(
+        Champion = subclass(feature("improved_critical")),
+        `Battle Master` = subclass(feature("combat_superiority"), feature("student_of_war"))
+      )
+    ),
+    Barbarian = list(
+      levels = list("3" = list(features = feature("subclass_unlock"))),
+      subclasses = list(
+        Berserker = subclass(feature("frenzy")),
+        `Totem Warrior` = subclass(feature("spirit_totem"))
+      )
+    ),
+    `Hanianol Sorcerer` = list(
+      levels = list("3" = list(features = feature("subclass_unlock"))),
+      subclasses = list(
+        `Path of the Ancestor` = subclass(feature("seer")),
+        `Heart Eater` = subclass(feature("exquisite_taste"), feature("shadow_step"))
+      )
+    ),
+    `Na'Haran Sorcerer` = list(
+      levels = list("3" = list(features = feature("subclass_unlock"))),
+      subclasses = list(
+        `Path of the Warrior` = subclass(feature("spellsword")),
+        `Path of the Prophet` = subclass(feature("wild_insight"))
+      )
+    )
+  )
+  audit <- test_env$audit_class_level_integration(3L, class_defs)
+  stopifnot(nrow(audit) == 19L)
+  stopifnot(!any(audit$status == "unreviewed"))
+  stopifnot(identical(audit$status[audit$feature_id == "improved_critical"], "working"))
+  stopifnot(identical(audit$subclass[audit$feature_id == "assassinate"], "Assassin"))
+})
+
 test("Hanianol Blood Magic prevents natural Sindre recovery", {
   test_env$validate_character <- identity
   hanianol <- list(
