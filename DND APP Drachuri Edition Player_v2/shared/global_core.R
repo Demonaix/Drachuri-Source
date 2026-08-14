@@ -2395,8 +2395,28 @@ validate_character <- function(x) {
   if (!is.list(x$prof)) x$prof <- list()
   x$prof$saves  <- x$prof$saves  %||% list()
   x$prof$skills <- x$prof$skills %||% list()
+  x$prof$tools  <- x$prof$tools  %||% list()
   if (!is.list(x$prof$saves))  x$prof$saves  <- list()
   if (!is.list(x$prof$skills)) x$prof$skills <- list()
+  if (!is.list(x$prof$tools))  x$prof$tools  <- list()
+
+  # Canonical damage traits. Combat reads these directly; legacy locations are
+  # still read for backwards compatibility.
+  x$combat_profile <- x$combat_profile %||% list()
+  if (!is.list(x$combat_profile)) x$combat_profile <- list()
+  for (field in c("resistances", "immunities", "vulnerabilities")) {
+    x$combat_profile[[field]] <- unique(tolower(as.character(
+      x$combat_profile[[field]] %||% character()
+    )))
+  }
+
+  if (exists("apply_unlocked_class_effects", mode = "function", inherits = TRUE) &&
+      exists("CLASSES", inherits = TRUE)) {
+    x <- tryCatch(
+      apply_unlocked_class_effects(x, get("CLASSES", inherits = TRUE)),
+      error = function(e) x
+    )
+  }
   
   # resources
   x$resources <- x$resources %||% list()

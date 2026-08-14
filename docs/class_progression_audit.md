@@ -47,6 +47,19 @@ Only features with explicit mechanics become combat buttons. Descriptive text is
 
 Damage goes through the existing resistance, immunity and vulnerability rules, updates encounter HP, spends the character resource and writes to the combat log.
 
+## Character-data synchronization
+
+Unlocked features now grant deterministic character effects through one shared derivation pass:
+
+- Fae Blooded: Survival Expertise.
+- Natural Magic: Medicine proficiency (without downgrading existing Expertise).
+- Survival Mastery: Survival Expertise.
+- Assassin Bonus Proficiencies: disguise kit and poisoner's kit.
+
+The canonical damage fields are `combat_profile$resistances`, `combat_profile$immunities` and `combat_profile$vulnerabilities`. Existing values are preserved and normalized. Combat already consumes these fields.
+
+Conditional defences are stored separately with their source and activation condition. Rage therefore records physical resistance while raging, and Mindless Rage records charm/fear immunity while raging, without incorrectly making either benefit permanent.
+
 ## Content still requiring design decisions
 
 - Rogue, Fighter and Barbarian levels 11–20 need feature definitions before those levels can be enabled.

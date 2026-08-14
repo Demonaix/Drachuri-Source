@@ -49,7 +49,7 @@ load_functions(
     "CLASS_FEATURE_TAGS", "CLASS_FEATURE_MECHANICS",
     "infer_class_feature_tags", "class_feature_metadata",
     "get_unlocked_class_features", "get_unlocked_combat_actions",
-    "resolve_class_action_damage"
+    "resolve_class_action_damage", "apply_unlocked_class_effects"
   )
 )
 load_functions(
@@ -396,6 +396,57 @@ test("class combat actions resolve fixed-percent and dice damage", {
     roll_function = function(expr) list(total = 5L)
   )
   stopifnot(dice$amount == 8L)
+})
+
+test("unlocked class effects grant proficiency without downgrading expertise", {
+  class_defs <- list(
+    "Hanianol Sorcerer" = list(
+      levels = list(
+        "1" = list(features = list(fae_blooded = list(
+          name = "Fae Blooded", desc = "Double proficiency in Survival."
+        ))),
+        "2" = list(features = list(natural_magic = list(
+          name = "Natural Magic", desc = "Gain Medicine."
+        )))
+      ),
+      subclasses = list()
+    )
+  )
+  character <- list(
+    build = list(
+      class = "Hanianol Sorcerer", level = 2L,
+      classes = list(list(class = "Hanianol Sorcerer", level = 2L, subclass = ""))
+    ),
+    prof = list(skills = list(medicine = "Expertise"), tools = list()),
+    combat_profile = list(
+      resistances = "fire", immunities = character(), vulnerabilities = "cold"
+    )
+  )
+  result <- test_env$apply_unlocked_class_effects(character, class_defs)
+  stopifnot(identical(result$prof$skills$survival, "Expertise"))
+  stopifnot(identical(result$prof$skills$medicine, "Expertise"))
+  stopifnot(identical(result$combat_profile$resistances, "fire"))
+  stopifnot(identical(result$combat_profile$vulnerabilities, "cold"))
+  stopifnot(length(result$derived_effects$sources[["skill:medicine"]]) == 1L)
+})
+
+test("conditional resistance is tracked without becoming permanent", {
+  class_defs <- list(Barbarian = list(
+    levels = list("1" = list(features = list(rage = list(
+      name = "Rage", desc = "Resistance to physical damage while raging."
+    )))),
+    subclasses = list()
+  ))
+  character <- list(
+    build = list(class = "Barbarian", level = 1L, classes = list(
+      list(class = "Barbarian", level = 1L, subclass = "")
+    )),
+    prof = list(skills = list(), tools = list()),
+    combat_profile = list()
+  )
+  result <- test_env$apply_unlocked_class_effects(character, class_defs)
+  stopifnot(length(result$combat_profile$resistances) == 0L)
+  stopifnot(length(result$derived_effects$conditional) == 1L)
 })
 
 cat("\n", tests_run, " tests passed.\n", sep = "")

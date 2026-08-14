@@ -164,6 +164,8 @@ apply_character_level_up <- function(char, class_index, selections = list(), hp_
     applied_at = as.character(timestamp)
   )))
 
+  char <- apply_unlocked_class_effects(char, class_defs)
+
   list(
     character = char,
     class_name = class_name,

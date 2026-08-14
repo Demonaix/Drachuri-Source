@@ -4,6 +4,36 @@ CLASS_FEATURE_TAGS <- c(
 )
 
 CLASS_FEATURE_MECHANICS <- list(
+  "Hanianol Sorcerer::1::fae_blooded" = list(
+    tags = c("passive", "utility"),
+    effects = list(skills = c("survival" = "Expertise"))
+  ),
+  "Hanianol Sorcerer::2::natural_magic" = list(
+    tags = c("ability", "utility", "spell"),
+    effects = list(skills = c("medicine" = "Proficient"))
+  ),
+  "Na'Haran Sorcerer::1::survival_mastery" = list(
+    tags = c("passive", "utility"),
+    effects = list(skills = c("survival" = "Expertise"))
+  ),
+  "Rogue::3::bonus_proficiencies" = list(
+    tags = c("passive", "utility"),
+    effects = list(tools = c("disguise_kit", "poisoners_kit"))
+  ),
+  "Barbarian::1::rage" = list(
+    tags = c("ability", "combat"),
+    effects = list(conditional = list(list(
+      when = "raging",
+      resistances = c("bludgeoning", "piercing", "slashing")
+    )))
+  ),
+  "Barbarian::6::mindless_rage" = list(
+    tags = c("passive", "combat"),
+    effects = list(conditional = list(list(
+      when = "raging",
+      condition_immunities = c("charmed", "frightened")
+    )))
+  ),
   "Hanianol Sorcerer::1::bloodthirsty" = list(
     tags = c("ability", "combat", "healing"),
     action = list(
@@ -75,7 +105,8 @@ class_feature_metadata <- function(class_name, level, feature_id, feature, subcl
     class = as.character(class_name),
     subclass = as.character(subclass %||% ""),
     level = as.integer(level),
-    action = override$action %||% NULL
+    action = override$action %||% NULL,
+    effects = override$effects %||% NULL
   )
 }
 
@@ -151,4 +182,73 @@ resolve_class_action_damage <- function(action, target_max_hp, char,
     amount = as.integer(amount),
     damage_type = as.character(damage$type %||% "")
   )
+}
+
+apply_unlocked_class_effects <- function(char, class_defs = CLASSES) {
+  features <- get_unlocked_class_features(char, class_defs)
+  rank <- c("None" = 0L, "Proficient" = 1L, "Expertise" = 2L)
+
+  char$prof <- char$prof %||% list()
+  char$prof$skills <- char$prof$skills %||% list()
+  char$prof$tools <- char$prof$tools %||% list()
+  char$combat_profile <- char$combat_profile %||% list()
+  for (field in c("resistances", "immunities", "vulnerabilities")) {
+    char$combat_profile[[field]] <- unique(tolower(as.character(
+      char$combat_profile[[field]] %||% character()
+    )))
+  }
+
+  sources <- list()
+  conditional <- list()
+
+  for (feature in features) {
+    effects <- feature$effects %||% list()
+    if (!length(effects)) next
+    source_key <- paste(feature$class, feature$subclass, feature$level, feature$id, sep = "::")
+
+    skills <- effects$skills %||% character()
+    for (skill in names(skills)) {
+      granted <- as.character(skills[[skill]])
+      current <- as.character(char$prof$skills[[skill]] %||% "None")
+      if ((rank[[granted]] %||% 0L) > (rank[[current]] %||% 0L)) {
+        char$prof$skills[[skill]] <- granted
+      }
+      sources[[paste0("skill:", skill)]] <- unique(c(
+        sources[[paste0("skill:", skill)]] %||% character(), source_key
+      ))
+    }
+
+    for (tool in as.character(effects$tools %||% character())) {
+      char$prof$tools[[tool]] <- TRUE
+      sources[[paste0("tool:", tool)]] <- unique(c(
+        sources[[paste0("tool:", tool)]] %||% character(), source_key
+      ))
+    }
+
+    trait_map <- c(
+      resistances = "resistances",
+      immunities = "immunities",
+      vulnerabilities = "vulnerabilities"
+    )
+    for (effect_name in names(trait_map)) {
+      values <- tolower(as.character(effects[[effect_name]] %||% character()))
+      field <- trait_map[[effect_name]]
+      char$combat_profile[[field]] <- unique(c(char$combat_profile[[field]], values[nzchar(values)]))
+      for (value in values[nzchar(values)]) {
+        sources[[paste0(effect_name, ":", value)]] <- unique(c(
+          sources[[paste0(effect_name, ":", value)]] %||% character(), source_key
+        ))
+      }
+    }
+
+    feature_conditional <- effects$conditional %||% list()
+    if (length(feature_conditional)) {
+      conditional[[source_key]] <- feature_conditional
+    }
+  }
+
+  char$derived_effects <- char$derived_effects %||% list()
+  char$derived_effects$sources <- sources
+  char$derived_effects$conditional <- conditional
+  char
 }

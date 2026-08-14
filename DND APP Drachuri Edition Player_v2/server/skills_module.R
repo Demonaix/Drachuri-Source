@@ -10,7 +10,10 @@ skillsTabUI <- function(id) {
     uiOutput(ns("stats_table")),
     tags$hr(),
     h4("🧭 Skill Identity"),
-    uiOutput(ns("skill_identity_ui"))
+    uiOutput(ns("skill_identity_ui")),
+    tags$hr(),
+    h4("Granted Proficiencies & Defences"),
+    uiOutput(ns("derived_traits_ui"))
   )
 }
 
@@ -158,6 +161,48 @@ skillsTabServer <- function(id, state, restoring, add_log, char_rev) {
       })
       
       tagList(ability_blocks)
+    })
+
+    output$derived_traits_ui <- renderUI({
+      char <- validate_character(state$char)
+      tools <- names(Filter(isTRUE, char$prof$tools %||% list()))
+      profile <- char$combat_profile %||% list()
+      conditional <- char$derived_effects$conditional %||% list()
+
+      trait_line <- function(label, values) {
+        values <- unique(as.character(values %||% character()))
+        div(
+          style = "margin-bottom:6px;",
+          tags$strong(paste0(label, ": ")),
+          if (length(values)) paste(gsub("_", " ", values), collapse = ", ") else "None"
+        )
+      }
+
+      conditional_text <- unlist(lapply(conditional, function(groups) {
+        vapply(groups, function(effect) {
+          details <- c(
+            if (length(effect$resistances %||% character())) {
+              paste("resistant to", paste(effect$resistances, collapse = ", "))
+            },
+            if (length(effect$condition_immunities %||% character())) {
+              paste("immune to", paste(effect$condition_immunities, collapse = ", "))
+            }
+          )
+          paste0("While ", effect$when %||% "condition active", ": ", paste(details, collapse = "; "))
+        }, character(1))
+      }), use.names = FALSE)
+
+      div(
+        class = "magic-card",
+        trait_line("Tools", tools),
+        trait_line("Damage resistances", profile$resistances),
+        trait_line("Damage immunities", profile$immunities),
+        trait_line("Damage vulnerabilities", profile$vulnerabilities),
+        if (length(conditional_text)) tagList(
+          tags$strong("Conditional effects:"),
+          tags$ul(lapply(conditional_text, tags$li))
+        )
+      )
     })
     
     # =============================
