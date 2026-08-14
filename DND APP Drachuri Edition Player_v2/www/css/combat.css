@@ -26,7 +26,6 @@
 .combat-play-layout{
   display:grid;
   grid-template-rows:
-    auto
     minmax(760px, 1fr)
     240px;
   gap:12px;
@@ -93,6 +92,57 @@
 /* =========================================================
    TOP CONTROL AREA
 ========================================================= */
+
+.combat-compact-header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:14px;
+  min-width:0;
+}
+
+.combat-compact-header > .shiny-html-output{
+  flex:1 1 auto;
+  min-width:0;
+}
+
+.combat-compact-summary{
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:6px 12px;
+  font-size:12px;
+}
+
+.combat-compact-summary strong{
+  font-size:16px;
+}
+
+.combat-compact-summary span{
+  padding-left:12px;
+  border-left:1px solid rgba(191,167,111,0.65);
+  font-weight:800;
+}
+
+.combat-compact-actions{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  flex-wrap:wrap;
+  gap:10px;
+}
+
+.combat-compact-actions .form-group{
+  margin:0;
+}
+
+.combat-compact-actions .checkbox{
+  margin:0;
+}
+
+.combat-compact-actions .combat-turn-box{
+  min-width:170px;
+}
 
 .combat-top-grid{
   display:grid;

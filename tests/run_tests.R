@@ -214,6 +214,18 @@ test("player combat UI has no encounter or combat-start administration", {
   stopifnot(!grepl('ns("encounter_id")', combat_source, fixed = TRUE))
   stopifnot(!grepl('ns("roll_init")', combat_source, fixed = TRUE))
   stopifnot(!grepl('ns("init_combat")', combat_source, fixed = TRUE))
+  stopifnot(!grepl('uiOutput(session$ns("initiative_ui"))', combat_source, fixed = TRUE))
+})
+
+test("party HUD is the authoritative combat roster", {
+  party_hud_file <- file.path(
+    project_dir,
+    "DND APP Drachuri Edition Player_v2", "server", "party_hud_module.R"
+  )
+  party_hud_source <- paste(readLines(party_hud_file, warn = FALSE), collapse = "\n")
+  stopifnot(grepl('snapshot$enemies', party_hud_source, fixed = TRUE))
+  stopifnot(grepl('active_actor_id', party_hud_source, fixed = TRUE))
+  stopifnot(grepl('Initiative ', party_hud_source, fixed = TRUE))
 })
 
 cat("\n", tests_run, " tests passed.\n", sep = "")

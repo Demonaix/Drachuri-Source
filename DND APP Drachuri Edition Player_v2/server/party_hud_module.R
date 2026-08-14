@@ -10,7 +10,7 @@ partyHudUI <- function(id) {
   position: fixed;
   top: 110px;
   left: 0px;
-  width: 108px;
+  width: 156px;
   z-index: 10000;
   pointer-events: none;
 }
@@ -40,7 +40,7 @@ partyHudUI <- function(id) {
     }
 
     #", root_id, " .partyhud-empty{
-      width: 96px;
+      width: 144px;
       padding: 7px 9px;
       border-radius: 10px;
       border: 1px solid rgba(191,167,111,0.82);
@@ -52,7 +52,7 @@ partyHudUI <- function(id) {
     }
 
     #", root_id, " .party-row{
-      width: 96px;
+      width: 144px;
       pointer-events: none;
     }
 
@@ -66,6 +66,38 @@ partyHudUI <- function(id) {
       overflow: hidden;
       box-shadow: 0 8px 20px rgba(0,0,0,0.18);
       pointer-events: auto;
+    }
+
+    #", root_id, " .party-strip.active-turn{
+      border-color: rgba(180,90,40,0.98);
+      background: rgba(255,248,232,0.97);
+      box-shadow: 0 0 0 2px rgba(220,140,60,0.22), 0 8px 20px rgba(0,0,0,0.18);
+    }
+
+    #", root_id, " .party-name-row{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:5px;
+    }
+
+    #", root_id, " .party-turn-order{
+      flex:0 0 auto;
+      min-width:20px;
+      padding:1px 5px;
+      border-radius:999px;
+      background:rgba(62,47,28,0.10);
+      font-size:8px;
+      font-weight:900;
+      text-align:center;
+    }
+
+    #", root_id, " .party-initiative{
+      margin-bottom:4px;
+      font-size:8px;
+      font-weight:800;
+      color:#7b4b24;
+      text-transform:uppercase;
     }
 
     #", root_id, " .party-name{
@@ -342,16 +374,50 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
         snapshot <- live_snapshot()
         rows <- snapshot$players %||% data.frame()
       } else {
+        snapshot <- empty_player_live_snapshot()
         rows <- fetch_session_players_safe(sid)
       }
       if (!is.data.frame(rows) || nrow(rows) == 0) return(data.frame())
+
+      combat <- snapshot$combat %||% data.frame()
+      in_combat <- is.data.frame(combat) && nrow(combat) > 0 &&
+        identical(as.character(combat$phase[1] %||% ""), "combat")
+
+      rows$character_id <- as.character(rows$character_id %||% "")
+      rows$actor_id <- rows$character_id
+      rows$actor_type <- "player"
+      if (!"max_hp" %in% names(rows)) rows$max_hp <- NA_integer_
       
-      if ("character_id" %in% names(rows)) {
+      if (!in_combat && "character_id" %in% names(rows)) {
         rows <- rows[as.character(rows$character_id) != my_cid, , drop = FALSE]
       }
       
       if ("is_active" %in% names(rows)) {
         rows <- rows[rows$is_active %in% TRUE, , drop = FALSE]
+      }
+
+      if (in_combat) {
+        enemies <- snapshot$enemies %||% data.frame()
+        if (is.data.frame(enemies) && nrow(enemies) > 0) {
+          enemy_rows <- data.frame(
+            actor_id = as.character(enemies$enemy_uuid %||% ""),
+            actor_type = "enemy",
+            character_id = NA_character_,
+            display_name = as.character(enemies$name %||% "Enemy"),
+            current_hp = suppressWarnings(as.integer(enemies$hp_current %||% 0L)),
+            temp_hp = suppressWarnings(as.integer(enemies$temp_hp %||% 0L)),
+            max_hp = suppressWarnings(as.integer(enemies$hp_max %||% NA_integer_)),
+            initiative = suppressWarnings(as.integer(enemies$initiative %||% NA_integer_)),
+            turn_order = suppressWarnings(as.integer(enemies$turn_order %||% NA_integer_)),
+            is_active = as.logical(enemies$is_active %||% TRUE),
+            stringsAsFactors = FALSE
+          )
+          rows <- dplyr::bind_rows(rows, enemy_rows)
+        }
+      }
+
+      if (in_combat && "turn_order" %in% names(rows)) {
+        rows <- rows[order(rows$turn_order, na.last = TRUE), , drop = FALSE]
       }
       
       rows
@@ -371,7 +437,8 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
       if (!is.data.frame(rows) || nrow(rows) == 0) return("empty")
       
       cols <- intersect(
-        c("character_id", "display_name", "current_hp", "temp_hp", "is_active", "updated_at"),
+        c("actor_id", "actor_type", "display_name", "current_hp", "temp_hp",
+          "max_hp", "initiative", "turn_order", "is_active", "updated_at"),
         names(rows)
       )
       
@@ -403,6 +470,21 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
       }
       
       rows <- hud_rows()
+
+      snapshot <- if (is.function(live_snapshot)) live_snapshot() else empty_player_live_snapshot()
+      combat <- snapshot$combat %||% data.frame()
+      in_combat <- is.data.frame(combat) && nrow(combat) > 0 &&
+        identical(as.character(combat$phase[1] %||% ""), "combat")
+      active_actor_id <- if (in_combat) {
+        as.character(combat$active_actor_id[1] %||% "")
+      } else {
+        ""
+      }
+      round_number <- if (in_combat) {
+        as.character(combat$round_number[1] %||% "—")
+      } else {
+        ""
+      }
       
       if (!is.data.frame(rows) || nrow(rows) == 0) {
         return(
@@ -417,6 +499,11 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
         row <- rows[i, , drop = FALSE]
         
         nm  <- as.character(row$display_name[1] %||% "Unknown")
+        actor_id <- as.character(row$actor_id[1] %||% row$character_id[1] %||% "")
+        actor_type <- as.character(row$actor_type[1] %||% "player")
+        is_active_turn <- in_combat && nzchar(active_actor_id) && identical(actor_id, active_actor_id)
+        initiative <- suppressWarnings(as.integer(row$initiative[1] %||% NA))
+        turn_order <- suppressWarnings(as.integer(row$turn_order[1] %||% NA))
         cur_hp  <- as.integer(row$current_hp[1] %||% 0)
         temp_hp <- as.integer(row$temp_hp[1] %||% 0)
         
@@ -424,11 +511,15 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
         if (is.na(temp_hp)) temp_hp <- 0L
         
         extra <- NULL
-        if ("character_id" %in% names(row)) {
+        if (identical(actor_type, "player") && "character_id" %in% names(row) &&
+            nzchar(as.character(row$character_id[1] %||% ""))) {
           extra <- fetch_character_summary_safe(as.character(row$character_id[1]))
         }
         
-        hp_max <- suppressWarnings(as.integer(extra$hp_max %||% NA))
+        hp_max <- suppressWarnings(as.integer(row$max_hp[1] %||% NA))
+        if (is.na(hp_max) || hp_max <= 0L) {
+          hp_max <- suppressWarnings(as.integer(extra$hp_max %||% NA))
+        }
         if (is.na(hp_max) || hp_max <= 0L) hp_max <- max(cur_hp, 1L)
         
         sindre_cur  <- suppressWarnings(as.integer(extra$sindre_cur %||% 0))
@@ -439,8 +530,8 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
         if (is.na(sindre_max))  sindre_max <- 0L
         if (is.na(sindre_temp)) sindre_temp <- 0L
         
-        race_txt <- as.character(extra$race %||% "")
-        class_txt <- as.character(extra$class %||% "")
+        race_txt <- if (identical(actor_type, "enemy")) "Enemy" else as.character(extra$race %||% "")
+        class_txt <- if (identical(actor_type, "enemy")) "Combatant" else as.character(extra$class %||% "")
         
         if (!nzchar(race_txt))  race_txt  <- "—"
         if (!nzchar(class_txt)) class_txt <- "—"
@@ -450,8 +541,22 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
         tags$div(
           class = "party-row",
           tags$div(
-            class = "party-strip",
-            tags$div(class = "party-name", nm),
+            class = paste("party-strip", if (is_active_turn) "active-turn" else ""),
+            tags$div(
+              class = "party-name-row",
+              tags$div(class = "party-name", nm),
+              if (in_combat) tags$span(
+                class = "party-turn-order",
+                if (!is.na(turn_order)) paste0("#", turn_order) else "#—"
+              )
+            ),
+            if (in_combat) tags$div(
+              class = "party-initiative",
+              paste0(
+                if (is_active_turn) "▶ Current turn • " else "",
+                "Initiative ", if (!is.na(initiative)) initiative else "—"
+              )
+            ),
             tags$div(
               class = "party-meta-wrap",
               tags$div(class = "party-meta", race_txt),
@@ -470,7 +575,7 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
               tags$span(class = "party-mini-label", "HP"),
               mini_bar_ui(cur_hp, hp_max, temp_hp, "hp")
             ),
-            tags$div(
+            if (identical(actor_type, "player")) tags$div(
               class = "party-minirow",
               tags$span(class = "party-mini-label", "SI"),
               mini_bar_ui(sindre_cur, sindre_max, sindre_temp, "magic")
@@ -480,7 +585,10 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
       })
       
       tagList(
-        tags$div(class = "partyhud-label", "Party"),
+        tags$div(
+          class = "partyhud-label",
+          if (in_combat) paste("Combat • Round", round_number) else "Party"
+        ),
         strips
       )
     })

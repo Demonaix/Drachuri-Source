@@ -21,32 +21,17 @@ debugCombatUI <- function(id) {
         
         div(
           class = "combat-card",
-          uiOutput(ns("header_ui")),
-          
           div(
-            class = "combat-top-grid",
-            
+            class = "combat-compact-header",
+            uiOutput(ns("header_ui")),
             div(
-              class = "combat-top-left",
-              
+              class = "combat-compact-actions",
+              actionButton(ns("end_turn"), "End Turn", class = "btn btn-warning"),
+              checkboxInput(ns("dash_move"), "Dash / Sprint", value = FALSE),
+              uiOutput(ns("phase_move_ui")),
               div(
-                class = "combat-control-row",
-                actionButton(ns("refresh"), "Refresh", class = "btn btn-default"),
-                actionButton(ns("end_turn"), "End Turn", class = "btn btn-warning")
-              ),
-              
-              
-              div(
-                class = "combat-lower-actions",
-                checkboxInput(ns("dash_move"), "Dash / Sprint", value = FALSE),
-                
-                uiOutput(ns("phase_move_ui")),
-                
-                
-                div(
-                  class = "combat-turn-box",
-                  uiOutput(ns("turn_notice_ui"))
-                )
+                class = "combat-turn-box",
+                uiOutput(ns("turn_notice_ui"))
               )
             )
           )
@@ -1277,20 +1262,8 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         paste("encounter", current_encounter_id())
       }
       
-      enc_status <- if (is.data.frame(enc) && nrow(enc) > 0) {
-        as.character(enc$status[1] %||% "—")
-      } else {
-        "—"
-      }
-      
       round_txt <- if (is.data.frame(combat) && nrow(combat) > 0) {
         as.character(combat$round_number[1] %||% "—")
-      } else {
-        "—"
-      }
-      
-      phase_txt <- if (is.data.frame(combat) && nrow(combat) > 0) {
-        as.character(combat$phase[1] %||% "—")
       } else {
         "—"
       }
@@ -1301,16 +1274,12 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         "No active actor"
       }
       
-      tagList(
-        div(class = "combat-title", "⚔️ Combat"),
-        div(class = "combat-sub", paste(enc_name, "•", enc_status)),
-        div(
-          class = "combat-pills",
-          div(class = "combat-pill", paste("Round", round_txt)),
-          div(class = "combat-pill", paste("Phase", phase_txt)),
-          div(class = "combat-pill", paste("Active", active_name)),
-          div(class = "combat-pill", paste("Movement", turn_move_ft(), "ft"))
-        )
+      div(
+        class = "combat-compact-summary",
+        tags$strong("⚔️ ", enc_name),
+        tags$span(paste("Round", round_txt)),
+        tags$span(paste("Turn:", active_name)),
+        tags$span(paste("Moved:", turn_move_ft(), "ft"))
       )
     })
     
@@ -2150,11 +2119,6 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     output$combat_layout_ui <- renderUI({
       div(
         class = "combat-play-layout",
-        
-        div(
-          class = "combat-card combat-initiative-strip-card",
-          uiOutput(session$ns("initiative_ui"))
-        ),
         
         div(
           class = "combat-card combat-map-card combat-map-card-large",
