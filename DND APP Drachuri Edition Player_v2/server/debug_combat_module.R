@@ -26,6 +26,8 @@ debugCombatUI <- function(id) {
             uiOutput(ns("header_ui")),
             div(
             class = "combat-compact-actions",
+              uiOutput(ns("turn_actions_ui")),
+              uiOutput(ns("level_two_actions_ui")),
               uiOutput(ns("class_actions_ui")),
               actionButton(ns("end_turn"), "End Turn", class = "btn btn-warning"),
               checkboxInput(ns("dash_move"), "Dash / Sprint", value = FALSE),
@@ -98,6 +100,184 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     pending_move <- reactiveVal(NULL)
     movement_dash <- reactiveVal(FALSE)
     movement_phase <- reactiveVal(FALSE)
+    turn_budget <- reactiveVal(new_turn_action_budget())
+    cunning_mode <- reactiveVal("")
+    reckless_active <- reactiveVal(FALSE)
+
+    player_has_feature <- function(feature_id) {
+      char <- core$state$char
+      if (is.null(char)) return(FALSE)
+      any(vapply(get_unlocked_class_features(char), function(feature) {
+        identical(as.character(feature$id %||% ""), feature_id)
+      }, logical(1)))
+    }
+
+    current_turn_key <- reactive({
+      combat <- combat_tbl()
+      paste(
+        current_encounter_id(),
+        as.character(combat$round_number[1] %||% 0L),
+        as.character(active_actor_id() %||% ""),
+        sep = "::"
+      )
+    })
+
+    observe({
+      key <- current_turn_key()
+      if (!identical(as.character(turn_budget()$key %||% ""), key)) {
+        turn_budget(new_turn_action_budget(key))
+        cunning_mode("")
+        reckless_active(FALSE)
+        movement_dash(FALSE)
+        updateCheckboxInput(session, "dash_move", value = FALSE)
+      }
+    })
+
+    spend_action_safe <- function(action_type, label) {
+      updated <- spend_turn_action(turn_budget(), action_type)
+      if (is.null(updated)) {
+        log_safe(paste0("⚠️ No ", gsub("_", " ", action_type), " remains for ", label, "."))
+        return(FALSE)
+      }
+      turn_budget(updated)
+      TRUE
+    }
+
+    output$turn_actions_ui <- renderUI({
+      budget <- turn_budget()
+      div(
+        class = "combat-pill",
+        paste0("Actions ", budget$actions, " • Bonus ", budget$bonus_actions,
+               " • Reaction ", budget$reactions)
+      )
+    })
+
+    output$level_two_actions_ui <- renderUI({
+      buttons <- list()
+      if (player_has_feature("cunning_action")) {
+        buttons <- c(buttons, list(actionButton(session$ns("open_cunning_action"), "Cunning Action", class = "btn btn-default")))
+      }
+      if (player_has_feature("action_surge")) {
+        char <- validate_character(core$state$char)
+        action <- list(usage = list(key = "action_surge", recharge = "short_rest"))
+        buttons <- c(buttons, list(actionButton(
+          session$ns("use_action_surge"), "Action Surge",
+          class = "btn btn-default", disabled = if (!class_action_use_available(char, action)) "disabled" else NULL
+        )))
+      }
+      if (player_has_feature("reckless_attack")) {
+        buttons <- c(buttons, list(actionButton(
+          session$ns("toggle_reckless"),
+          if (isTRUE(reckless_active())) "Reckless ✓" else "Reckless Attack",
+          class = if (isTRUE(reckless_active())) "btn btn-danger" else "btn btn-default"
+        )))
+      }
+      if (player_has_feature("detect_undead")) {
+        buttons <- c(buttons, list(actionButton(
+          session$ns("use_detect_undead"), "Detect Undead", class = "btn btn-default"
+        )))
+      }
+      if (!length(buttons)) return(NULL)
+      tagList(buttons)
+    })
+
+    observeEvent(input$open_cunning_action, {
+      if (!isTRUE(is_players_turn())) return()
+      showModal(modalDialog(
+        title = "Cunning Action",
+        p("Choose how to spend your bonus action."),
+        footer = tagList(
+          modalButton("Cancel"),
+          actionButton(session$ns("cunning_dash"), "Dash"),
+          actionButton(session$ns("cunning_disengage"), "Disengage"),
+          actionButton(session$ns("cunning_hide"), "Hide")
+        )
+      ))
+    }, ignoreInit = TRUE)
+
+    use_cunning_action <- function(mode) {
+      if (!spend_action_safe("bonus_action", paste("Cunning Action:", mode))) return()
+      cunning_mode(tolower(mode))
+      if (identical(tolower(mode), "dash")) {
+        movement_dash(TRUE)
+        updateCheckboxInput(session, "dash_move", value = TRUE)
+      }
+      removeModal()
+      log_safe(paste0("🗡️ Cunning Action: ", mode, "."))
+    }
+    observeEvent(input$cunning_dash, use_cunning_action("Dash"), ignoreInit = TRUE)
+    observeEvent(input$cunning_disengage, use_cunning_action("Disengage"), ignoreInit = TRUE)
+    observeEvent(input$cunning_hide, use_cunning_action("Hide"), ignoreInit = TRUE)
+
+    observeEvent(input$use_action_surge, {
+      if (!isTRUE(is_players_turn())) return()
+      char <- validate_character(core$state$char)
+      action <- list(usage = list(key = "action_surge", recharge = "short_rest"))
+      if (!class_action_use_available(char, action)) {
+        log_safe("⚠️ Action Surge has already been used and needs a rest.")
+        return()
+      }
+      core$state$char <- mark_class_action_used(char, action)
+      turn_budget(grant_turn_action(turn_budget(), 1L))
+      log_safe("⚡ Action Surge grants one additional action.")
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$toggle_reckless, {
+      if (!isTRUE(is_players_turn())) return()
+      reckless_active(!isTRUE(reckless_active()))
+      log_safe(if (isTRUE(reckless_active())) "🔥 Reckless Attack enabled." else "Reckless Attack cancelled.")
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$use_detect_undead, {
+      if (!isTRUE(is_players_turn())) return()
+      char <- validate_character(core$state$char)
+      current <- suppressWarnings(as.integer(char$resources$sindre$cur %||% 0L))
+      if (is.na(current)) current <- 0L
+      if (current < 10L) {
+        log_safe("⚠️ Not enough Sindre for Detect Undead.")
+        return()
+      }
+      if (!spend_action_safe("action", "Detect Undead")) return()
+      char$resources$sindre$cur <- current - 10L
+      core$state$char <- char
+
+      enemies <- snapshot_data()$enemies %||% data.frame()
+      found <- character()
+      if (is.data.frame(enemies) && nrow(enemies)) {
+        text <- tolower(paste(
+          enemies$name %||% "", enemies$template_key %||% "", enemies$notes %||% ""
+        ))
+        undead_words <- "undead|skeleton|zombie|ghoul|ghost|wight|wraith|vampire|lich|revenant"
+        undead_rows <- enemies[grepl(undead_words, text, perl = TRUE), , drop = FALSE]
+        if (nrow(undead_rows)) {
+          actors <- encounter_actors_tbl()
+          self_row <- actors[as.character(actors$actor_id) == as.character(core$state$char_id %||% ""), , drop = FALSE]
+          in_range <- rep(TRUE, nrow(undead_rows))
+          if (nrow(self_row) && all(c("x", "y") %in% names(actors))) {
+            enemy_ids <- as.character(undead_rows$enemy_uuid %||% undead_rows$actor_id %||% "")
+            in_range <- vapply(enemy_ids, function(enemy_id) {
+              row <- actors[as.character(actors$actor_id) == enemy_id, , drop = FALSE]
+              if (!nrow(row)) return(TRUE)
+              dx <- abs(as.integer(row$x[1]) - as.integer(self_row$x[1]))
+              dy <- abs(as.integer(row$y[1]) - as.integer(self_row$y[1]))
+              max(dx, dy, na.rm = TRUE) <= 12L
+            }, logical(1))
+          }
+          found <- as.character(undead_rows$name[in_range] %||% character())
+        }
+      }
+      message <- if (length(found)) {
+        paste0("💀 Undead sensed within the encounter: ", paste(unique(found), collapse = ", "), ".")
+      } else {
+        "💀 No undead presence is sensed within 60 feet."
+      }
+      log_safe(message)
+      log_game_event(
+        encounter_id = current_encounter_id(), event_type = "ability",
+        actor_type = "player", actor_id = as.character(core$state$char_id %||% ""),
+        payload = list(ability_name = "Detect Undead", detected = unique(found), resource_cost = 10L)
+      )
+    }, ignoreInit = TRUE)
     
     
    
@@ -343,7 +523,15 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     })
     
     observeEvent(input$dash_move, {
-      movement_dash(isTRUE(input$dash_move))
+      requested <- isTRUE(input$dash_move)
+      if (requested && !isTRUE(movement_dash())) {
+        is_cunning_dash <- identical(cunning_mode(), "dash")
+        if (!is_cunning_dash && !spend_action_safe("action", "Dash")) {
+          updateCheckboxInput(session, "dash_move", value = FALSE)
+          return()
+        }
+      }
+      movement_dash(requested)
     }, ignoreInit = FALSE)
     
     output$phase_move_ui <- renderUI({
@@ -2158,6 +2346,8 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         }
         char$resources$sindre$cur <- available - cost
       }
+      action_type <- as.character(action$action_type %||% "action")
+      if (!spend_action_safe(action_type, action$name %||% feature$name)) return()
 
       if (identical(target_mode, "self") && is.list(action$healing)) {
         healing <- resolve_class_action_healing(action, char)
@@ -2530,6 +2720,8 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       if (identical(mode, "advantage")) return("Advantage")
       if (identical(mode, "disadvantage")) return("Disadvantage")
       if (identical(mode, "normal")) return("Normal")
+
+      if (identical(cunning_mode(), "hide")) return("Advantage")
       
       # Future automatic rules go here:
       # - target has cover -> "Disadvantage"
@@ -2710,7 +2902,9 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
                                            attacker_id, target_id, attacker_type = "enemy", target_type = NULL) {
       target_type <- as.character(target_type %||% get_actor_type_by_id(target_id) %||% "player")
       
-      roll_obj <- roll_attack_d20(adv = "Normal")
+      target_is_reckless_player <- isTRUE(reckless_active()) &&
+        identical(as.character(target_id), as.character(core$state$char_id %||% ""))
+      roll_obj <- roll_attack_d20(adv = if (target_is_reckless_player) "Adv" else "Normal")
       attack_roll <- as.integer(roll_obj$roll)
       attack_bonus <- as.integer(attacker_char$combat_profile$attack_bonus %||% 2L)
       attack_total <- as.integer(attack_roll + attack_bonus)
@@ -2762,6 +2956,13 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     
     observeEvent(input$confirm_attack, {
       removeModal()
+
+      if (identical(as.character(preview$attacker_type %||% "player"), "player") &&
+          !isTRUE(preview$is_opportunity_attack) &&
+          !spend_action_safe("action", "Attack")) {
+        pending_attack(NULL)
+        return()
+      }
       
       attacker_id <- active_actor_id()
       target_id <- as.character(selected_target_id() %||% "")
@@ -2810,6 +3011,11 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         attacker_id = attacker_id,
         target_id = target_id
       )
+      weapon_stat <- tolower(as.character(weapon_row$stat[1] %||% "str"))
+      if (isTRUE(reckless_active()) && identical(weapon_stat, "str") &&
+          identical(as.character(input$attack_adv_mode %||% "auto"), "auto")) {
+        adv_mode <- "Advantage"
+      }
       
       preview <- build_attack_preview(
         attacker_char = attacker_char,
@@ -2872,6 +3078,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         manual_bonus = manual_bonus,
         manual_type = manual_type
       )
+      if (identical(cunning_mode(), "hide")) cunning_mode("")
       
       eid <- current_encounter_id()
       

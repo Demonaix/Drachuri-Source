@@ -41,25 +41,25 @@ CLASS_FEATURE_INTEGRATION <- list(
     status = "working", note = "Combat targeting, Sindre cost and percentage damage are automated."
   ),
   "Rogue::2::cunning_action" = list(
-    status = "partial", note = "Dash movement exists, but the app does not yet track actions versus bonus actions; Disengage and Hide are not implemented."
+    status = "working", note = "Dash, Disengage and Hide use the character's bonus action and reset at the start of each turn."
   ),
   "Fighter::2::action_surge" = list(
-    status = "missing", note = "Requires per-turn action tracking before an additional action can be granted and enforced."
+    status = "working", note = "Grants one additional action and recharges on a short or long rest."
   ),
   "Barbarian::2::reckless_attack" = list(
-    status = "missing", note = "Combat does not yet apply advantage to the Barbarian and reciprocal advantage to attackers."
+    status = "working", note = "Can be enabled before attacking; Strength attacks gain advantage and attacks against the Barbarian gain advantage until their next turn."
   ),
   "Barbarian::2::danger_sense" = list(
-    status = "partial", note = "Advantage can be rolled manually on the Skills screen; automatic visible-effect detection is not yet available."
+    status = "working", note = "Dexterity saves default to advantage; use the explicit normal/disadvantage controls when the effect is unseen or another rule overrides it."
   ),
   "Hanianol Sorcerer::2::natural_magic" = list(
     status = "partial", note = "Medicine proficiency and speciality selection work; fixed Deep Magic is defined but not yet castable through combat."
   ),
   "Na'Haran Sorcerer::2::mind_bender" = list(
-    status = "partial", note = "Its cost, target and Persuasion advantage are structured; activation is not yet connected to a skill roll."
+    status = "working", note = "Can be activated from Skills for 10 Sindre and is consumed by the next Persuasion check."
   ),
   "Na'Haran Sorcerer::2::detect_undead" = list(
-    status = "partial", note = "Its cost, radius and detection rules are structured; encounter creature-type sensing is not yet connected."
+    status = "partial", note = "Usable in combat for 10 Sindre and reports recognised undead; explicit enemy creature-type data is still needed for perfect detection."
   )
 )
 
@@ -362,6 +362,7 @@ CLASS_FEATURE_MECHANICS <- list(
     action = list(
       name = "Second Wind",
       target = "self",
+      action_type = "bonus_action",
       healing = list(mode = "dice_plus_class_level", value = "1d10", class = "Fighter"),
       usage = list(key = "second_wind", recharge = "short_rest", uses = 1L)
     )
@@ -401,6 +402,7 @@ CLASS_FEATURE_MECHANICS <- list(
     action = list(
       name = "Bloodthirsty Bite",
       target = "enemy",
+      action_type = "action",
       damage = list(mode = "dice_plus_modifier", value = "1d8", stat = "str", type = "piercing"),
       note = "Counts as drinking half a pint of blood. Blood restoration remains narrative/DM controlled."
     )
@@ -411,6 +413,7 @@ CLASS_FEATURE_MECHANICS <- list(
       name = "Water Channeler",
       group = "water_channeler",
       target = "enemy",
+      action_type = "action",
       damage = list(mode = "percent_max_hp", value = 0.10, type = "necrotic"),
       resource = list(name = "sindre", cost = 10L)
     )
@@ -421,6 +424,7 @@ CLASS_FEATURE_MECHANICS <- list(
       name = "Improved Water Channeler",
       group = "water_channeler",
       target = "enemy",
+      action_type = "action",
       damage = list(mode = "percent_max_hp", value = 0.20, type = "necrotic"),
       resource = list(name = "sindre", cost = 10L)
     )
@@ -574,6 +578,32 @@ class_action_use_available <- function(char, action) {
   key <- as.character(usage$key %||% "")
   if (!nzchar(key)) return(TRUE)
   !isTRUE(char$resources$class_uses[[key]]$used %||% FALSE)
+}
+
+new_turn_action_budget <- function(turn_key = "") {
+  list(key = as.character(turn_key), actions = 1L, bonus_actions = 1L, reactions = 1L)
+}
+
+turn_action_field <- function(action_type) {
+  switch(as.character(action_type %||% "action"),
+         bonus_action = "bonus_actions", reaction = "reactions", "actions")
+}
+
+turn_action_available <- function(budget, action_type = "action") {
+  field <- turn_action_field(action_type)
+  as.integer(budget[[field]] %||% 0L) > 0L
+}
+
+spend_turn_action <- function(budget, action_type = "action") {
+  field <- turn_action_field(action_type)
+  if (!turn_action_available(budget, action_type)) return(NULL)
+  budget[[field]] <- as.integer(budget[[field]] %||% 0L) - 1L
+  budget
+}
+
+grant_turn_action <- function(budget, amount = 1L) {
+  budget$actions <- as.integer(budget$actions %||% 0L) + max(0L, as.integer(amount))
+  budget
 }
 
 mark_class_action_used <- function(char, action) {

@@ -60,6 +60,8 @@ load_functions(
     "get_unlocked_class_features", "get_unlocked_combat_actions",
     "resolve_class_action_damage", "resolve_class_action_healing",
     "class_action_use_available", "mark_class_action_used",
+    "new_turn_action_budget", "turn_action_field", "turn_action_available",
+    "spend_turn_action", "grant_turn_action",
     "apply_unlocked_class_effects"
   )
 )
@@ -325,7 +327,7 @@ test("every level-two class feature has an integration review", {
   audit <- test_env$audit_class_level_integration(2L, class_defs)
   stopifnot(nrow(audit) == 7L)
   stopifnot(!any(audit$status == "unreviewed"))
-  stopifnot(identical(audit$status[audit$feature_id == "action_surge"], "missing"))
+  stopifnot(identical(audit$status[audit$feature_id == "action_surge"], "working"))
 })
 
 test("Hanianol Blood Magic prevents natural Sindre recovery", {
@@ -397,6 +399,31 @@ test("Second Wind heals by die plus Fighter level and recharges on a short rest"
   test_env$validate_character <- identity
   character <- test_env$reset_class_uses_for_rest(character, "short_rest")
   stopifnot(test_env$class_action_use_available(character, action))
+})
+
+test("turn action budget tracks action types and Action Surge", {
+  budget <- test_env$new_turn_action_budget("round-1-player")
+  stopifnot(test_env$turn_action_available(budget, "action"))
+  stopifnot(test_env$turn_action_available(budget, "bonus_action"))
+  budget <- test_env$spend_turn_action(budget, "bonus_action")
+  stopifnot(!test_env$turn_action_available(budget, "bonus_action"))
+  stopifnot(is.null(test_env$spend_turn_action(budget, "bonus_action")))
+  budget <- test_env$spend_turn_action(budget, "action")
+  budget <- test_env$grant_turn_action(budget)
+  stopifnot(test_env$turn_action_available(budget, "action"))
+})
+
+test("level-two abilities are connected to action and skill interfaces", {
+  combat_file <- file.path(project_dir, "DND APP Drachuri Edition Player_v2", "server", "debug_combat_module.R")
+  skills_file <- file.path(project_dir, "DND APP Drachuri Edition Player_v2", "server", "skills_module.R")
+  combat_source <- paste(readLines(combat_file, warn = FALSE), collapse = "\n")
+  skills_source <- paste(readLines(skills_file, warn = FALSE), collapse = "\n")
+  stopifnot(grepl('input$use_action_surge', combat_source, fixed = TRUE))
+  stopifnot(grepl('input$open_cunning_action', combat_source, fixed = TRUE))
+  stopifnot(grepl('input$toggle_reckless', combat_source, fixed = TRUE))
+  stopifnot(grepl('input$use_detect_undead', combat_source, fixed = TRUE))
+  stopifnot(grepl('input$use_mind_bender', skills_source, fixed = TRUE))
+  stopifnot(grepl('has_feature("danger_sense")', skills_source, fixed = TRUE))
 })
 
 test("level up requires and stores a subclass choice", {

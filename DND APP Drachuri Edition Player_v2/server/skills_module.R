@@ -6,6 +6,7 @@ skillsTabUI <- function(id) {
   
   tabPanel(
     "Skills",
+    uiOutput(ns("skill_magic_actions_ui")),
     h4("Abilities & Saving Throws"),
     uiOutput(ns("stats_table")),
     tags$hr(),
@@ -60,6 +61,39 @@ skillsTabServer <- function(id, state, restoring, add_log, char_rev) {
         cha = mod_calc(ab$cha %||% 10)
       )
     })
+
+    has_feature <- function(feature_id) {
+      any(vapply(get_unlocked_class_features(state$char), function(feature) {
+        identical(as.character(feature$id %||% ""), feature_id)
+      }, logical(1)))
+    }
+
+    output$skill_magic_actions_ui <- renderUI({
+      if (!has_feature("mind_bender")) return(NULL)
+      active <- isTRUE(state$char$status$mind_bender_active %||% FALSE)
+      div(
+        class = "magic-card",
+        tags$strong("Mind Bender"),
+        p(if (active) "Active: your next Persuasion check has advantage."
+          else "Spend 10 Sindre to gain advantage on your next Persuasion check."),
+        actionButton(ns("use_mind_bender"), if (active) "Mind Bender Active" else "Use Mind Bender",
+                     class = "btn btn-primary", disabled = if (active) "disabled" else NULL)
+      )
+    })
+
+    observeEvent(input$use_mind_bender, {
+      x <- validate_character(state$char)
+      current <- suppressWarnings(as.integer(x$resources$sindre$cur %||% 0L))
+      if (is.na(current)) current <- 0L
+      if (current < 10L) {
+        showNotification("Not enough Sindre for Mind Bender.", type = "error")
+        return()
+      }
+      x$resources$sindre$cur <- current - 10L
+      x$status$mind_bender_active <- TRUE
+      state$char <- x
+      add_log("🧠 Mind Bender activated: the next Persuasion check has advantage.")
+    }, ignoreInit = TRUE)
     
     # =============================
     # UI
@@ -228,6 +262,9 @@ skillsTabServer <- function(id, state, restoring, add_log, char_rev) {
       prof <- isTRUE(state$char$prof$saves[[ab]] %||% FALSE)
       total_mod <- mod + if (prof) pb else 0
       
+      if (identical(ab, "dex") && identical(mode, "Normal") && has_feature("danger_sense")) {
+        mode <- "Adv"
+      }
       rr <- roll_d20(mode)
       total <- rr$val + total_mod
       
@@ -428,6 +465,12 @@ skillsTabServer <- function(id, state, restoring, add_log, char_rev) {
         
         total_mod <- (mods[[ability]] %||% 0) + (pb * mult)
         
+        mind_bender <- identical(key, "persuasion") &&
+          isTRUE(state$char$status$mind_bender_active %||% FALSE)
+        if (mind_bender) {
+          mode <- if (identical(mode, "Disadv")) "Normal" else "Adv"
+          state$char$status$mind_bender_active <- FALSE
+        }
         rr <- roll_d20(mode)
         total <- rr$val + total_mod
         
