@@ -38,9 +38,15 @@ normalise_character_classes <- function(char, class_defs = CLASSES) {
 }
 
 level_options_for <- function(class_name, level, level_options = LEVEL_OPTIONS,
-                              class_defs = CLASSES) {
+                              class_defs = CLASSES, subclass = "") {
   options <- level_options[[as.character(class_name)]][[as.character(level)]] %||% list()
   if (!is.list(options)) options <- list()
+
+  subclass <- as.character(subclass %||% "")
+  options <- Filter(function(choice) {
+    required <- as.character(choice$requires_subclass %||% "")
+    !nzchar(required) || identical(required, subclass)
+  }, options)
 
   level_features <- class_defs[[as.character(class_name)]]$levels[[as.character(level)]]$features %||% list()
   has_asi <- "asi" %in% names(level_features) || any(vapply(
@@ -104,7 +110,19 @@ apply_character_level_up <- function(char, class_index, selections = list(), hp_
     stop(paste0("Progression data for ", class_name, " currently ends at level ", max_level, "."))
   }
 
-  required <- level_options_for(class_name, new_level, level_options, class_defs)
+  initial <- level_options_for(class_name, new_level, level_options, class_defs)
+  subclass_choice <- Filter(function(choice) identical(choice$id %||% "", "subclass"), initial)
+  if (length(subclass_choice)) {
+    selected_subclass <- as.character(selections$subclass %||% "")
+    allowed_subclasses <- as.character(subclass_choice[[1L]]$options %||% character())
+    if (!selected_subclass %in% allowed_subclasses) {
+      stop(as.character(subclass_choice[[1L]]$label %||% "Choose a subclass."))
+    }
+    entry$subclass <- selected_subclass
+  }
+  required <- level_options_for(
+    class_name, new_level, level_options, class_defs, subclass = entry$subclass
+  )
   stored_choices <- list()
 
   for (choice in required) {
@@ -118,6 +136,11 @@ apply_character_level_up <- function(char, class_index, selections = list(), hp_
 
     stored_choices[[choice_id]] <- selected
     if (identical(choice_id, "subclass")) entry$subclass <- selected
+  }
+
+  manoeuvres <- unname(unlist(stored_choices[grepl("^battle_master_manoeuvre_", names(stored_choices))]))
+  if (length(manoeuvres) && anyDuplicated(manoeuvres)) {
+    stop("Choose three different Battle Master manoeuvres.")
   }
 
   entry$level <- new_level
@@ -368,11 +391,26 @@ levelTabServer <- function(id, state, restoring, add_log, char_rev) {
       if (length(missing)) missing[[1L]] else NULL
     })
 
+    missing_level_three_choices_r <- reactive({
+      char <- validate_character(state$char)
+      for (entry in classes_r()) {
+        if (as.integer(entry$level %||% 0L) < 3L || !nzchar(as.character(entry$subclass %||% ""))) next
+        choices <- level_options_for(entry$class, 3L, subclass = entry$subclass)
+        choices <- Filter(function(choice) !identical(as.character(choice$id %||% ""), "subclass"), choices)
+        missing <- Filter(function(choice) {
+          !nzchar(character_level_choice(char, entry$class, 3L, as.character(choice$id %||% "")))
+        }, choices)
+        if (length(missing)) return(list(entry = entry, choices = missing))
+      }
+      NULL
+    })
+
     output$starting_choices_ui <- renderUI({
       needs_style <- needs_fighting_style_r()
       needs_natural <- needs_natural_specialty_r()
       missing_subclass <- missing_subclass_r()
-      if (!needs_style && !needs_natural && is.null(missing_subclass)) return(NULL)
+      missing_level_three <- missing_level_three_choices_r()
+      if (!needs_style && !needs_natural && is.null(missing_subclass) && is.null(missing_level_three)) return(NULL)
       style_choice <- level_options_for("Fighter", 1L)[[1L]]
       natural_choices <- level_options_for("Hanianol Sorcerer", 2L)
       natural_choice <- Filter(function(choice) {
@@ -404,6 +442,18 @@ levelTabServer <- function(id, state, restoring, add_log, char_rev) {
                       paste(missing_subclass$class, "— Subclass"),
                       choices = c("Choose…" = "", names(CLASSES[[missing_subclass$class]]$subclasses))),
           actionButton(session$ns("save_legacy_subclass"), "Save Subclass",
+                       class = "btn btn-primary btn-sm")
+        ),
+        if (!is.null(missing_level_three)) div(
+          class = "levelup-choice",
+          tags$strong(paste(missing_level_three$entry$class, "—", missing_level_three$entry$subclass, "choices")),
+          lapply(missing_level_three$choices, function(choice) {
+            selectInput(
+              session$ns(paste0("legacy_level_three_", choice$id)),
+              choice$label, choices = c("Choose…" = "", choice$options)
+            )
+          }),
+          actionButton(session$ns("save_legacy_level_three_choices"), "Save Level 3 Choices",
                        class = "btn btn-primary btn-sm")
         )
       )
@@ -480,6 +530,39 @@ levelTabServer <- function(id, state, restoring, add_log, char_rev) {
       if (is.function(char_rev)) char_rev(isolate(char_rev()) + 1L)
       log_safe(paste0("🛡️ ", entry$class, " selected ", selected, "."))
       showNotification(paste("Saved", selected), type = "message")
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$save_legacy_level_three_choices, {
+      missing <- missing_level_three_choices_r()
+      if (is.null(missing)) return()
+      char <- validate_character(state$char)
+      char$build$level_choices <- char$build$level_choices %||% list()
+      class_name <- as.character(missing$entry$class)
+      char$build$level_choices[[class_name]] <- char$build$level_choices[[class_name]] %||% list()
+      char$build$level_choices[[class_name]][["3"]] <- char$build$level_choices[[class_name]][["3"]] %||% list()
+      selected <- character()
+      for (choice in missing$choices) {
+        value <- as.character(input[[paste0("legacy_level_three_", choice$id)]] %||% "")
+        if (!value %in% as.character(choice$options %||% character())) {
+          showNotification("Complete every level-3 choice before saving.", type = "error")
+          return()
+        }
+        char$build$level_choices[[class_name]][["3"]][[choice$id]] <- value
+        if (grepl("^battle_master_manoeuvre_", choice$id)) selected <- c(selected, value)
+      }
+      existing <- unname(as.character(unlist(
+        char$build$level_choices[[class_name]][["3"]][grepl(
+          "^battle_master_manoeuvre_", names(char$build$level_choices[[class_name]][["3"]])
+        )]
+      )))
+      if (length(existing) && anyDuplicated(existing)) {
+        showNotification("Choose three different Battle Master manoeuvres.", type = "error")
+        return()
+      }
+      state$char <- apply_unlocked_class_effects(char)
+      if (is.function(char_rev)) char_rev(isolate(char_rev()) + 1L)
+      log_safe(paste0("🛡️ Saved legacy level-3 choices for ", class_name, "."))
+      showNotification("Level 3 choices saved", type = "message")
     }, ignoreInit = TRUE)
 
     observeEvent(input$open_level_up, {
@@ -616,7 +699,7 @@ levelTabServer <- function(id, state, restoring, add_log, char_rev) {
 
     output$level_choices_ui <- renderUI({
       entry <- selected_entry()
-      choices <- level_options_for(entry$class, next_level())
+      choices <- level_options_for(entry$class, next_level(), subclass = chosen_subclass())
       if (length(choices) == 0L) return(NULL)
       tagList(lapply(choices, function(choice) {
         choice_id <- as.character(choice$id %||% "choice")
@@ -657,7 +740,7 @@ levelTabServer <- function(id, state, restoring, add_log, char_rev) {
         return()
       }
 
-      required <- level_options_for(entry$class, target)
+      required <- level_options_for(entry$class, target, subclass = chosen_subclass())
       selections <- list()
       for (choice in required) {
         choice_id <- as.character(choice$id %||% "")

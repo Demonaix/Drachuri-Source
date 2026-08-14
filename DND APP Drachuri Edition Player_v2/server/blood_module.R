@@ -687,14 +687,11 @@ bloodTabServer <- function(
       # heart eater heal from blood
       if (isTRUE(is_heart_eater())) {
         heal_amt <- as.integer(round(5 * drink_pints))
-        heal_res <- heal_hp_state(heal_amt)
-        
-        if (!is.null(heal_res)) {
-          gained <- heal_res$hp_after - heal_res$hp_before
-          log_safe(paste0("❤️ Blood heals you for ", gained, " HP."), toast = TRUE)
-        } else {
-          log_safe("⚠️ Blood healing failed.", toast = TRUE, flash = "red")
-        }
+        hp_before <- as.integer(x$resources$hp$cur %||% 0L)
+        hp_max <- as.integer(x$resources$hp$max %||% hp_before)
+        x$resources$hp$cur <- min(hp_max, hp_before + heal_amt)
+        gained <- x$resources$hp$cur - hp_before
+        log_safe(paste0("❤️ Blood heals you for ", gained, " HP."), toast = TRUE)
       }
       
       x$inventory$items <- inventory_normalize(df)
@@ -753,9 +750,17 @@ bloodTabServer <- function(
             
             new_cur <- cur + sindre
             overflow <- max(0, new_cur - tot)
-            
-            x$resources$sindre$cur <- min(new_cur, tot)
-            x$resources$sindre$temp <- (x$resources$sindre$temp %||% 0) + overflow
+
+            if (isTRUE(is_heart_eater())) {
+              x$resources$sindre$cur <- tot
+              x$resources$hp <- x$resources$hp %||% list(cur = 0L, max = 0L, temp = 0L)
+              hp_max <- as.integer(x$resources$hp$max %||% 0L)
+              temp_gain <- max(1L, floor(hp_max * 0.25))
+              x$resources$hp$temp <- max(as.integer(x$resources$hp$temp %||% 0L), temp_gain)
+            } else {
+              x$resources$sindre$cur <- min(new_cur, tot)
+              x$resources$sindre$temp <- (x$resources$sindre$temp %||% 0) + overflow
+            }
             
             # reduce heart count
             if (hearts <= 1) {
@@ -777,7 +782,7 @@ bloodTabServer <- function(
               paste0(
                 "🫀 Consumed heart from ", source,
                 ": +", sindre, " Sindre",
-                if (overflow > 0) paste0(" (+", overflow, " overflow)") else "",
+                if (isTRUE(is_heart_eater())) " (fully restored; temporary HP gained)" else if (overflow > 0) paste0(" (+", overflow, " overflow)") else "",
                 " → ", x$resources$sindre$cur, "/", tot
               ),
               TRUE,

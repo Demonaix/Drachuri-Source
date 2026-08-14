@@ -1600,6 +1600,40 @@ LEVEL_OPTIONS[["Fighter"]][["1"]] <- list(list(
   options = c("Archery", "Defence", "Dueling", "Great Weapon Fighting")
 ))
 
+LEVEL_OPTIONS[["Fighter"]][["3"]] <- c(
+  LEVEL_OPTIONS[["Fighter"]][["3"]],
+  list(
+    list(
+      id = "battle_master_manoeuvre_1", label = "Battle Master Manoeuvre 1",
+      requires_subclass = "Battle Master",
+      options = c("Precision Attack", "Trip Attack", "Menacing Attack", "Disarming Attack", "Riposte")
+    ),
+    list(
+      id = "battle_master_manoeuvre_2", label = "Battle Master Manoeuvre 2",
+      requires_subclass = "Battle Master",
+      options = c("Precision Attack", "Trip Attack", "Menacing Attack", "Disarming Attack", "Riposte")
+    ),
+    list(
+      id = "battle_master_manoeuvre_3", label = "Battle Master Manoeuvre 3",
+      requires_subclass = "Battle Master",
+      options = c("Precision Attack", "Trip Attack", "Menacing Attack", "Disarming Attack", "Riposte")
+    ),
+    list(
+      id = "student_of_war_tool", label = "Student of War — Artisan's Tools",
+      requires_subclass = "Battle Master",
+      options = c("Smith's Tools", "Leatherworker's Tools", "Carpenter's Tools", "Tinker's Tools", "Herbalism Kit")
+    )
+  )
+)
+
+LEVEL_OPTIONS[["Barbarian"]][["3"]] <- c(
+  LEVEL_OPTIONS[["Barbarian"]][["3"]],
+  list(list(
+    id = "spirit_totem", label = "Spirit Totem",
+    requires_subclass = "Totem Warrior", options = c("Bear", "Wolf", "Eagle")
+  ))
+)
+
 # Complete the shared ability-score progression for full 20-level classes.
 # Sparse class levels are valid: a level may grant only scaling plus its ASI.
 for (class_name in c("Hanianol Sorcerer", "Na'Haran Sorcerer")) {

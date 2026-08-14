@@ -626,7 +626,6 @@ reset_class_uses_for_rest <- function(char, rest_type = c("short_rest", "long_re
   rest_type <- match.arg(rest_type)
   char <- validate_character(char)
   uses <- char$resources$class_uses %||% list()
-  if (!length(uses)) return(char)
   for (key in names(uses)) {
     recharge <- as.character(uses[[key]]$recharge %||% "long_rest")
     if (identical(rest_type, "long_rest") || identical(recharge, "short_rest")) {
@@ -634,6 +633,16 @@ reset_class_uses_for_rest <- function(char, rest_type = c("short_rest", "long_re
     }
   }
   char$resources$class_uses <- uses
+  pools <- char$resources$class_pools %||% list()
+  for (key in names(pools)) {
+    recharge <- as.character(pools[[key]]$recharge %||% "long_rest")
+    if (identical(rest_type, "long_rest") || identical(recharge, "short_rest")) {
+      pools[[key]]$remaining <- as.integer(pools[[key]]$maximum %||% 0L)
+    }
+  }
+  char$resources$class_pools <- pools
+  char$status <- char$status %||% list()
+  char$status$raging <- FALSE
   char
 }
 

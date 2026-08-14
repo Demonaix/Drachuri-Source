@@ -17,7 +17,7 @@ CLASS_FEATURE_INTEGRATION <- list(
     status = "working", note = "Available in combat as a self-heal and automatically recharges on a short or long rest."
   ),
   "Barbarian::1::rage" = list(
-    status = "partial", note = "Conditional resistances are defined; combat still needs a Rage toggle, damage bonus and Strength advantage."
+    status = "working", note = "Rage has limited long-rest uses, costs a bonus action, adds scaling Strength weapon damage and applies physical resistance."
   ),
   "Barbarian::1::unarmoured_defence" = list(
     status = "working", note = "While no armour is equipped, AC automatically uses 10 + Dexterity + Constitution modifiers."
@@ -66,20 +66,20 @@ CLASS_FEATURE_INTEGRATION <- list(
   "Barbarian::3::subclass_unlock" = list(status = "working", note = "Subclass choice is required, saved and restored."),
   "Hanianol Sorcerer::3::subclass_unlock" = list(status = "working", note = "Subclass choice is required, saved and restored."),
   "Na'Haran Sorcerer::3::subclass_unlock" = list(status = "working", note = "Subclass choice is required, saved and restored."),
-  "Rogue::3::fast_hands" = list(status = "partial", note = "Bonus-action tracking exists; object use and Sleight of Hand still need a combat entry point."),
-  "Rogue::3::second_story_work" = list(status = "missing", note = "Map movement does not yet distinguish climbing and jumping."),
-  "Rogue::3::assassinate" = list(status = "partial", note = "First-round advantage against creatures that have not acted is automatic; surprise is not yet stored."),
+  "Rogue::3::fast_hands" = list(status = "working", note = "A combat entry point spends the bonus action for object use, Sleight of Hand, locks or simple traps."),
+  "Rogue::3::second_story_work" = list(status = "working", note = "The map movement toggle permits climbing or vaulting blocked tiles while still charging movement."),
+  "Rogue::3::assassinate" = list(status = "working", note = "First-round advantage applies before a target acts; attacks that hit a target carrying the surprised condition are critical hits."),
   "Rogue::3::bonus_proficiencies" = list(status = "working", note = "Disguise kit and poisoner's kit proficiency are derived automatically."),
   "Fighter::3::improved_critical" = list(status = "working", note = "Weapon attacks now score critical hits on natural 19 or 20."),
-  "Fighter::3::combat_superiority" = list(status = "missing", note = "Superiority dice and manoeuvre choices need definitions and a resource pool."),
-  "Fighter::3::student_of_war" = list(status = "missing", note = "The artisan's tool choice is not yet collected or granted."),
-  "Barbarian::3::frenzy" = list(status = "missing", note = "Requires the Rage activation state before granting a bonus-action attack."),
-  "Barbarian::3::spirit_totem" = list(status = "missing", note = "The Bear, Wolf and Eagle choice and their exact homebrew effects are not yet stored."),
-  "Hanianol Sorcerer::3::seer" = list(status = "missing", note = "Maps do not yet mark Mandred convergence points."),
-  "Hanianol Sorcerer::3::exquisite_taste" = list(status = "partial", note = "Blood and heart consumption exist; HP restoration, full Sindre and overheal are not fully connected."),
-  "Hanianol Sorcerer::3::shadow_step" = list(status = "partial", note = "The complete scaling rule is defined; map teleport activation is not yet connected."),
-  "Na'Haran Sorcerer::3::spellsword" = list(status = "missing", note = "The amount and duration of resistance or immunity reduction need an explicit rule."),
-  "Na'Haran Sorcerer::3::wild_insight" = list(status = "partial", note = "Wild Magic rolling exists; bonus-action activation is not yet connected to combat.")
+  "Fighter::3::combat_superiority" = list(status = "working", note = "Choose three manoeuvres; four d8 superiority dice recharge on a short or long rest and apply to attacks."),
+  "Fighter::3::student_of_war" = list(status = "working", note = "The saved artisan's tool choice is granted automatically."),
+  "Barbarian::3::frenzy" = list(status = "working", note = "While raging, a bonus action grants an additional attack action for the turn."),
+  "Barbarian::3::spirit_totem" = list(status = "working", note = "Bear expands Rage resistance, Wolf grants Strength attack advantage, and Eagle grants bonus-action Dash."),
+  "Hanianol Sorcerer::3::seer" = list(status = "working", note = "Control can paint Mandred convergence terrain; Natural Magic costs half Sindre there and enemy saves roll with disadvantage."),
+  "Hanianol Sorcerer::3::exquisite_taste" = list(status = "working", note = "Blood restores HP; hearts fully restore Sindre and grant temporary HP overheal."),
+  "Hanianol Sorcerer::3::shadow_step" = list(status = "working", note = "Heart Eaters can phase through blocked map tiles within their normal movement range."),
+  "Na'Haran Sorcerer::3::spellsword" = list(status = "working", note = "Magical combat abilities reduce matching immunity to resistance and resistance to normal damage."),
+  "Na'Haran Sorcerer::3::wild_insight" = list(status = "working", note = "Available in combat as a bonus-action d100 Wild Magic roll.")
 )
 
 class_feature_integration <- function(class_name, level, feature_id) {
@@ -639,6 +639,40 @@ class_action_use_available <- function(char, action) {
   !isTRUE(char$resources$class_uses[[key]]$used %||% FALSE)
 }
 
+class_resource_remaining <- function(char, key, maximum) {
+  maximum <- max(0L, as.integer(maximum %||% 0L))
+  value <- suppressWarnings(as.integer(char$resources$class_pools[[key]]$remaining %||% maximum))
+  if (is.na(value)) value <- maximum
+  max(0L, min(maximum, value))
+}
+
+spend_class_resource <- function(char, key, maximum, recharge = "long_rest", amount = 1L) {
+  remaining <- class_resource_remaining(char, key, maximum)
+  amount <- max(1L, as.integer(amount %||% 1L))
+  if (remaining < amount) return(NULL)
+  char$resources <- char$resources %||% list()
+  char$resources$class_pools <- char$resources$class_pools %||% list()
+  char$resources$class_pools[[key]] <- list(
+    remaining = remaining - amount,
+    maximum = as.integer(maximum),
+    recharge = as.character(recharge)
+  )
+  char
+}
+
+barbarian_rage_maximum <- function(char) {
+  classes <- normalise_character_classes(char)
+  level <- sum(vapply(classes, function(entry) {
+    if (identical(as.character(entry$class %||% ""), "Barbarian")) as.integer(entry$level %||% 0L) else 0L
+  }, integer(1)))
+  if (level < 1L) return(0L)
+  if (level >= 17L) return(6L)
+  if (level >= 12L) return(5L)
+  if (level >= 6L) return(4L)
+  if (level >= 3L) return(3L)
+  2L
+}
+
 new_turn_action_budget <- function(turn_key = "") {
   list(key = as.character(turn_key), actions = 1L, bonus_actions = 1L, reactions = 1L)
 }
@@ -739,6 +773,17 @@ apply_unlocked_class_effects <- function(char, class_defs = CLASSES) {
     if (length(feature_conditional)) {
       conditional[[source_key]] <- feature_conditional
     }
+  }
+
+  artisan_tool <- character_level_choice(char, "Fighter", 3L, "student_of_war_tool")
+  if (nzchar(artisan_tool)) {
+    tool_key <- tolower(gsub("[^a-z0-9]+", "_", artisan_tool))
+    tool_key <- gsub("^_|_$", "", tool_key)
+    char$prof$tools[[tool_key]] <- TRUE
+    sources[[paste0("tool:", tool_key)]] <- unique(c(
+      sources[[paste0("tool:", tool_key)]] %||% character(),
+      "Fighter::Battle Master::3::student_of_war"
+    ))
   }
 
   char$derived_effects <- char$derived_effects %||% list()

@@ -60,6 +60,7 @@ load_functions(
     "get_unlocked_class_features", "get_unlocked_combat_actions",
     "resolve_class_action_damage", "resolve_class_action_healing",
     "class_action_use_available", "mark_class_action_used",
+    "class_resource_remaining", "spend_class_resource", "barbarian_rage_maximum",
     "new_turn_action_budget", "turn_action_field", "turn_action_available",
     "spend_turn_action", "grant_turn_action",
     "apply_unlocked_class_effects"
@@ -377,6 +378,48 @@ test("every level-three base and subclass feature has an integration review", {
   stopifnot(!any(audit$status == "unreviewed"))
   stopifnot(identical(audit$status[audit$feature_id == "improved_critical"], "working"))
   stopifnot(identical(audit$subclass[audit$feature_id == "assassinate"], "Assassin"))
+  stopifnot(all(audit$status == "working"))
+})
+
+test("level-three subclass choices are conditional and saved", {
+  fighter_options <- list(Fighter = list("3" = list(
+    list(id = "subclass", label = "Subclass", options = c("Champion", "Battle Master")),
+    list(id = "battle_master_manoeuvre_1", label = "Manoeuvre 1", requires_subclass = "Battle Master", options = c("Trip Attack", "Riposte")),
+    list(id = "student_of_war_tool", label = "Tool", requires_subclass = "Battle Master", options = c("Smith's Tools"))
+  )))
+  class_defs <- list(Fighter = list(
+    levels = list("2" = list(features = list()), "3" = list(features = list(subclass_unlock = list(name = "Subclass")))),
+    subclasses = list(
+      Champion = list(levels = list("3" = list(features = list()))),
+      `Battle Master` = list(levels = list("3" = list(features = list())))
+    )
+  ))
+  champion <- test_env$level_options_for("Fighter", 3L, fighter_options, class_defs, "Champion")
+  battle_master <- test_env$level_options_for("Fighter", 3L, fighter_options, class_defs, "Battle Master")
+  stopifnot(identical(vapply(champion, `[[`, character(1), "id"), "subclass"))
+  stopifnot(length(battle_master) == 3L)
+
+  char <- list(
+    meta = list(name = "Tactician"),
+    build = list(class = "Fighter", level = 2L, classes = list(list(class = "Fighter", level = 2L, subclass = ""))),
+    abilities = list(str = 14L), resources = list(hp = list(cur = 12L, max = 12L, temp = 0L))
+  )
+  result <- test_env$apply_character_level_up(
+    char, 1L,
+    selections = list(subclass = "Battle Master", battle_master_manoeuvre_1 = "Trip Attack", student_of_war_tool = "Smith's Tools"),
+    class_defs = class_defs, level_options = fighter_options
+  )
+  stopifnot(identical(result$character$build$classes[[1]]$subclass, "Battle Master"))
+  stopifnot(identical(result$character$build$level_choices$Fighter[["3"]]$student_of_war_tool, "Smith's Tools"))
+})
+
+test("class resource pools spend charges and respect their maximum", {
+  char <- list(resources = list())
+  stopifnot(test_env$class_resource_remaining(char, "superiority_dice", 4L) == 4L)
+  spent <- test_env$spend_class_resource(char, "superiority_dice", 4L, "short_rest")
+  stopifnot(test_env$class_resource_remaining(spent, "superiority_dice", 4L) == 3L)
+  for (i in 1:3) spent <- test_env$spend_class_resource(spent, "superiority_dice", 4L, "short_rest")
+  stopifnot(is.null(test_env$spend_class_resource(spent, "superiority_dice", 4L, "short_rest")))
 })
 
 test("Hanianol Blood Magic prevents natural Sindre recovery", {

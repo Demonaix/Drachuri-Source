@@ -170,7 +170,7 @@ controlMapBuilderUI <- function(id) {
               selectInput(
                 ns("paint_terrain"),
                 "Terrain",
-                choices = c("grass", "stone", "forest", "swamp", "water", "wall", "road"),
+                choices = c("grass", "stone", "forest", "swamp", "water", "wall", "road", "mandred_convergence"),
                 selected = "grass",
                 width = "150px"
               ),

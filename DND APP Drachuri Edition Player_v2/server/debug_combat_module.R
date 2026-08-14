@@ -28,6 +28,7 @@ debugCombatUI <- function(id) {
             class = "combat-compact-actions",
               uiOutput(ns("turn_actions_ui")),
               uiOutput(ns("level_two_actions_ui")),
+              uiOutput(ns("level_three_actions_ui")),
               uiOutput(ns("class_actions_ui")),
               actionButton(ns("end_turn"), "End Turn", class = "btn btn-warning"),
               checkboxInput(ns("dash_move"), "Dash / Sprint", value = FALSE),
@@ -169,6 +170,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     turn_budget <- reactiveVal(new_turn_action_budget())
     cunning_mode <- reactiveVal("")
     reckless_active <- reactiveVal(FALSE)
+    manoeuvre_active <- reactiveVal("")
 
     player_has_feature <- function(feature_id) {
       char <- core$state$char
@@ -200,6 +202,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         turn_budget(new_turn_action_budget(key))
         cunning_mode("")
         reckless_active(FALSE)
+        manoeuvre_active("")
         movement_dash(FALSE)
         updateCheckboxInput(session, "dash_move", value = FALSE)
       }
@@ -361,12 +364,165 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       )
     }, ignoreInit = TRUE)
 
+    rage_is_active <- reactive({
+      isTRUE(core$state$char$status$raging %||% FALSE)
+    })
+
+    selected_totem <- reactive({
+      character_level_choice(core$state$char, "Barbarian", 3L, "spirit_totem")
+    })
+
+    selected_manoeuvres <- reactive({
+      choices <- core$state$char$build$level_choices$Fighter[["3"]] %||% list()
+      unique(unname(as.character(unlist(
+        choices[grepl("^battle_master_manoeuvre_", names(choices))]
+      ))))
+    })
+
+    output$level_three_actions_ui <- renderUI({
+      char <- validate_character(core$state$char)
+      buttons <- list()
+      if (player_has_feature("rage")) {
+        max_uses <- barbarian_rage_maximum(char)
+        remaining <- class_resource_remaining(char, "rage", max_uses)
+        buttons <- c(buttons, list(actionButton(
+          session$ns("toggle_rage"),
+          if (isTRUE(rage_is_active())) "End Rage" else paste0("Rage (", remaining, ")"),
+          class = if (isTRUE(rage_is_active())) "btn btn-danger" else "btn btn-default"
+        )))
+      }
+      if (player_has_feature("frenzy") && isTRUE(rage_is_active())) {
+        buttons <- c(buttons, list(actionButton(session$ns("use_frenzy"), "Frenzy Attack", class = "btn btn-danger")))
+      }
+      if (player_has_feature("combat_superiority")) {
+        remaining <- class_resource_remaining(char, "superiority_dice", 4L)
+        buttons <- c(buttons, list(actionButton(
+          session$ns("open_manoeuvre"), paste0("Manoeuvre d8 (", remaining, ")"), class = "btn btn-default"
+        )))
+      }
+      if (identical(selected_totem(), "Eagle") && isTRUE(rage_is_active())) {
+        buttons <- c(buttons, list(actionButton(session$ns("totem_eagle_dash"), "Eagle Dash", class = "btn btn-default")))
+      }
+      if (player_has_feature("wild_insight")) {
+        buttons <- c(buttons, list(actionButton(session$ns("wild_insight"), "Wild Insight", class = "btn btn-default")))
+      }
+      if (player_has_feature("fast_hands")) {
+        buttons <- c(buttons, list(actionButton(session$ns("fast_hands"), "Fast Hands", class = "btn btn-default")))
+      }
+      if (!length(buttons)) return(NULL)
+      tagList(buttons)
+    })
+
+    observeEvent(input$toggle_rage, {
+      if (!isTRUE(is_players_turn())) return()
+      char <- validate_character(core$state$char)
+      char$status <- char$status %||% list()
+      if (isTRUE(char$status$raging %||% FALSE)) {
+        char$status$raging <- FALSE
+        core$state$char <- char
+        log_safe("🧘 Rage ended.")
+        return()
+      }
+      maximum <- barbarian_rage_maximum(char)
+      updated <- spend_class_resource(char, "rage", maximum, "long_rest")
+      if (is.null(updated)) {
+        log_safe("⚠️ No Rage uses remain. Take a long rest to recover them.")
+        return()
+      }
+      if (!spend_action_safe("bonus_action", "Rage")) return()
+      updated$status <- updated$status %||% list()
+      updated$status$raging <- TRUE
+      core$state$char <- updated
+      log_safe("🔥 Rage begins: +2 Strength weapon damage and physical resistance.")
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$use_frenzy, {
+      if (!isTRUE(is_players_turn()) || !isTRUE(rage_is_active())) return()
+      if (!spend_action_safe("bonus_action", "Frenzy Attack")) return()
+      turn_budget(grant_turn_action(turn_budget(), 1L))
+      log_safe("🔥 Frenzy grants one additional attack action this turn.")
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$totem_eagle_dash, {
+      if (!isTRUE(is_players_turn()) || !isTRUE(rage_is_active())) return()
+      if (!spend_action_safe("bonus_action", "Eagle Totem Dash")) return()
+      movement_dash(TRUE)
+      updateCheckboxInput(session, "dash_move", value = TRUE)
+      log_safe("🦅 Eagle Totem: Dash activated as a bonus action.")
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$open_manoeuvre, {
+      if (!isTRUE(is_players_turn())) return()
+      manoeuvres <- selected_manoeuvres()
+      if (!length(manoeuvres)) {
+        log_safe("⚠️ No Battle Master manoeuvres have been selected in the Level tab.")
+        return()
+      }
+      showModal(modalDialog(
+        title = "Combat Superiority",
+        selectInput(session$ns("manoeuvre_choice"), "Manoeuvre", choices = manoeuvres),
+        p("The superiority die applies to your next attack this turn."),
+        footer = tagList(modalButton("Cancel"), actionButton(session$ns("confirm_manoeuvre"), "Ready Manoeuvre", class = "btn btn-primary"))
+      ))
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$confirm_manoeuvre, {
+      char <- validate_character(core$state$char)
+      updated <- spend_class_resource(char, "superiority_dice", 4L, "short_rest")
+      if (is.null(updated)) {
+        removeModal()
+        log_safe("⚠️ No superiority dice remain.")
+        return()
+      }
+      selected <- as.character(input$manoeuvre_choice %||% "")
+      if (!selected %in% selected_manoeuvres()) return()
+      core$state$char <- updated
+      manoeuvre_active(selected)
+      removeModal()
+      log_safe(paste0("⚔️ ", selected, " readied for the next attack."))
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$wild_insight, {
+      if (!isTRUE(is_players_turn())) return()
+      if (!spend_action_safe("bonus_action", "Wild Insight")) return()
+      roll <- sample.int(100L, 1L)
+      log_safe(paste0("🔮 Wild Insight rolls ", roll, " on the Wild Magic table. Resolve that numbered result in Magic."))
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$fast_hands, {
+      if (!isTRUE(is_players_turn())) return()
+      showModal(modalDialog(
+        title = "Fast Hands",
+        selectInput(session$ns("fast_hands_choice"), "Bonus action", choices = c(
+          "Use an Object", "Sleight of Hand", "Disarm a simple trap", "Open a lock"
+        )),
+        footer = tagList(modalButton("Cancel"), actionButton(session$ns("confirm_fast_hands"), "Use Bonus Action", class = "btn btn-primary"))
+      ))
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$confirm_fast_hands, {
+      choice <- as.character(input$fast_hands_choice %||% "Use an Object")
+      if (!spend_action_safe("bonus_action", paste("Fast Hands:", choice))) return()
+      removeModal()
+      log_safe(paste0("🖐️ Fast Hands: ", choice, ". Resolve the selected object, tool or check."))
+    }, ignoreInit = TRUE)
+
     natural_magic_spells <- reactive({
       spells <- get_unlocked_class_spells(core$state$char)
       Filter(function(spell) {
         identical(as.character(spell$class %||% ""), "Hanianol Sorcerer") &&
           as.integer(spell$level %||% 0L) == 2L
       }, spells)
+    })
+
+    at_mandred_convergence <- reactive({
+      if (!player_has_feature("seer")) return(FALSE)
+      actors <- encounter_actors_tbl()
+      caster_id <- as.character(core$state$char_id %||% "")
+      caster <- actors[as.character(actors$actor_id) == caster_id, , drop = FALSE]
+      if (!nrow(caster)) return(FALSE)
+      tile <- get_tile_row(map_tiles_rv(), as.integer(caster$x[1]), as.integer(caster$y[1]), map_id())
+      nrow(tile) > 0L && identical(tolower(as.character(tile$terrain[1] %||% "")), "mandred_convergence")
     })
 
     observeEvent(input$open_natural_magic, {
@@ -380,7 +536,11 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         uiOutput(session$ns("natural_spell_preview_ui")),
         footer = tagList(
           modalButton("Cancel"),
-          actionButton(session$ns("cast_natural_spell"), "Cast — 20 Sindre", class = "btn btn-success")
+          actionButton(
+            session$ns("cast_natural_spell"),
+            if (isTRUE(at_mandred_convergence())) "Cast — 10 Sindre (Convergence)" else "Cast — 20 Sindre",
+            class = "btn btn-success"
+          )
         ), easyClose = TRUE
       ))
     }, ignoreInit = TRUE)
@@ -400,7 +560,10 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       char <- validate_character(core$state$char)
       sindre <- suppressWarnings(as.integer(char$resources$sindre$cur %||% 0L))
       if (is.na(sindre)) sindre <- 0L
-      if (sindre < as.integer(spell$cost %||% 20L)) {
+      spell_cost <- as.integer(spell$cost %||% 20L)
+      convergence <- isTRUE(at_mandred_convergence())
+      if (convergence) spell_cost <- max(1L, ceiling(spell_cost / 2))
+      if (sindre < spell_cost) {
         log_safe("⚠️ Not enough Sindre for Natural Magic.")
         return()
       }
@@ -487,7 +650,8 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
           enemy <- enemies[as.character(enemies$enemy_uuid %||% "") == enemy_id, , drop = FALSE]
           save_col <- paste0(save_ability, "_save")
           save_mod <- if (nrow(enemy) && save_col %in% names(enemy)) as.integer(enemy[[save_col]][1] %||% 0L) else 0L
-          rolls <- sample.int(20L, if (isTRUE(spell$resolved_upgrade$save_disadvantage %||% FALSE)) 2L else 1L)
+          save_disadvantage <- convergence || isTRUE(spell$resolved_upgrade$save_disadvantage %||% FALSE)
+          rolls <- sample.int(20L, if (save_disadvantage) 2L else 1L)
           save_roll <- if (length(rolls) > 1L) min(rolls) else rolls[[1L]]
           if (save_roll + save_mod < save_dc) {
             create_encounter_effect(
@@ -503,12 +667,13 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
           }
         }
       }
-      char$resources$sindre$cur <- sindre - as.integer(spell$cost %||% 20L)
+      char$resources$sindre$cur <- sindre - spell_cost
       core$state$char <- char
       log_game_event(
         encounter_id = eid, event_type = "spell", actor_type = "player", actor_id = caster_id,
         payload = list(spell_id = spell_id, spell_name = spell$name, level = hanianol_level,
-                       center_x = center_x, center_y = center_y, radius_ft = radius, resource_cost = spell$cost)
+                       center_x = center_x, center_y = center_y, radius_ft = radius,
+                       resource_cost = spell_cost, convergence = convergence)
       )
       removeModal()
       log_safe(paste0(
@@ -589,7 +754,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     }
     
     can_use_phase <- function() {
-      !is.null(core$state$char) && isTRUE(is_heart_eater())
+      !is.null(core$state$char) && (isTRUE(is_heart_eater()) || player_has_feature("second_story_work"))
     }
     
     known_ac_rv <- reactiveVal(data.frame(
@@ -779,7 +944,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       
       checkboxInput(
         session$ns("phase_move"),
-        "Phase through objects",
+        if (isTRUE(is_heart_eater())) "Shadow Step through obstacles" else "Climb / vault obstacles",
         value = FALSE
       )
     })
@@ -1276,8 +1441,18 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         unique(normalize_damage_type(out))
       }
       
+      resistances <- get_vec("resistances")
+      if (isTRUE(char$status$raging %||% FALSE) && character_has_feature(char, "rage")) {
+        resistances <- unique(c(resistances, "bludgeoning", "piercing", "slashing"))
+        if (identical(character_level_choice(char, "Barbarian", 3L, "spirit_totem"), "Bear")) {
+          resistances <- unique(c(
+            resistances,
+            "acid", "cold", "fire", "force", "lightning", "necrotic", "poison", "radiant", "thunder"
+          ))
+        }
+      }
       list(
-        resistances = get_vec("resistances"),
+        resistances = resistances,
         immunities = get_vec("immunities"),
         vulnerabilities = get_vec("vulnerabilities")
       )
@@ -1364,6 +1539,22 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       total <- sum(vapply(res, function(x) as.integer(x$adjusted_total %||% 0L), integer(1)))
       list(parts = res, total = as.integer(total))
     }
+
+    spellsword_traits <- function(traits, damage_type, attacker_char) {
+      if (!character_has_feature(attacker_char, "spellsword")) return(traits)
+      damage_type <- normalize_damage_type(damage_type)
+      if (!length(damage_type)) return(traits)
+      type <- damage_type[[1L]]
+      immunities <- normalize_damage_type(traits$immunities)
+      resistances <- normalize_damage_type(traits$resistances)
+      if (type %in% immunities) {
+        traits$immunities <- setdiff(immunities, type)
+        traits$resistances <- unique(c(resistances, type))
+      } else if (type %in% resistances) {
+        traits$resistances <- setdiff(resistances, type)
+      }
+      traits
+    }
     
     build_attack_preview <- function(attacker_char, target_char, weapon_row, attacker_name, target_name,
                                      attacker_id, target_id, attacker_type = "player", target_type = NULL,
@@ -1388,12 +1579,21 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
 
       
       attack_bonus <- get_weapon_hit_bonus(attacker_char, weapon_row)
+      active_manoeuvre <- as.character(manoeuvre_active() %||% "")
+      superiority_roll <- 0L
+      if (identical(active_manoeuvre, "Precision Attack")) {
+        superiority_roll <- sample.int(8L, 1L)
+        attack_bonus <- attack_bonus + superiority_roll
+      }
       attack_total <- as.integer(attack_roll + attack_bonus)
       target_ac <- get_effective_actor_ac(target_id, target_type, target_char)
       
       critical_threshold <- if (character_has_feature(attacker_char, "improved_critical")) 19L else 20L
-      is_crit <- attack_roll >= critical_threshold
-      is_hit <- is_crit || (attack_total >= target_ac)
+      base_hit <- attack_total >= target_ac
+      surprise_critical <- character_has_feature(attacker_char, "assassinate") &&
+        "surprised" %in% actor_conditions(target_id) && base_hit
+      is_crit <- attack_roll >= critical_threshold || surprise_critical
+      is_hit <- is_crit || base_hit
       
       damage_parts <- list()
 
@@ -1403,7 +1603,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         extra <- roll_dice_expr(expr)
         list(
           rolls = c(first$rolls, extra$rolls),
-          total = as.integer(first$total + extra$total)
+          total = as.integer(first$total + sum(extra$rolls))
         )
       }
       
@@ -1445,6 +1645,27 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
           total = as.integer(sa$total)
         )
       }
+
+      weapon_stat <- tolower(as.character(weapon_row$stat[1] %||% "str"))
+      if (isTRUE(is_hit) && identical(weapon_stat, "str") &&
+          isTRUE(attacker_char$status$raging %||% FALSE) && character_has_feature(attacker_char, "rage")) {
+        barbarian_level <- sum(vapply(normalise_character_classes(attacker_char), function(entry) {
+          if (identical(as.character(entry$class %||% ""), "Barbarian")) as.integer(entry$level %||% 0L) else 0L
+        }, integer(1)))
+        rage_bonus <- if (barbarian_level >= 16L) 4L else if (barbarian_level >= 9L) 3L else 2L
+        damage_parts <- c(damage_parts, list(list(
+          source = "Rage", expr = as.character(rage_bonus),
+          type = as.character(weapon_row$dmg_type1[1] %||% ""),
+          rolls = integer(), total = rage_bonus
+        )))
+      }
+      if (isTRUE(is_hit) && nzchar(active_manoeuvre) && !identical(active_manoeuvre, "Precision Attack")) {
+        die <- sample.int(8L, 1L)
+        damage_parts <- c(damage_parts, list(list(
+          source = active_manoeuvre, expr = "1d8",
+          type = as.character(weapon_row$dmg_type1[1] %||% ""), rolls = die, total = die
+        )))
+      }
       
       list(
         attacker_id = as.character(attacker_id),
@@ -1459,6 +1680,8 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         attack_rolls = as.integer(attack_rolls),
         attack_adv_mode = adv,
         attack_bonus = as.integer(attack_bonus),
+        superiority_manoeuvre = active_manoeuvre,
+        superiority_roll = superiority_roll,
         attack_total = as.integer(attack_total),
         target_ac = as.integer(target_ac),
         is_hit = isTRUE(is_hit),
@@ -1957,7 +2180,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       
       can_phase <- identical(actor_type, "player") &&
         isTRUE(input$phase_move) &&
-        isTRUE(is_heart_eater())
+        isTRUE(can_use_phase())
       
       dirs <- expand.grid(dx = -1:1, dy = -1:1)
       dirs <- dirs[!(dirs$dx == 0 & dirs$dy == 0), , drop = FALSE]
@@ -2651,6 +2874,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
 
       target_char <- load_actor_for_combat(target_id, "enemy")
       traits <- get_damage_traits(target_char)
+      traits <- spellsword_traits(traits, resolved_damage$damage_type, char)
       adjusted <- apply_damage_traits_to_parts(
         list(list(total = raw_damage, type = resolved_damage$damage_type)),
         traits
@@ -3195,7 +3419,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         if (isTRUE(is_crit)) {
           extra <- roll_dice_expr(dmg_expr)
           dr$rolls <- c(dr$rolls, extra$rolls)
-          dr$total <- as.integer(dr$total + extra$total)
+          dr$total <- as.integer(dr$total + sum(extra$rolls))
         }
         
         damage_parts <- list(list(
@@ -3302,6 +3526,11 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
           identical(as.character(input$attack_adv_mode %||% "auto"), "auto")) {
         adv_mode <- "Advantage"
       }
+      if (isTRUE(attacker_char$status$raging %||% FALSE) &&
+          identical(character_level_choice(attacker_char, "Barbarian", 3L, "spirit_totem"), "Wolf") &&
+          identical(weapon_stat, "str")) {
+        adv_mode <- "Advantage"
+      }
       
       preview <- build_attack_preview(
         attacker_char = attacker_char,
@@ -3317,6 +3546,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       preview$is_opportunity_attack <- isTRUE(current_attack_is_opp())
       
       pending_attack(preview)
+      if (nzchar(as.character(preview$superiority_manoeuvre %||% ""))) manoeuvre_active("")
       
       base_proposed <- if (isTRUE(preview$is_hit)) {
         compute_final_attack(preview)$adjusted$total
