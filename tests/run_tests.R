@@ -10,6 +10,10 @@ session_file <- file.path(
   project_dir,
   "DND APP Drachuri Edition Player_v2", "shared", "session_db_core.R"
 )
+level_file <- file.path(
+  project_dir,
+  "DND APP Drachuri Edition Player_v2", "server", "level_module.R"
+)
 
 test_env <- new.env(parent = baseenv())
 test_env$`%||%` <- function(a, b) if (!is.null(a)) a else b
@@ -33,6 +37,13 @@ load_functions(
     "calculate_hp_damage", "next_combat_turn",
     "empty_player_live_snapshot", "get_player_live_snapshot",
     "build_snapshot_encounter_actors", "start_encounter_combat"
+  )
+)
+load_functions(
+  level_file,
+  c(
+    "normalise_character_classes", "level_options_for",
+    "level_features_for", "apply_character_level_up"
   )
 )
 
@@ -236,6 +247,73 @@ test("Character and Level camp shortcuts route to different modules", {
   camp_source <- paste(readLines(camp_module_file, warn = FALSE), collapse = "\n")
   stopifnot(grepl('character    = "character"', camp_source, fixed = TRUE))
   stopifnot(grepl('level        = "level"', camp_source, fixed = TRUE))
+})
+
+test("level up requires and stores a subclass choice", {
+  class_defs <- list(
+    Rogue = list(
+      levels = list("3" = list(features = list(
+        unlock = list(name = "Roguish Archetype", desc = "Choose an archetype.")
+      ))),
+      subclasses = list(
+        Thief = list(levels = list("3" = list(features = list(
+          hands = list(name = "Fast Hands", desc = "Use objects quickly.")
+        )))),
+        Assassin = list(levels = list())
+      )
+    )
+  )
+  level_options <- list(Rogue = list("3" = list(list(
+    id = "subclass", label = "Choose Archetype", options = c("Thief", "Assassin")
+  ))))
+  character <- list(
+    build = list(class = "Rogue", level = 2L, classes = list(
+      list(class = "Rogue", level = 2L, subclass = "")
+    )),
+    resources = list(hp = list(cur = 12L, max = 15L, temp = 0L))
+  )
+
+  missing_choice <- tryCatch(
+    test_env$apply_character_level_up(
+      character, 1L, class_defs = class_defs, level_options = level_options
+    ),
+    error = identity
+  )
+  stopifnot(inherits(missing_choice, "error"))
+
+  result <- test_env$apply_character_level_up(
+    character, 1L, selections = list(subclass = "Thief"), hp_gain = 5L,
+    class_defs = class_defs, level_options = level_options,
+    timestamp = as.POSIXct("2026-01-01", tz = "UTC")
+  )
+  stopifnot(result$new_level == 3L)
+  stopifnot(identical(result$subclass, "Thief"))
+  stopifnot(identical(result$character$build$classes[[1L]]$subclass, "Thief"))
+  stopifnot(identical(result$character$build$level_choices$Rogue[["3"]]$subclass, "Thief"))
+  stopifnot(identical(result$character$resources$hp$max, 20L))
+  stopifnot(any(vapply(result$features, function(x) identical(x$name, "Fast Hands"), logical(1))))
+})
+
+test("multiclass level up advances only the selected class", {
+  class_defs <- list(
+    Rogue = list(levels = list("4" = list(features = list())), subclasses = list()),
+    Fighter = list(levels = list("3" = list(features = list())), subclasses = list())
+  )
+  character <- list(
+    build = list(class = "Rogue", level = 5L, classes = list(
+      list(class = "Rogue", level = 3L, subclass = ""),
+      list(class = "Fighter", level = 2L, subclass = "")
+    )),
+    resources = list(hp = list(cur = 20L, max = 20L, temp = 0L))
+  )
+  result <- test_env$apply_character_level_up(
+    character, 2L, hp_gain = 4L,
+    class_defs = class_defs, level_options = list(),
+    timestamp = as.POSIXct("2026-01-01", tz = "UTC")
+  )
+  stopifnot(result$character$build$classes[[1L]]$level == 3L)
+  stopifnot(result$character$build$classes[[2L]]$level == 3L)
+  stopifnot(result$character$build$level == 6L)
 })
 
 cat("\n", tests_run, " tests passed.\n", sep = "")
