@@ -266,6 +266,14 @@ test("Character and Level camp shortcuts route to different modules", {
   stopifnot(grepl('level        = "level"', camp_source, fixed = TRUE))
 })
 
+test("Level tab separates unlocked progression from the level-up workflow", {
+  level_source <- paste(readLines(level_file, warn = FALSE), collapse = "\n")
+  stopifnot(grepl('actionButton(ns("open_level_up"), "Level Up"', level_source, fixed = TRUE))
+  stopifnot(grepl('get_unlocked_class_features(display_character_r())', level_source, fixed = TRUE))
+  stopifnot(grepl('get_unlocked_class_spells(display_character_r())', level_source, fixed = TRUE))
+  stopifnot(grepl('output$unlocked_proficiencies_ui', level_source, fixed = TRUE))
+})
+
 test("level up requires and stores a subclass choice", {
   class_defs <- list(
     Rogue = list(

@@ -180,7 +180,7 @@ levelTabUI <- function(id) {
   ns <- NS(id)
 
   tabPanel(
-    title = "Level Up",
+    title = "Level",
     value = "level",
     tags$style(HTML("
       .levelup-wrap{display:grid;grid-template-columns:minmax(260px,.8fr) minmax(360px,1.2fr);gap:14px}
@@ -192,26 +192,43 @@ levelTabUI <- function(id) {
       .levelup-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}.levelup-tag{font-size:10px;font-weight:800;padding:2px 7px;border-radius:999px;background:#efe1c5;color:#60401f;text-transform:uppercase}
       .levelup-next{font-size:22px;font-weight:900;color:#70451f}.levelup-choice{padding:10px;margin-top:10px;border-left:4px solid #b2783d;background:rgba(244,226,191,.45)}
       .levelup-confirm{margin-top:14px;width:100%;font-weight:900}
+      .level-overview{display:grid;grid-template-columns:repeat(2,minmax(260px,1fr));gap:14px}
+      .level-overview-wide{grid-column:1/-1}.level-section-title{display:flex;justify-content:space-between;align-items:center;gap:12px}
+      .level-empty{font-size:12px;opacity:.68;font-style:italic}.level-list{margin:8px 0 0;padding-left:20px}
+      .level-list li{margin-bottom:6px}.level-up-open{font-weight:900;min-width:150px}
       @media(max-width:850px){.levelup-wrap{grid-template-columns:1fr}}
+      @media(max-width:700px){.level-overview{grid-template-columns:1fr}.level-overview-wide{grid-column:auto}}
     ")),
     div(
-      class = "levelup-wrap",
+      class = "level-overview",
       div(
-        class = "levelup-card",
-        h3("Character Progression"),
-        p(class = "levelup-muted", "Choose which existing class gains one level. Multiclass characters can advance either class."),
-        uiOutput(ns("current_classes_ui")),
-        selectInput(ns("advance_class"), "Class to advance", choices = character()),
-        uiOutput(ns("level_summary_ui"))
+        class = "levelup-card level-overview-wide",
+        div(
+          class = "level-section-title",
+          div(h3("Character Progression"), uiOutput(ns("character_level_heading_ui"))),
+          actionButton(ns("open_level_up"), "Level Up", class = "btn btn-primary level-up-open")
+        ),
+        uiOutput(ns("current_classes_ui"))
       ),
       div(
         class = "levelup-card",
-        h3("Next Level"),
-        uiOutput(ns("new_features_ui")),
-        uiOutput(ns("level_choices_ui")),
-        numericInput(ns("hp_gain"), "Maximum HP gained", value = 1L, min = 0L, step = 1L),
-        p(class = "levelup-muted", "This amount is added to both maximum and current HP when the level is confirmed."),
-        uiOutput(ns("confirm_level_up_ui"))
+        h3("Unlocked Features & Abilities"),
+        uiOutput(ns("unlocked_features_ui"))
+      ),
+      div(
+        class = "levelup-card",
+        h3("Skills & Proficiencies"),
+        uiOutput(ns("unlocked_proficiencies_ui"))
+      ),
+      div(
+        class = "levelup-card",
+        h3("Spells & Magical Abilities"),
+        uiOutput(ns("unlocked_spells_ui"))
+      ),
+      div(
+        class = "levelup-card",
+        h3("Defences & Traits"),
+        uiOutput(ns("unlocked_traits_ui"))
       )
     )
   )
@@ -229,6 +246,114 @@ levelTabServer <- function(id, state, restoring, add_log, char_rev) {
       char_rev()
       normalise_character_classes(state$char)
     })
+
+    display_character_r <- reactive({
+      char_rev()
+      apply_unlocked_class_effects(validate_character(state$char))
+    })
+
+    output$character_level_heading_ui <- renderUI({
+      char <- display_character_r()
+      total <- sum(vapply(classes_r(), function(entry) as.integer(entry$level %||% 0L), integer(1)))
+      p(
+        class = "levelup-muted",
+        paste0(as.character(char$meta$name %||% "Character"), " • Total level ", total)
+      )
+    })
+
+    output$unlocked_features_ui <- renderUI({
+      features <- get_unlocked_class_features(display_character_r())
+      if (!length(features)) return(p(class = "level-empty", "No class features are recorded yet."))
+      tags$ul(class = "level-list", lapply(features, function(feature) {
+        tags$li(
+          tags$strong(feature$name %||% "Class feature"),
+          paste0(" — ", feature$desc %||% ""),
+          div(class = "levelup-tags", lapply(feature$tags %||% character(), function(tag) {
+            div(class = "levelup-tag", gsub("_", " ", tag))
+          }))
+        )
+      }))
+    })
+
+    output$unlocked_spells_ui <- renderUI({
+      spells <- get_unlocked_class_spells(display_character_r())
+      if (!length(spells)) return(p(class = "level-empty", "No fixed magical abilities are unlocked yet."))
+      tags$ul(class = "level-list", lapply(spells, function(spell) {
+        tags$li(
+          tags$strong(spell$name %||% "Spell"),
+          paste0(" — ", spell$description %||% ""),
+          div(class = "levelup-tags",
+              div(class = "levelup-tag", paste(spell$action_type %||% "ability")),
+              div(class = "levelup-tag", paste0(spell$cost %||% 0L, " Sindre")),
+              if (!identical(spell$range_ft %||% 0L, 0L)) {
+                div(class = "levelup-tag", paste0(spell$range_ft, " ft"))
+              })
+        )
+      }))
+    })
+
+    output$unlocked_proficiencies_ui <- renderUI({
+      char <- display_character_r()
+      skills <- char$prof$skills %||% list()
+      skill_lines <- unlist(Map(function(name, rank) {
+        rank <- if (isTRUE(rank)) "Proficient" else as.character(rank %||% "")
+        if (!nzchar(rank) || identical(tolower(rank), "none") || identical(rank, "FALSE")) return(character())
+        paste0(tools::toTitleCase(gsub("_", " ", name)), " — ", rank)
+      }, names(skills), skills), use.names = FALSE)
+      tools_known <- names(Filter(function(value) {
+        isTRUE(value) || (is.character(value) && length(value) && nzchar(value[[1L]]))
+      }, char$prof$tools %||% list()))
+      if (!length(skill_lines) && !length(tools_known)) {
+        return(p(class = "level-empty", "No skill or tool proficiencies are recorded yet."))
+      }
+      tagList(
+        if (length(skill_lines)) tagList(tags$strong("Skills"), tags$ul(class = "level-list", lapply(skill_lines, tags$li))),
+        if (length(tools_known)) tagList(tags$strong("Tools"), tags$ul(class = "level-list", lapply(tools_known, function(x) tags$li(tools::toTitleCase(gsub("_", " ", x))))))
+      )
+    })
+
+    output$unlocked_traits_ui <- renderUI({
+      char <- display_character_r()
+      profile <- char$combat_profile %||% list()
+      trait <- function(label, values) {
+        values <- unique(as.character(values %||% character()))
+        tags$li(tags$strong(paste0(label, ": ")), if (length(values)) paste(gsub("_", " ", values), collapse = ", ") else "None")
+      }
+      tags$ul(
+        class = "level-list",
+        trait("Damage resistances", profile$resistances),
+        trait("Damage immunities", profile$immunities),
+        trait("Damage vulnerabilities", profile$vulnerabilities),
+        trait("Condition immunities", profile$condition_immunities)
+      )
+    })
+
+    observeEvent(input$open_level_up, {
+      showModal(modalDialog(
+        title = "Level Up Character",
+        size = "l", easyClose = TRUE,
+        div(
+          class = "levelup-wrap",
+          div(
+            class = "levelup-card",
+            h3("Choose Class"),
+            p(class = "levelup-muted", "Choose which existing class gains one level."),
+            selectInput(session$ns("advance_class"), "Class to advance", choices = character()),
+            uiOutput(session$ns("level_summary_ui"))
+          ),
+          div(
+            class = "levelup-card",
+            h3("Next Level"),
+            uiOutput(session$ns("new_features_ui")),
+            uiOutput(session$ns("level_choices_ui")),
+            numericInput(session$ns("hp_gain"), "Maximum HP gained", value = 1L, min = 0L, step = 1L),
+            p(class = "levelup-muted", "Added to both maximum and current HP."),
+            uiOutput(session$ns("confirm_level_up_ui"))
+          )
+        ),
+        footer = modalButton("Close")
+      ))
+    }, ignoreInit = TRUE)
 
     observe({
       classes <- classes_r()
@@ -401,6 +526,7 @@ levelTabServer <- function(id, state, restoring, add_log, char_rev) {
       }
 
       state$char <- result$character
+      removeModal()
       if (is.function(char_rev)) char_rev(isolate(char_rev()) + 1L)
       log_safe(paste0(
         "⬆️ ", result$class_name, " advanced to level ", result$new_level,
