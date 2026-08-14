@@ -265,12 +265,18 @@ levelTabServer <- function(id, state, restoring, add_log, char_rev) {
       features <- get_unlocked_class_features(display_character_r())
       if (!length(features)) return(p(class = "level-empty", "No class features are recorded yet."))
       tags$ul(class = "level-list", lapply(features, function(feature) {
+        integration <- feature$integration %||% list(status = "unreviewed", note = "")
         tags$li(
           tags$strong(feature$name %||% "Class feature"),
           paste0(" — ", feature$desc %||% ""),
           div(class = "levelup-tags", lapply(feature$tags %||% character(), function(tag) {
             div(class = "levelup-tag", gsub("_", " ", tag))
-          }))
+          })),
+          div(
+            class = "levelup-muted",
+            paste0("Integration: ", tools::toTitleCase(integration$status %||% "unreviewed"),
+                   if (nzchar(integration$note %||% "")) paste0(" — ", integration$note) else "")
+          )
         )
       }))
     })

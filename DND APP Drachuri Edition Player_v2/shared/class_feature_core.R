@@ -3,6 +3,71 @@ CLASS_FEATURE_TAGS <- c(
   "reaction", "movement", "healing", "utility", "subclass"
 )
 
+CLASS_FEATURE_INTEGRATION <- list(
+  "Rogue::1::sneak_attack" = list(
+    status = "partial", note = "Damage and level scaling work in combat; eligibility and once-per-turn use are still player-confirmed."
+  ),
+  "Rogue::1::thieves_cant" = list(
+    status = "manual", note = "A narrative language feature; shown on the sheet and adjudicated through roleplay."
+  ),
+  "Fighter::1::fighting_style" = list(
+    status = "missing", note = "The style choice is not saved and its bonus is not yet applied."
+  ),
+  "Fighter::1::second_wind" = list(
+    status = "missing", note = "Healing and once-per-rest recharge are not yet available as an action."
+  ),
+  "Barbarian::1::rage" = list(
+    status = "partial", note = "Conditional resistances are defined; combat still needs a Rage toggle, damage bonus and Strength advantage."
+  ),
+  "Barbarian::1::unarmoured_defence" = list(
+    status = "working", note = "While no armour is equipped, AC automatically uses 10 + Dexterity + Constitution modifiers."
+  ),
+  "Hanianol Sorcerer::1::blood_magic" = list(
+    status = "working", note = "Natural Sindre recovery is disabled for Hanianol characters."
+  ),
+  "Hanianol Sorcerer::1::fae_blooded" = list(
+    status = "working", note = "Survival Expertise is derived automatically and Bloodthirsty is unlocked."
+  ),
+  "Hanianol Sorcerer::1::bloodthirsty" = list(
+    status = "partial", note = "The bite attack works in combat; recording blood intake and Sindre restoration remains manual."
+  ),
+  "Na'Haran Sorcerer::1::desert_wild_magic" = list(
+    status = "partial", note = "The wild-magic casting system works; the reduced rock and mineral difficulty is not yet automatic."
+  ),
+  "Na'Haran Sorcerer::1::survival_mastery" = list(
+    status = "working", note = "Survival Expertise is derived automatically."
+  ),
+  "Na'Haran Sorcerer::1::water_channeler" = list(
+    status = "working", note = "Combat targeting, Sindre cost and percentage damage are automated."
+  )
+)
+
+class_feature_integration <- function(class_name, level, feature_id) {
+  key <- paste(class_name, as.integer(level), feature_id, sep = "::")
+  CLASS_FEATURE_INTEGRATION[[key]] %||% list(
+    status = "unreviewed", note = "This feature has not yet received a mechanical integration review."
+  )
+}
+
+audit_class_level_integration <- function(level, class_defs = CLASSES) {
+  level <- as.integer(level)
+  rows <- list()
+  for (class_name in names(class_defs)) {
+    features <- class_defs[[class_name]]$levels[[as.character(level)]]$features %||% list()
+    for (feature_id in names(features)) {
+      review <- class_feature_integration(class_name, level, feature_id)
+      rows[[length(rows) + 1L]] <- data.frame(
+        class = class_name, level = level, feature_id = feature_id,
+        feature = as.character(features[[feature_id]]$name %||% feature_id),
+        status = as.character(review$status), note = as.character(review$note),
+        stringsAsFactors = FALSE
+      )
+    }
+  }
+  if (!length(rows)) return(data.frame())
+  do.call(rbind, rows)
+}
+
 # Canonical rules for fixed class magic. Descriptions in game_data.R remain the
 # player-facing lore; these records are deliberately explicit enough for the
 # combat engine to resolve without interpreting prose.
@@ -372,6 +437,7 @@ class_feature_metadata <- function(class_name, level, feature_id, feature, subcl
     class = as.character(class_name),
     subclass = as.character(subclass %||% ""),
     level = as.integer(level),
+    integration = class_feature_integration(class_name, level, feature_id),
     action = override$action %||% NULL,
     effects = override$effects %||% NULL
   )

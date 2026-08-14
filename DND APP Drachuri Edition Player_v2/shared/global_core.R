@@ -578,9 +578,19 @@ restore_sindre <- function(x, hours = 0, full = FALSE, add_log = NULL) {
   regen <- max(0, regen)
   
   race <- tolower(trimws(x$meta$race %||% ""))
+  class_entries <- x$build$classes %||% list()
+  class_names <- if (is.list(class_entries) && length(class_entries)) {
+    vapply(class_entries, function(entry) {
+      tolower(trimws(as.character(entry$class %||% "")))
+    }, character(1))
+  } else {
+    tolower(trimws(as.character(x$build$class %||% "")))
+  }
+  uses_blood_magic <- "hanianol sorcerer" %in% class_names
   
-  # Tylwyth Teg do not naturally regenerate Sindre this way
-  if (race == "tylwyth teg") {
+  # Hanianol Blood Magic cannot regenerate Sindre naturally. Preserve the
+  # original Tylwyth Teg restriction for legacy characters as well.
+  if (uses_blood_magic || race == "tylwyth teg") {
     return(x)
   }
   
@@ -1635,9 +1645,24 @@ armor_meta_defaults_global <- function(meta = NULL) {
 calc_auto_ac_for_char <- function(char) {
   char <- validate_character(char)
   df <- inventory_normalize(char$inventory$items)
+
+  class_entries <- char$build$classes %||% list()
+  class_names <- if (is.list(class_entries) && length(class_entries)) {
+    vapply(class_entries, function(entry) {
+      tolower(trimws(as.character(entry$class %||% "")))
+    }, character(1))
+  } else {
+    tolower(trimws(as.character(char$build$class %||% "")))
+  }
+  has_unarmoured_defence <- "barbarian" %in% class_names
+  unarmoured_ac <- function() {
+    ac <- 10L + get_character_ability_mod(char, "dex")
+    if (has_unarmoured_defence) ac <- ac + get_character_ability_mod(char, "con")
+    as.integer(ac)
+  }
   
   if (!is.data.frame(df) || nrow(df) == 0) {
-    return(10 + get_character_ability_mod(char, "dex"))
+    return(unarmoured_ac())
   }
   
   equipped <- as.logical(df$equipped)
@@ -1657,7 +1682,7 @@ calc_auto_ac_for_char <- function(char) {
   pb <- get_character_prof_bonus(char)
   
   if (nrow(arm) == 0) {
-    return(10 + dex_mod)
+    return(unarmoured_ac())
   }
   
   row <- arm[1, , drop = FALSE]

@@ -34,7 +34,7 @@ load_functions <- function(path, names) {
   }
 }
 
-load_functions(global_file, c("character_save_payload"))
+load_functions(global_file, c("character_save_payload", "restore_sindre", "calc_auto_ac_for_char"))
 load_functions(
   session_file,
   c(
@@ -46,7 +46,9 @@ load_functions(
 load_functions(
   feature_file,
   c(
-    "CLASS_FEATURE_TAGS", "CLASS_SPELL_DEFINITIONS",
+    "CLASS_FEATURE_TAGS", "CLASS_FEATURE_INTEGRATION",
+    "class_feature_integration", "audit_class_level_integration",
+    "CLASS_SPELL_DEFINITIONS",
     "character_level_choice", "class_spellcasting_ability",
     "character_proficiency_bonus", "class_spell_save_dc", "spell_choice_is_unlocked",
     "spell_subclass_is_unlocked",
@@ -272,6 +274,62 @@ test("Level tab separates unlocked progression from the level-up workflow", {
   stopifnot(grepl('get_unlocked_class_features(display_character_r())', level_source, fixed = TRUE))
   stopifnot(grepl('get_unlocked_class_spells(display_character_r())', level_source, fixed = TRUE))
   stopifnot(grepl('output$unlocked_proficiencies_ui', level_source, fixed = TRUE))
+})
+
+test("every level-one class feature has an integration review", {
+  class_defs <- list(
+    Rogue = list(levels = list("1" = list(features = list(
+      sneak_attack = list(name = "Sneak Attack"), thieves_cant = list(name = "Thieves' Cant")
+    )))),
+    Fighter = list(levels = list("1" = list(features = list(
+      fighting_style = list(name = "Fighting Style"), second_wind = list(name = "Second Wind")
+    )))),
+    Barbarian = list(levels = list("1" = list(features = list(
+      rage = list(name = "Rage"), unarmoured_defence = list(name = "Unarmoured Defence")
+    )))),
+    "Hanianol Sorcerer" = list(levels = list("1" = list(features = list(
+      blood_magic = list(name = "Blood Magic"), fae_blooded = list(name = "Fae Blooded"),
+      bloodthirsty = list(name = "Bloodthirsty Action")
+    )))),
+    "Na'Haran Sorcerer" = list(levels = list("1" = list(features = list(
+      desert_wild_magic = list(name = "Desert Wild Magic"),
+      survival_mastery = list(name = "Survival Mastery"),
+      water_channeler = list(name = "Water Channeler")
+    ))))
+  )
+  audit <- test_env$audit_class_level_integration(1L, class_defs)
+  stopifnot(nrow(audit) == 12L)
+  stopifnot(!any(audit$status == "unreviewed"))
+  stopifnot(identical(audit$status[audit$feature_id == "water_channeler"], "working"))
+})
+
+test("Hanianol Blood Magic prevents natural Sindre recovery", {
+  test_env$validate_character <- identity
+  hanianol <- list(
+    meta = list(race = "Human"),
+    build = list(class = "Hanianol Sorcerer"),
+    resources = list(sindre = list(cur = 5, total = 30, regen = 4))
+  )
+  other <- hanianol
+  other$build$class <- "Fighter"
+  stopifnot(test_env$restore_sindre(hanianol, hours = 6)$resources$sindre$cur == 5)
+  stopifnot(test_env$restore_sindre(other, hours = 6)$resources$sindre$cur > 5)
+})
+
+test("Barbarian Unarmoured Defence adds Constitution to AC", {
+  test_env$validate_character <- identity
+  test_env$inventory_normalize <- function(items) data.frame()
+  test_env$get_character_ability_mod <- function(char, stat) {
+    floor((as.integer(char$abilities[[stat]]) - 10L) / 2L)
+  }
+  barbarian <- list(
+    build = list(class = "Barbarian"), abilities = list(dex = 14L, con = 16L),
+    inventory = list(items = data.frame())
+  )
+  fighter <- barbarian
+  fighter$build$class <- "Fighter"
+  stopifnot(test_env$calc_auto_ac_for_char(barbarian) == 15L)
+  stopifnot(test_env$calc_auto_ac_for_char(fighter) == 12L)
 })
 
 test("level up requires and stores a subclass choice", {
