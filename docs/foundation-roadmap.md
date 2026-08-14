@@ -8,14 +8,15 @@ This is the agreed order of work before substantial module development.
 - Make the current tested application the baseline commit.
 - Use small commits and a named branch for substantial module upgrades.
 
-## 2. Database schema migrations — implemented and locally verified
+## 2. Database schema migrations — complete
 
 - Add ordered SQL migrations shared by Supabase and the local PostgreSQL test environment.
 - Record which migrations have been applied.
 - Provide a safe migration command and document database backup expectations.
 
-Remaining live step: take/confirm a Supabase backup, then run the one-time
-validated `--baseline` command against Supabase.
+Supabase was dumped locally and its archive catalogue verified before the
+one-time validated baseline was recorded. Live migration status now reports
+schema `001` applied and up to date.
 
 ## 3. Complete multiplayer regression
 
