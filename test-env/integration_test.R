@@ -33,3 +33,7 @@ stopifnot(identical(after$combat$active_actor_id[[1L]], "1002"))
 
 cat("PASS: local PostgreSQL snapshot, HP sync, and turn advancement\n")
 cat("Snapshot:", elapsed_ms, "ms,", payload_kib, "KiB\n")
+
+stopifnot(length(.drachuri_db$checked_out) == 0L)
+close_db_pool()
+stopifnot(is.null(.drachuri_db$pool))

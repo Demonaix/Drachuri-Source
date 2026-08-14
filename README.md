@@ -63,6 +63,18 @@ process. If `pool` has not been restored yet, the code temporarily falls back
 to one reusable PostgreSQL connection rather than reconnecting for every poll.
 The connection resources are closed when the Shiny process stops.
 
+## Database migrations
+
+Ordered schema migrations live under `database/migrations/`. Check migration
+status without making changes using:
+
+```sh
+sh scripts/migrate_database.sh --status
+```
+
+See `docs/database-migrations.md` before baselining Supabase or adding a schema
+change.
+
 ## Tests and profiling
 
 Run the dependency-light stability tests with:

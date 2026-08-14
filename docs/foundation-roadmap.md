@@ -2,17 +2,20 @@
 
 This is the agreed order of work before substantial module development.
 
-## 1. Local Git version history
+## 1. Local Git version history — complete
 
 - Create a source archive before initialising the repository.
 - Make the current tested application the baseline commit.
 - Use small commits and a named branch for substantial module upgrades.
 
-## 2. Database schema migrations
+## 2. Database schema migrations — implemented and locally verified
 
 - Add ordered SQL migrations shared by Supabase and the local PostgreSQL test environment.
 - Record which migrations have been applied.
 - Provide a safe migration command and document database backup expectations.
+
+Remaining live step: take/confirm a Supabase backup, then run the one-time
+validated `--baseline` command against Supabase.
 
 ## 3. Complete multiplayer regression
 
