@@ -39,6 +39,27 @@ CLASS_FEATURE_INTEGRATION <- list(
   ),
   "Na'Haran Sorcerer::1::water_channeler" = list(
     status = "working", note = "Combat targeting, Sindre cost and percentage damage are automated."
+  ),
+  "Rogue::2::cunning_action" = list(
+    status = "partial", note = "Dash movement exists, but the app does not yet track actions versus bonus actions; Disengage and Hide are not implemented."
+  ),
+  "Fighter::2::action_surge" = list(
+    status = "missing", note = "Requires per-turn action tracking before an additional action can be granted and enforced."
+  ),
+  "Barbarian::2::reckless_attack" = list(
+    status = "missing", note = "Combat does not yet apply advantage to the Barbarian and reciprocal advantage to attackers."
+  ),
+  "Barbarian::2::danger_sense" = list(
+    status = "partial", note = "Advantage can be rolled manually on the Skills screen; automatic visible-effect detection is not yet available."
+  ),
+  "Hanianol Sorcerer::2::natural_magic" = list(
+    status = "partial", note = "Medicine proficiency and speciality selection work; fixed Deep Magic is defined but not yet castable through combat."
+  ),
+  "Na'Haran Sorcerer::2::mind_bender" = list(
+    status = "partial", note = "Its cost, target and Persuasion advantage are structured; activation is not yet connected to a skill roll."
+  ),
+  "Na'Haran Sorcerer::2::detect_undead" = list(
+    status = "partial", note = "Its cost, radius and detection rules are structured; encounter creature-type sensing is not yet connected."
   )
 )
 

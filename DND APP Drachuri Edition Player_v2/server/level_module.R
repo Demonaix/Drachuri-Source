@@ -347,19 +347,45 @@ levelTabServer <- function(id, state, restoring, add_log, char_rev) {
       has_fighter && !nzchar(selected)
     })
 
+    needs_natural_specialty_r <- reactive({
+      char <- display_character_r()
+      has_hanianol_two <- any(vapply(classes_r(), function(entry) {
+        identical(as.character(entry$class %||% ""), "Hanianol Sorcerer") &&
+          as.integer(entry$level %||% 0L) >= 2L
+      }, logical(1)))
+      selected <- as.character(
+        char$build$level_choices[["Hanianol Sorcerer"]][["2"]]$natural_specialty %||% ""
+      )
+      has_hanianol_two && !nzchar(selected)
+    })
+
     output$starting_choices_ui <- renderUI({
-      if (!needs_fighting_style_r()) return(NULL)
+      needs_style <- needs_fighting_style_r()
+      needs_natural <- needs_natural_specialty_r()
+      if (!needs_style && !needs_natural) return(NULL)
       style_choice <- level_options_for("Fighter", 1L)[[1L]]
+      natural_choices <- level_options_for("Hanianol Sorcerer", 2L)
+      natural_choice <- Filter(function(choice) {
+        identical(as.character(choice$id %||% ""), "natural_specialty")
+      }, natural_choices)
       tagList(
         tags$hr(),
         div(class = "alert alert-warning",
             tags$strong("Complete starting class choices"),
             p("This character predates the guided progression system. Save these choices once to activate their mechanics.")),
-        div(
+        if (needs_style) div(
           class = "levelup-choice",
           selectInput(session$ns("starting_fighting_style"), "Fighter — Fighting Style",
                       choices = c("Choose…" = "", style_choice$options)),
           actionButton(session$ns("save_starting_fighting_style"),
+                       "Save Choice", class = "btn btn-primary btn-sm")
+        ),
+        if (needs_natural && length(natural_choice)) div(
+          class = "levelup-choice",
+          selectInput(session$ns("starting_natural_specialty"),
+                      "Hanianol Sorcerer — Natural Magic Specialty",
+                      choices = c("Choose…" = "", natural_choice[[1L]]$options)),
+          actionButton(session$ns("save_starting_natural_specialty"),
                        "Save Choice", class = "btn btn-primary btn-sm")
         )
       )
@@ -381,6 +407,31 @@ levelTabServer <- function(id, state, restoring, add_log, char_rev) {
       if (is.function(char_rev)) char_rev(isolate(char_rev()) + 1L)
       log_safe(paste0("⚔️ Fighter selected ", selected, "."))
       showNotification(paste("Saved", selected), type = "message")
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$save_starting_natural_specialty, {
+      selected <- as.character(input$starting_natural_specialty %||% "")
+      natural_choices <- Filter(function(choice) {
+        identical(as.character(choice$id %||% ""), "natural_specialty")
+      }, level_options_for("Hanianol Sorcerer", 2L))
+      allowed <- if (length(natural_choices)) {
+        as.character(natural_choices[[1L]]$options %||% character())
+      } else character()
+      if (!selected %in% allowed) {
+        showNotification("Choose a Natural Magic Specialty before saving.", type = "error")
+        return()
+      }
+      char <- validate_character(state$char)
+      char$build$level_choices <- char$build$level_choices %||% list()
+      char$build$level_choices[["Hanianol Sorcerer"]] <-
+        char$build$level_choices[["Hanianol Sorcerer"]] %||% list()
+      char$build$level_choices[["Hanianol Sorcerer"]][["2"]] <-
+        char$build$level_choices[["Hanianol Sorcerer"]][["2"]] %||% list()
+      char$build$level_choices[["Hanianol Sorcerer"]][["2"]]$natural_specialty <- selected
+      state$char <- char
+      if (is.function(char_rev)) char_rev(isolate(char_rev()) + 1L)
+      log_safe(paste0("🌿 Hanianol Sorcerer selected ", selected, " Natural Magic."))
+      showNotification(paste("Saved", selected, "Natural Magic"), type = "message")
     }, ignoreInit = TRUE)
 
     observeEvent(input$open_level_up, {

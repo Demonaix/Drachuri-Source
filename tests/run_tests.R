@@ -308,6 +308,26 @@ test("every level-one class feature has an integration review", {
   stopifnot(identical(audit$status[audit$feature_id == "water_channeler"], "working"))
 })
 
+test("every level-two class feature has an integration review", {
+  class_defs <- list(
+    Rogue = list(levels = list("2" = list(features = list(cunning_action = list(name = "Cunning Action"))))),
+    Fighter = list(levels = list("2" = list(features = list(action_surge = list(name = "Action Surge"))))),
+    Barbarian = list(levels = list("2" = list(features = list(
+      reckless_attack = list(name = "Reckless Attack"), danger_sense = list(name = "Danger Sense")
+    )))),
+    "Hanianol Sorcerer" = list(levels = list("2" = list(features = list(
+      natural_magic = list(name = "Natural Magic")
+    )))),
+    "Na'Haran Sorcerer" = list(levels = list("2" = list(features = list(
+      mind_bender = list(name = "Mind Bender"), detect_undead = list(name = "Detect Undead")
+    ))))
+  )
+  audit <- test_env$audit_class_level_integration(2L, class_defs)
+  stopifnot(nrow(audit) == 7L)
+  stopifnot(!any(audit$status == "unreviewed"))
+  stopifnot(identical(audit$status[audit$feature_id == "action_surge"], "missing"))
+})
+
 test("Hanianol Blood Magic prevents natural Sindre recovery", {
   test_env$validate_character <- identity
   hanianol <- list(
