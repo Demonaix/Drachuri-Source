@@ -149,8 +149,6 @@ server_player <- function(input, output, session) {
 
     sid <- suppressWarnings(as.integer(core$state$active_session_id %||% NA))
     cid <- as.character(core$state$char_id %||% "")
-    eid <- suppressWarnings(as.integer(core$state$active_encounter_id %||% NA))
-
     if (isTRUE(core$state$offline_mode) || is.na(sid) || sid < 1 || !nzchar(cid)) {
       empty <- empty_player_live_snapshot()
       empty_signature <- serialize(empty[names(empty) != "fetched_at"], NULL, version = 2)
@@ -163,7 +161,9 @@ server_player <- function(input, output, session) {
 
     snapshot_started <- proc.time()[["elapsed"]]
     snapshot <- tryCatch(
-      get_player_live_snapshot(sid, cid, encounter_id = eid, event_limit = 20L),
+      # The control app owns game_sessions.active_encounter_id. Always let the
+      # session row select the encounter so players follow DM changes.
+      get_player_live_snapshot(sid, cid, encounter_id = NULL, event_limit = 20L),
       error = function(e) {
         message("Live snapshot refresh failed: ", conditionMessage(e))
         NULL
@@ -182,6 +182,13 @@ server_player <- function(input, output, session) {
     if (!identical(signature, isolate(live_snapshot_signature()))) {
       live_snapshot_signature(signature)
       live_snapshot(snapshot)
+
+      session_row <- snapshot$session %||% data.frame()
+      if (is.data.frame(session_row) && nrow(session_row) > 0 &&
+          "active_encounter_id" %in% names(session_row)) {
+        active_eid <- suppressWarnings(as.integer(session_row$active_encounter_id[1] %||% NA))
+        core$state$active_encounter_id <- if (is.na(active_eid)) NULL else active_eid
+      }
     }
   })
 

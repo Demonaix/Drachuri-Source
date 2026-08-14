@@ -32,7 +32,7 @@ load_functions(
   c(
     "calculate_hp_damage", "next_combat_turn",
     "empty_player_live_snapshot", "get_player_live_snapshot",
-    "build_snapshot_encounter_actors"
+    "build_snapshot_encounter_actors", "start_encounter_combat"
   )
 )
 
@@ -173,6 +173,47 @@ test("combat map renderer uses the current encounter actors reactive", {
   combat_source <- paste(readLines(combat_module_file, warn = FALSE), collapse = "\n")
   stopifnot(grepl("actors_lookup <- encounter_actors_tbl()", combat_source, fixed = TRUE))
   stopifnot(!grepl("encounter_actors_r()", combat_source, fixed = TRUE))
+})
+
+test("starting combat always rolls fresh initiative", {
+  calls <- new.env(parent = emptyenv())
+  calls$rolls <- 0L
+
+  test_env$get_encounter_actors <- function(encounter_id) {
+    data.frame(
+      actor_id = c("stale-first", "stale-second"),
+      actor_type = c("player", "enemy"),
+      turn_order = c(1L, 2L),
+      is_active = TRUE,
+      stringsAsFactors = FALSE
+    )
+  }
+  test_env$roll_encounter_initiative <- function(encounter_id, core_state = NULL) {
+    calls$rolls <- calls$rolls + 1L
+    data.frame(
+      actor_id = c("fresh-first", "fresh-second"),
+      actor_type = c("enemy", "player"),
+      turn_order = c(1L, 2L),
+      stringsAsFactors = FALSE
+    )
+  }
+  test_env$set_combat_state <- function(...) TRUE
+  test_env$log_game_event <- function(...) TRUE
+
+  result <- test_env$start_encounter_combat(18L)
+  stopifnot(calls$rolls == 1L)
+  stopifnot(identical(result$actor_id[[1L]], "fresh-first"))
+})
+
+test("player combat UI has no encounter or combat-start administration", {
+  combat_module_file <- file.path(
+    project_dir,
+    "DND APP Drachuri Edition Player_v2", "server", "debug_combat_module.R"
+  )
+  combat_source <- paste(readLines(combat_module_file, warn = FALSE), collapse = "\n")
+  stopifnot(!grepl('ns("encounter_id")', combat_source, fixed = TRUE))
+  stopifnot(!grepl('ns("roll_init")', combat_source, fixed = TRUE))
+  stopifnot(!grepl('ns("init_combat")', combat_source, fixed = TRUE))
 })
 
 cat("\n", tests_run, " tests passed.\n", sep = "")

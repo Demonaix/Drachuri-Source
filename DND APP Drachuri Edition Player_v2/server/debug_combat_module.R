@@ -31,11 +31,7 @@ debugCombatUI <- function(id) {
               
               div(
                 class = "combat-control-row",
-                numericInput(ns("encounter_id"), "Encounter ID", value = 1, min = 1, width = "130px"),
                 actionButton(ns("refresh"), "Refresh", class = "btn btn-default"),
-                actionButton(ns("bind_encounter"), "Use Encounter", class = "btn btn-default"),
-                actionButton(ns("roll_init"), "Roll Initiative", class = "btn btn-primary"),
-                actionButton(ns("init_combat"), "Start Combat", class = "btn btn-primary"),
                 actionButton(ns("end_turn"), "End Turn", class = "btn btn-warning")
               ),
               
@@ -403,7 +399,18 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     # Current encounter
     # --------------------------------------------------
     current_encounter_id <- reactive({
-      eid <- suppressWarnings(as.integer(input$encounter_id %||% NA))
+      snapshot <- snapshot_data()
+      session_row <- snapshot$session %||% data.frame()
+      eid <- NA_integer_
+
+      if (is.data.frame(session_row) && nrow(session_row) > 0 &&
+          "active_encounter_id" %in% names(session_row)) {
+        eid <- suppressWarnings(as.integer(session_row$active_encounter_id[1] %||% NA))
+      }
+
+      if (is.na(eid)) {
+        eid <- suppressWarnings(as.integer(core$state$active_encounter_id %||% NA))
+      }
       if (is.na(eid) || eid < 1) return(NA_integer_)
       eid
     })
@@ -2058,33 +2065,6 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     
 
     
-    observeEvent(input$roll_init, {
-      eid <- current_encounter_id()
-      if (is.na(eid)) {
-        log_safe("⚠️ Choose an encounter first.")
-        return()
-      }
-      
-      init_df <- roll_encounter_initiative(
-        encounter_id = eid,
-        core_state = core$state
-      )
-      
-      if (!is.data.frame(init_df) || nrow(init_df) == 0) {
-        log_safe("⚠️ Could not roll initiative.")
-        return()
-      }
-      
-      top_name <- as.character(init_df$display_name[1] %||% "Unknown")
-      top_score <- as.integer(init_df$initiative_total[1] %||% 0)
-      
-      log_safe(paste0("🎲 Initiative rolled. ", top_name, " leads on ", top_score, "."))
-      bump_positions()
-      bump_events()
-      bump_initiative()
-      bump_map_visual()
-    }, ignoreInit = TRUE)
-    
     output$initiative_ui <- renderUI({
       actors <- encounter_actors_tbl()
       aid <- active_actor_id()
@@ -2894,107 +2874,6 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     # --------------------------------------------------
     observeEvent(input$refresh, {
       bump_refresh()
-    }, ignoreInit = TRUE)
-    
-    observeEvent(input$bind_encounter, {
-      
-      eid <- isolate(current_encounter_id())
-      cid <- as.character(isolate(core$state$char_id) %||% "")
-      
-      if (is.na(eid)) {
-        log_safe("⚠️ Choose an encounter first.")
-        return()
-      }
-      
-      if (!nzchar(cid)) {
-        log_safe("⚠️ No character is currently loaded in player state.")
-        return()
-      }
-      
-      actors <- tryCatch(
-        get_encounter_actors(eid),
-        error = function(e) data.frame()
-      )
-      
-      row <- actors[
-        as.character(actors$actor_type %||% "") == "player" &
-          as.character(actors$actor_id %||% "") == cid,
-        ,
-        drop = FALSE
-      ]
-      
-      if (!is.data.frame(row) || nrow(row) == 0) {
-        log_safe("⚠️ Current loaded character is not part of this encounter.")
-        return()
-      }
-      
-      enc <- tryCatch(get_encounter(eid), error = function(e) data.frame())
-      
-      sid <- NA_integer_
-      if (is.data.frame(enc) && nrow(enc) > 0) {
-        sid <- suppressWarnings(as.integer(enc$session_id[1] %||% NA))
-      }
-      
-      isolate({
-        core$state$active_encounter_id <- eid
-        
-        if (!is.na(sid) && sid > 0) {
-          core$state$active_session_id <- sid
-        }
-      })
-      
-      log_safe(paste0("🔗 Bound combat to encounter ", eid, "."))
-      
-     later::later(function() {
-       bump_refresh()
-       bump_initiative()
-     }, delay = 0.05)
-
-    }, ignoreInit = TRUE)
-    
-    observeEvent(input$init_combat, {
-      eid <- current_encounter_id()
-      if (is.na(eid)) {
-        log_safe("⚠️ Choose an encounter first.")
-        return()
-      }
-      
-      known_ac_rv(data.frame(
-        target_id = character(),
-        lower = integer(),
-        upper = integer(),
-        stringsAsFactors = FALSE
-      ))
-      
-      init_df <- start_encounter_combat(
-        encounter_id = eid,
-        core_state = core$state
-      )
-      
-      if (!is.data.frame(init_df) || nrow(init_df) == 0) {
-        log_safe("⚠️ Could not initialise combat.")
-        return()
-      }
-      
-      enc <- tryCatch(get_encounter(eid), error = function(e) data.frame())
-      sid <- NA_integer_
-      if (is.data.frame(enc) && nrow(enc) > 0) {
-        sid <- suppressWarnings(as.integer(enc$session_id[1] %||% NA))
-      }
-      
-      turn_move_ft(0L)
-      core$state$active_encounter_id <- eid
-      if (!is.na(sid) && sid > 0) {
-        core$state$active_session_id <- sid
-      }
-      
-      first_name <- as.character(init_df$display_name[1] %||% "Unknown")
-      log_safe(paste0("⚔️ Combat initialised. ", first_name, " acts first."))
-      
-      bump_positions()
-      bump_events()
-      bump_initiative()
-      bump_map_visual()
     }, ignoreInit = TRUE)
     
     observeEvent(input$end_turn, {

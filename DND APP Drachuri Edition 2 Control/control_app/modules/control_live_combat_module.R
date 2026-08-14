@@ -344,8 +344,7 @@ controlLiveCombatUI <- function(id) {
           div(
             class = "live-combat-actions",
             actionButton(ns("refresh"), "Refresh", class = "btn btn-default"),
-            actionButton(ns("bind_encounter"), "Bind Active Encounter", class = "btn btn-default"),
-            actionButton(ns("roll_init"), "Roll Initiative", class = "btn btn-primary"),
+            actionButton(ns("bind_encounter"), "Set Active Encounter", class = "btn btn-default"),
             actionButton(ns("start_combat"), "Start Combat", class = "btn btn-primary"),
             actionButton(ns("end_turn"), "End Turn", class = "btn btn-warning"),
             div(
@@ -2458,10 +2457,15 @@ limit 1
       if (!is.na(sid) && sid > 0L) {
         ctrl$session_id <- sid
         ctrl$active_session_id <- sid
+
+        if (!isTRUE(tryCatch(set_active_encounter(sid, eid), error = function(e) FALSE))) {
+          log_safe("Could not set the session's active encounter.", type = "error")
+          return()
+        }
       }
       
       bump_live()
-      log_safe(paste0("Bound live combat to encounter ", eid, "."))
+      log_safe(paste0("Encounter ", eid, " is now active for all players."))
     }, ignoreInit = TRUE)
     
     output$live_debug <- renderPrint({
@@ -2474,33 +2478,6 @@ limit 1
       )
     })
     
-    observeEvent(input$roll_init, {
-      eid <- current_encounter_id()
-      
-      if (is.na(eid)) {
-        log_safe("Choose an encounter first.", type = "error")
-        return()
-      }
-      
-      init_df <- tryCatch(
-        roll_encounter_initiative(
-          encounter_id = eid,
-          core_state = NULL
-        ),
-        error = function(e) data.frame()
-      )
-      
-      if (!is.data.frame(init_df) || nrow(init_df) == 0) {
-        log_safe("Could not roll initiative.", type = "error")
-        return()
-      }
-      
-      top_name <- as.character(init_df$display_name[1] %||% "Unknown")
-      top_score <- as.integer(init_df$initiative_total[1] %||% 0)
-      log_safe(paste0("Initiative rolled. ", top_name, " leads on ", top_score, "."))
-      bump_live()
-    }, ignoreInit = TRUE)
-    
     observeEvent(input$start_combat, {
       eid <- current_encounter_id()
       
@@ -2512,6 +2489,21 @@ limit 1
         cat("[start_combat] encounter_id is NA\n")
         return()
       }
+
+      enc <- tryCatch(get_encounter(eid), error = function(e) data.frame())
+      sid <- if (is.data.frame(enc) && nrow(enc) > 0) {
+        suppressWarnings(as.integer(enc$session_id[1] %||% NA))
+      } else {
+        NA_integer_
+      }
+
+      if (is.na(sid) || sid < 1L ||
+          !isTRUE(tryCatch(set_active_encounter(sid, eid), error = function(e) FALSE))) {
+        log_safe("Could not make this encounter active for the session.", type = "error")
+        return()
+      }
+
+      try(set_encounter_status(eid, status = "active"), silent = TRUE)
       
       known_ac_rv(data.frame(
         target_id = character(),
@@ -2560,7 +2552,7 @@ limit 1
       ctrl$active_encounter_id <- eid
       
       first_name <- as.character(init_df$display_name[1] %||% "Unknown")
-      log_safe(paste0("Combat started. ", first_name, " acts first."))
+      log_safe(paste0("Combat started and initiative rolled. ", first_name, " acts first."))
       
       cat("====================================================\n")
       

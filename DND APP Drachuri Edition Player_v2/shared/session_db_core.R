@@ -1679,21 +1679,13 @@ start_encounter_combat <- function(encounter_id, core_state = NULL) {
   }
   if (nrow(actors) == 0) return(data.frame())
   
-  has_order <- isTRUE(
-    "turn_order" %in% names(actors) &&
-      nrow(actors) > 0 &&
-      all(!is.na(actors$turn_order))
+  # Starting combat is the initiative trigger. Always roll afresh so stale
+  # turn orders from a previous combat cannot leak into a new round one.
+  actors <- roll_encounter_initiative(
+    encounter_id = encounter_id,
+    core_state = core_state
   )
-  
-  if (!isTRUE(has_order)) {
-    actors <- roll_encounter_initiative(
-      encounter_id = encounter_id,
-      core_state = core_state
-    )
-    if (!is.data.frame(actors) || nrow(actors) == 0) return(data.frame())
-  } else {
-    actors <- actors[order(actors$turn_order, na.last = TRUE), , drop = FALSE]
-  }
+  if (!is.data.frame(actors) || nrow(actors) == 0) return(data.frame())
   
   first_actor <- actors[1, , drop = FALSE]
   
