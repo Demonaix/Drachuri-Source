@@ -213,12 +213,11 @@ character_level_choice <- function(char, class_name, level, choice_id) {
 }
 
 class_spellcasting_ability <- function(class_name) {
-  switch(
-    as.character(class_name %||% ""),
-    "Hanianol Sorcerer" = "int",
-    "Na'Haran Sorcerer" = "cha",
-    "int"
-  )
+  # Both traditions draw magic through their blood connection to the Mandred.
+  # Intelligence and Charisma still support their mundane class skills, but do
+  # not determine the raw strength of their magic.
+  if (as.character(class_name %||% "") %in%
+      c("Hanianol Sorcerer", "Na'Haran Sorcerer")) "bld_str" else "int"
 }
 
 character_proficiency_bonus <- function(char) {

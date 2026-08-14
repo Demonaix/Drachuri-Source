@@ -426,20 +426,22 @@ test("offensive magic includes executable resolution and level scaling", {
   stopifnot(identical(spell$effects[[1L]]$value, "blinded"))
 })
 
-test("fixed spells use class-appropriate save DC and multiclass proficiency", {
+test("blood magic uses Blood Strength save DC and multiclass proficiency", {
   test_env$normalise_character_classes <- function(char, class_defs = NULL) char$build$classes
   character <- list(
     build = list(classes = list(
       list(class = "Na'Haran Sorcerer", level = 6L),
       list(class = "Rogue", level = 3L)
     )),
-    abilities = list(int = 12L, cha = 18L)
+    abilities = list(int = 18L, cha = 18L, bld_str = 16L)
   )
   dc <- test_env$class_spell_save_dc(
     character, test_env$CLASS_SPELL_DEFINITIONS$lightbringer
   )
   stopifnot(test_env$character_proficiency_bonus(character) == 4L)
-  stopifnot(dc == 16L)
+  stopifnot(identical(test_env$class_spellcasting_ability("Hanianol Sorcerer"), "bld_str"))
+  stopifnot(identical(test_env$class_spellcasting_ability("Na'Haran Sorcerer"), "bld_str"))
+  stopifnot(dc == 15L)
 })
 
 test("subclass magic requires the matching subclass", {
