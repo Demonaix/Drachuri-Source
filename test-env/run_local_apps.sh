@@ -1,0 +1,42 @@
+#!/bin/sh
+set -eu
+
+project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+player_dir="$project_dir/DND APP Drachuri Edition Player_v2"
+control_dir="$project_dir/DND APP Drachuri Edition 2 Control"
+r_library="$player_dir/renv/library/R-4.2/x86_64-apple-darwin17.0"
+log_dir="$project_dir/test-env/logs"
+
+mkdir -p "$log_dir"
+"$project_dir/test-env/reset_db.sh"
+
+set -a
+. "$project_dir/test-env/test.env"
+set +a
+
+launch_app() {
+  app_dir=$1
+  port=$2
+  log=$3
+  (
+    cd "$app_dir"
+    R_LIBS="$r_library" Rscript --no-init-file --no-environ -e \
+      "shiny::runApp('.', host='127.0.0.1', port=$port, launch.browser=FALSE)"
+  ) >"$log" 2>&1 &
+  printf '%s' "$!"
+}
+
+control_pid=$(launch_app "$control_dir" 3838 "$log_dir/control.log")
+player_one_pid=$(launch_app "$player_dir" 3839 "$log_dir/player-one.log")
+player_two_pid=$(launch_app "$player_dir" 3840 "$log_dir/player-two.log")
+
+printf '%s\n' "$control_pid" "$player_one_pid" "$player_two_pid" > "$log_dir/app.pids"
+
+printf '%s\n' \
+  "Local apps starting:" \
+  "  Control:  http://127.0.0.1:3838" \
+  "  Player 1: http://127.0.0.1:3839" \
+  "  Player 2: http://127.0.0.1:3840" \
+  "Logs: $log_dir" \
+  "Stop them with: sh test-env/stop_local_apps.sh"
+

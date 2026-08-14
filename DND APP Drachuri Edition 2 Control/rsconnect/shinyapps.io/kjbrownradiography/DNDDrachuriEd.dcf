@@ -1,0 +1,13 @@
+name: DNDDrachuriEd
+title: DNDDrachuriEd
+username: kjbrownradiography
+account: kjbrownradiography
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 16401860
+bundleId: 11806634
+url: https://kjbrownradiography.shinyapps.io/DNDDrachuriEd/
+version: 1
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: .RData|.Rprofile|database/Test.R|server_minimal.R|server_sad.R|ui_minimal.R|ui_sad.R

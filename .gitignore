@@ -1,0 +1,27 @@
+.DS_Store
+.RData
+.Rhistory
+.Rproj.user/
+
+# Local R package libraries and caches
+renv/library/
+renv/staging/
+renv/cache/
+renv_new/
+
+# Runtime and diagnostic output
+*.log
+*.pid
+*.tmp
+backups/
+releases/
+test-env/.postgres-data/
+test-env/.postgres-socket/
+test-env/logs/
+**/launcher/bootstrap-library/
+**/launcher/logs/
+**/launcher/.restored-lock-md5
+
+# Large third-party 3D assets are kept locally but not versioned here.
+# Remove this rule later if Git LFS is introduced for these files.
+**/www/models/

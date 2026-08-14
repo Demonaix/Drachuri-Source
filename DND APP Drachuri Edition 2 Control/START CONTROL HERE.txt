@@ -1,0 +1,18 @@
+DRACHURI CONTROL — QUICK START
+==============================
+
+MAC
+Double-click "Launch Drachuri Control.command". If macOS blocks it the first
+time, right-click it, choose Open, and confirm.
+
+WINDOWS
+Double-click "Launch Drachuri Control.bat".
+
+The first launch installs or updates missing R packages automatically. Keep the
+launcher window open while using the dashboard; closing it stops the app.
+
+IMPORTANT
+The control and player folders must remain beside one another because they use
+the same authoritative game and database code.
+
+If startup fails, inspect launcher/logs/launcher.log.

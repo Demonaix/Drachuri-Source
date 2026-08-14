@@ -1,0 +1,27 @@
+DRACHURI PLAYER — QUICK START
+=============================
+
+WINDOWS
+1. Double-click "Launch Drachuri Player.bat".
+2. The first launch installs any missing R packages automatically. This can
+   take several minutes and needs an internet connection.
+3. The player app opens in your normal web browser.
+4. Keep the small launcher window open while playing. Close it to stop the app.
+
+MAC
+1. Double-click "Launch Drachuri Player.command".
+2. If macOS blocks it the first time, right-click it, choose Open, then confirm.
+3. The first launch installs missing packages and then opens your browser.
+
+REQUIREMENT
+R must be installed, but RStudio is not required. If the launcher cannot find
+R, it displays the official download address.
+
+UPDATES
+When Kerry sends a new Drachuri Player folder, replace the old folder and use
+the same launcher. Dependencies are only changed when the app's lockfile has
+changed.
+
+PROBLEMS
+Send the file launcher/logs/launcher.log to Kerry. It records startup and
+package errors without recording your character data or database password.

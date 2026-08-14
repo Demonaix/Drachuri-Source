@@ -1,0 +1,10 @@
+name: dnd-control
+title:
+username: kjbrownradiography
+account: kjbrownradiography
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 17103826
+bundleId: 11832883
+url: https://kjbrownradiography.shinyapps.io/dnd-control/
+version: 1

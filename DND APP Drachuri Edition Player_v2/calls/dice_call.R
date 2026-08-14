@@ -1,0 +1,1 @@
+diceTabServer("dice", core$state, core$restoring, core$add_log, core$char_rev)
