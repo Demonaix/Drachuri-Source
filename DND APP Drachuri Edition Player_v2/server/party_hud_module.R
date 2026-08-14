@@ -414,6 +414,22 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
           )
           rows <- dplyr::bind_rows(rows, enemy_rows)
         }
+        summons <- snapshot$summons %||% data.frame()
+        if (is.data.frame(summons) && nrow(summons) > 0) {
+          summon_rows <- data.frame(
+            actor_id = as.character(summons$summon_uuid %||% ""),
+            actor_type = "summon", character_id = NA_character_,
+            display_name = paste0(as.character(summons$name %||% "Summoned Beast"), " 🐾"),
+            current_hp = suppressWarnings(as.integer(summons$hp_current %||% 0L)),
+            temp_hp = suppressWarnings(as.integer(summons$temp_hp %||% 0L)),
+            max_hp = suppressWarnings(as.integer(summons$hp_max %||% NA_integer_)),
+            initiative = suppressWarnings(as.integer(summons$initiative %||% NA_integer_)),
+            turn_order = suppressWarnings(as.integer(summons$turn_order %||% NA_integer_)),
+            is_active = as.logical(summons$is_active %||% TRUE),
+            stringsAsFactors = FALSE
+          )
+          rows <- dplyr::bind_rows(rows, summon_rows)
+        }
       }
 
       if (in_combat && "turn_order" %in% names(rows)) {

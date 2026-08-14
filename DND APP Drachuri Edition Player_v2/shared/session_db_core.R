@@ -1206,6 +1206,8 @@ empty_player_live_snapshot <- function() {
     combat = data.frame(),
     events = data.frame(),
     enemies = data.frame(),
+    effects = data.frame(),
+    summons = data.frame(),
     fetched_at = as.POSIXct(NA)
   )
 }
@@ -1213,6 +1215,7 @@ empty_player_live_snapshot <- function() {
 build_snapshot_encounter_actors <- function(snapshot) {
   players <- snapshot$players %||% data.frame()
   enemies <- snapshot$enemies %||% data.frame()
+  summons <- snapshot$summons %||% data.frame()
   positions <- snapshot$positions %||% data.frame()
 
   player_df <- data.frame(
@@ -1247,12 +1250,27 @@ build_snapshot_encounter_actors <- function(snapshot) {
     stringsAsFactors = FALSE
   )
 
-  all_columns <- union(names(player_df), names(enemy_df))
+  summon_df <- data.frame(
+    actor_id = as.character(summons$summon_uuid %||% rep(NA_character_, nrow(summons))),
+    actor_type = rep("summon", nrow(summons)),
+    display_name = as.character(summons$name %||% rep("Summoned Beast", nrow(summons))),
+    current_hp = suppressWarnings(as.integer(summons$hp_current %||% rep(NA_integer_, nrow(summons)))),
+    hp_current = suppressWarnings(as.integer(summons$hp_current %||% rep(NA_integer_, nrow(summons)))),
+    hp_max = suppressWarnings(as.integer(summons$hp_max %||% rep(NA_integer_, nrow(summons)))),
+    max_hp = suppressWarnings(as.integer(summons$hp_max %||% rep(NA_integer_, nrow(summons)))),
+    temp_hp = suppressWarnings(as.integer(summons$temp_hp %||% rep(0L, nrow(summons)))),
+    initiative = suppressWarnings(as.integer(summons$initiative %||% rep(NA_integer_, nrow(summons)))),
+    turn_order = suppressWarnings(as.integer(summons$turn_order %||% rep(NA_integer_, nrow(summons)))),
+    is_active = as.logical(summons$is_active %||% rep(TRUE, nrow(summons))),
+    stringsAsFactors = FALSE
+  )
+
+  all_columns <- Reduce(union, list(names(player_df), names(enemy_df), names(summon_df)))
   add_columns <- function(df) {
     for (name in setdiff(all_columns, names(df))) df[[name]] <- rep(NA, nrow(df))
     df[, all_columns, drop = FALSE]
   }
-  actors <- rbind(add_columns(player_df), add_columns(enemy_df))
+  actors <- rbind(add_columns(player_df), add_columns(enemy_df), add_columns(summon_df))
   if (nrow(actors) == 0) return(actors)
 
   actors$x <- NA_integer_
@@ -1329,6 +1347,8 @@ get_player_live_snapshot <- function(session_id, character_id = NULL,
   combat <- data.frame()
   events <- data.frame()
   enemies <- data.frame()
+  effects <- data.frame()
+  summons <- data.frame()
 
   if (!is.na(encounter_id) && encounter_id > 0) {
     encounter <- query(
@@ -1367,6 +1387,14 @@ get_player_live_snapshot <- function(session_id, character_id = NULL,
       ),
       list(encounter_id)
     )
+    effects <- query(
+      paste("SELECT * FROM encounter_effects", "WHERE encounter_id = $1 AND is_active = TRUE", "ORDER BY created_at, id"),
+      list(encounter_id)
+    )
+    summons <- query(
+      paste("SELECT * FROM encounter_summons", "WHERE encounter_id = $1 AND is_active = TRUE", "ORDER BY turn_order NULLS LAST, id"),
+      list(encounter_id)
+    )
   }
 
   self_player <- data.frame()
@@ -1387,8 +1415,87 @@ get_player_live_snapshot <- function(session_id, character_id = NULL,
     combat = combat,
     events = events,
     enemies = enemies,
+    effects = effects,
+    summons = summons,
     fetched_at = Sys.time()
   )
+}
+
+create_encounter_effect <- function(encounter_id, source_actor_type, source_actor_id,
+                                    spell_id, effect_type, payload = list(),
+                                    target_actor_type = NULL, target_actor_id = NULL,
+                                    center_x = NULL, center_y = NULL, radius_ft = NULL,
+                                    starts_round = 1L, ends_round = NULL,
+                                    concentration = FALSE) {
+  con <- get_db_connection()
+  if (is.null(con)) return(NULL)
+  on.exit(release_db_connection(con), add = TRUE)
+  tryCatch(DBI::dbGetQuery(con, paste(
+    "INSERT INTO encounter_effects (encounter_id, source_actor_type, source_actor_id,",
+    "spell_id, effect_type, target_actor_type, target_actor_id, center_x, center_y,",
+    "radius_ft, starts_round, ends_round, concentration, payload)",
+    "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb) RETURNING *"
+  ), params = list(
+    as.integer(encounter_id), as.character(source_actor_type), as.character(source_actor_id),
+    as.character(spell_id), as.character(effect_type), target_actor_type, target_actor_id,
+    center_x, center_y, radius_ft, as.integer(starts_round), ends_round,
+    isTRUE(concentration), jsonlite::toJSON(payload, auto_unbox = TRUE, null = "null")
+  )), error = function(e) {
+    message("create_encounter_effect failed: ", e$message)
+    NULL
+  })
+}
+
+end_actor_concentration <- function(encounter_id, source_actor_id) {
+  con <- get_db_connection()
+  if (is.null(con)) return(FALSE)
+  on.exit(release_db_connection(con), add = TRUE)
+  tryCatch({
+    DBI::dbExecute(con, paste(
+      "UPDATE encounter_summons SET is_active = FALSE, updated_at = NOW()",
+      "WHERE encounter_id = $1 AND summon_uuid::text IN (",
+      "SELECT target_actor_id FROM encounter_effects",
+      "WHERE encounter_id = $1 AND source_actor_id = $2",
+      "AND concentration = TRUE AND effect_type = 'summon' AND is_active = TRUE)"
+    ), params = list(as.integer(encounter_id), as.character(source_actor_id)))
+    DBI::dbExecute(con, paste(
+      "UPDATE encounter_effects SET is_active = FALSE, updated_at = NOW()",
+      "WHERE encounter_id = $1 AND source_actor_id = $2",
+      "AND concentration = TRUE AND is_active = TRUE"
+    ), params = list(as.integer(encounter_id), as.character(source_actor_id)))
+    TRUE
+  }, error = function(e) FALSE)
+}
+
+create_encounter_summon <- function(encounter_id, owner_actor_id, name,
+                                    max_cr = "1/2", hp_max = 10L, ac = 12L,
+                                    movement_speed = 30L, expires_round = NULL) {
+  con <- get_db_connection()
+  if (is.null(con)) return(NULL)
+  on.exit(release_db_connection(con), add = TRUE)
+  tryCatch(DBI::dbGetQuery(con, paste(
+    "INSERT INTO encounter_summons (encounter_id, owner_actor_id, name, max_cr,",
+    "hp_max, hp_current, ac, movement_speed, expires_round)",
+    "VALUES ($1,$2,$3,$4,$5,$5,$6,$7,$8) RETURNING *"
+  ), params = list(
+    as.integer(encounter_id), as.character(owner_actor_id), as.character(name),
+    as.character(max_cr), as.integer(hp_max), as.integer(ac),
+    as.integer(movement_speed), expires_round
+  )), error = function(e) {
+    message("create_encounter_summon failed: ", e$message)
+    NULL
+  })
+}
+
+get_encounter_summons <- function(encounter_id) {
+  con <- get_db_connection()
+  if (is.null(con)) return(data.frame())
+  on.exit(release_db_connection(con), add = TRUE)
+  tryCatch(DBI::dbGetQuery(
+    con,
+    "SELECT * FROM encounter_summons WHERE encounter_id = $1 AND is_active = TRUE ORDER BY id",
+    params = list(as.integer(encounter_id))
+  ), error = function(e) data.frame())
 }
 
 get_session_overview <- function(session_id) {
@@ -1798,6 +1905,11 @@ get_encounter_actors <- function(encounter_id) {
     get_encounter_enemies(encounter_id),
     error = function(e) data.frame()
   )
+
+  summons <- tryCatch(
+    get_encounter_summons(encounter_id),
+    error = function(e) data.frame()
+  )
   
   positions <- tryCatch(
     get_encounter_positions(encounter_id),
@@ -1838,12 +1950,28 @@ get_encounter_actors <- function(encounter_id) {
     movement_speed = suppressWarnings(as.integer(enemies$movement_speed %||% NA)),
     stringsAsFactors = FALSE
   )
+  summon_df <- data.frame(
+    actor_id = as.character(summons$summon_uuid %||% ""),
+    actor_type = "summon",
+    display_name = as.character(summons$name %||% "Summoned Beast"),
+    current_hp = suppressWarnings(as.integer(summons$hp_current %||% NA)),
+    hp_current = suppressWarnings(as.integer(summons$hp_current %||% NA)),
+    hp_max = suppressWarnings(as.integer(summons$hp_max %||% NA)),
+    max_hp = suppressWarnings(as.integer(summons$hp_max %||% NA)),
+    temp_hp = suppressWarnings(as.integer(summons$temp_hp %||% 0)),
+    initiative = suppressWarnings(as.integer(summons$initiative %||% NA)),
+    turn_order = suppressWarnings(as.integer(summons$turn_order %||% NA)),
+    is_active = as.logical(summons$is_active %||% TRUE),
+    ac = suppressWarnings(as.integer(summons$ac %||% NA)),
+    movement_speed = suppressWarnings(as.integer(summons$movement_speed %||% NA)),
+    stringsAsFactors = FALSE
+  )
   
   # --------------------------------------------------
   # Ensure both have identical columns
   # --------------------------------------------------
   
-  all_cols <- union(names(player_df), names(enemy_df))
+  all_cols <- Reduce(union, list(names(player_df), names(enemy_df), names(summon_df)))
   
   add_missing_cols <- function(df, cols) {
     missing <- setdiff(cols, names(df))
@@ -1858,8 +1986,9 @@ get_encounter_actors <- function(encounter_id) {
   
   player_df <- add_missing_cols(player_df, all_cols)
   enemy_df  <- add_missing_cols(enemy_df, all_cols)
+  summon_df <- add_missing_cols(summon_df, all_cols)
   
-  actors <- rbind(player_df, enemy_df)
+  actors <- rbind(player_df, enemy_df, summon_df)
   if (!is.data.frame(actors) || nrow(actors) == 0) return(data.frame())
   
   if (is.data.frame(positions) && nrow(positions) > 0) {

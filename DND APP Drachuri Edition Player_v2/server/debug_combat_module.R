@@ -94,6 +94,72 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       if (!is.function(live_snapshot)) return(empty_player_live_snapshot())
       live_snapshot()
     })
+
+    decode_effect_payload <- function(value) {
+      if (is.list(value) && !is.data.frame(value)) return(value)
+      text <- as.character(value %||% "")
+      if (!nzchar(text)) return(list())
+      tryCatch(jsonlite::fromJSON(text, simplifyVector = FALSE), error = function(e) list())
+    }
+
+    active_effects <- reactive({
+      effects <- snapshot_data()$effects %||% data.frame()
+      if (!is.data.frame(effects) || !nrow(effects)) return(data.frame())
+      round_number <- suppressWarnings(as.integer(snapshot_data()$combat$round_number[1] %||% 1L))
+      if ("ends_round" %in% names(effects)) {
+        keep <- is.na(effects$ends_round) | as.integer(effects$ends_round) >= round_number
+        effects <- effects[keep, , drop = FALSE]
+      }
+      effects
+    })
+
+    actor_conditions <- function(actor_id) {
+      effects <- active_effects()
+      if (!is.data.frame(effects) || !nrow(effects)) return(character())
+      rows <- effects[
+        as.character(effects$effect_type %||% "") == "condition" &
+          as.character(effects$target_actor_id %||% "") == as.character(actor_id),
+        , drop = FALSE
+      ]
+      if (!nrow(rows)) return(character())
+      unique(vapply(seq_len(nrow(rows)), function(i) {
+        as.character(decode_effect_payload(rows$payload[[i]])$condition %||% "")
+      }, character(1)))
+    }
+
+    tile_in_spell_area <- function(x, y, spell_id) {
+      effects <- active_effects()
+      if (!is.data.frame(effects) || !nrow(effects)) return(FALSE)
+      rows <- effects[as.character(effects$spell_id %||% "") == spell_id &
+                        as.character(effects$effect_type %||% "") == "area", , drop = FALSE]
+      if (!nrow(rows)) return(FALSE)
+      any(vapply(seq_len(nrow(rows)), function(i) {
+        dx <- abs(as.integer(x) - as.integer(rows$center_x[i]))
+        dy <- abs(as.integer(y) - as.integer(rows$center_y[i]))
+        !is.na(dx) && !is.na(dy) && max(dx, dy) * 5L <= as.integer(rows$radius_ft[i] %||% 0L)
+      }, logical(1)))
+    }
+
+    rain_damage_modifier <- function(target_id, damage_type) {
+      actors <- encounter_actors_tbl()
+      target <- actors[as.character(actors$actor_id) == as.character(target_id), , drop = FALSE]
+      if (!nrow(target)) return(0L)
+      effects <- active_effects()
+      rows <- effects[as.character(effects$spell_id %||% "") == "calling_rain" &
+                        as.character(effects$effect_type %||% "") == "area", , drop = FALSE]
+      if (!nrow(rows)) return(0L)
+      for (i in seq_len(nrow(rows))) {
+        dx <- abs(as.integer(target$x[1]) - as.integer(rows$center_x[i]))
+        dy <- abs(as.integer(target$y[1]) - as.integer(rows$center_y[i]))
+        if (is.na(dx) || is.na(dy) || max(dx, dy) * 5L > as.integer(rows$radius_ft[i])) next
+        payload <- decode_effect_payload(rows$payload[[i]])
+        upgrade <- payload$upgrade %||% list()
+        type <- tolower(as.character(damage_type %||% ""))
+        if (identical(type, "fire")) return(as.integer(upgrade$fire_modifier %||% -4L))
+        if (type %in% c("cold", "lightning")) return(as.integer(upgrade$cold_lightning_modifier %||% 2L))
+      }
+      0L
+    }
     
     pending_attack <- reactiveVal(NULL)
     turn_move_ft <- reactiveVal(0L)
@@ -177,6 +243,15 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
           session$ns("use_detect_undead"), "Detect Undead", class = "btn btn-default"
         )))
       }
+      natural_spells <- Filter(function(spell) {
+        identical(as.character(spell$class %||% ""), "Hanianol Sorcerer") &&
+          as.integer(spell$level %||% 0L) == 2L
+      }, get_unlocked_class_spells(core$state$char))
+      if (length(natural_spells)) {
+        buttons <- c(buttons, list(actionButton(
+          session$ns("open_natural_magic"), "Natural Magic", class = "btn btn-success"
+        )))
+      }
       if (!length(buttons)) return(NULL)
       tagList(buttons)
     })
@@ -245,7 +320,8 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       found <- character()
       if (is.data.frame(enemies) && nrow(enemies)) {
         text <- tolower(paste(
-          enemies$name %||% "", enemies$template_key %||% "", enemies$notes %||% ""
+          enemies$name %||% "", enemies$creature_type %||% "",
+          enemies$template_key %||% "", enemies$notes %||% ""
         ))
         undead_words <- "undead|skeleton|zombie|ghoul|ghost|wight|wraith|vampire|lich|revenant"
         undead_rows <- enemies[grepl(undead_words, text, perl = TRUE), , drop = FALSE]
@@ -277,6 +353,163 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         actor_type = "player", actor_id = as.character(core$state$char_id %||% ""),
         payload = list(ability_name = "Detect Undead", detected = unique(found), resource_cost = 10L)
       )
+    }, ignoreInit = TRUE)
+
+    natural_magic_spells <- reactive({
+      spells <- get_unlocked_class_spells(core$state$char)
+      Filter(function(spell) {
+        identical(as.character(spell$class %||% ""), "Hanianol Sorcerer") &&
+          as.integer(spell$level %||% 0L) == 2L
+      }, spells)
+    })
+
+    observeEvent(input$open_natural_magic, {
+      if (!isTRUE(is_players_turn())) return()
+      spells <- natural_magic_spells()
+      if (!length(spells)) return()
+      choices <- stats::setNames(names(spells), vapply(spells, function(spell) spell$name, character(1)))
+      showModal(modalDialog(
+        title = "Cast Natural Magic",
+        selectInput(session$ns("natural_spell_id"), "Spell", choices = choices),
+        uiOutput(session$ns("natural_spell_preview_ui")),
+        footer = tagList(
+          modalButton("Cancel"),
+          actionButton(session$ns("cast_natural_spell"), "Cast — 20 Sindre", class = "btn btn-success")
+        ), easyClose = TRUE
+      ))
+    }, ignoreInit = TRUE)
+
+    output$natural_spell_preview_ui <- renderUI({
+      spell <- natural_magic_spells()[[as.character(input$natural_spell_id %||% "")]]
+      if (is.null(spell)) return(NULL)
+      div(class = "confirm-box", tags$strong(spell$name), tags$p(spell$description),
+          tags$p(tags$strong("Concentration: "), if (isTRUE(spell$concentration)) "Yes" else "No"))
+    })
+
+    observeEvent(input$cast_natural_spell, {
+      if (!isTRUE(is_players_turn())) return()
+      spell_id <- as.character(input$natural_spell_id %||% "")
+      spell <- natural_magic_spells()[[spell_id]]
+      if (is.null(spell)) return()
+      char <- validate_character(core$state$char)
+      sindre <- suppressWarnings(as.integer(char$resources$sindre$cur %||% 0L))
+      if (is.na(sindre)) sindre <- 0L
+      if (sindre < as.integer(spell$cost %||% 20L)) {
+        log_safe("⚠️ Not enough Sindre for Natural Magic.")
+        return()
+      }
+      if (!spend_action_safe("action", spell$name)) return()
+
+      classes <- normalise_character_classes(char)
+      hanianol_level <- sum(vapply(classes, function(entry) {
+        if (identical(as.character(entry$class %||% ""), "Hanianol Sorcerer")) as.integer(entry$level %||% 0L) else 0L
+      }, integer(1)))
+      spell <- scale_class_spell(spell, hanianol_level)
+      eid <- current_encounter_id()
+      round_number <- as.integer(combat_tbl()$round_number[1] %||% 1L)
+      caster_id <- as.character(core$state$char_id %||% "")
+      actors <- encounter_actors_tbl()
+      caster <- actors[as.character(actors$actor_id) == caster_id, , drop = FALSE]
+      center_x <- if (nrow(caster)) as.integer(caster$x[1] %||% NA) else NA_integer_
+      center_y <- if (nrow(caster)) as.integer(caster$y[1] %||% NA) else NA_integer_
+
+      if (spell_id %in% c("grasping_vines", "calling_rain")) {
+        target_id <- as.character(selected_target_id() %||% "")
+        target <- actors[as.character(actors$actor_id) == target_id, , drop = FALSE]
+        if (!nrow(target) || is.na(as.integer(target$x[1])) || is.na(as.integer(target$y[1]))) {
+          log_safe("⚠️ Select an actor on the map to centre this area spell, then cast again.")
+          return()
+        }
+        center_x <- as.integer(target$x[1]); center_y <- as.integer(target$y[1])
+      }
+
+      end_actor_concentration(eid, caster_id)
+      radius <- as.integer(spell$target$size_ft %||% 0L)
+      duration_rounds <- if (identical(spell$duration, "1_hour")) 600L else if (identical(spell$duration, "30_minutes")) 300L else 10L
+      payload <- list(
+        name = spell$name, description = spell$description,
+        effects = spell$effects %||% list(), upgrade = spell$resolved_upgrade %||% list(),
+        save_dc = class_spell_save_dc(char, spell)
+      )
+
+      created <- NULL
+      if (identical(spell_id, "call_beast")) {
+        max_cr <- if (hanianol_level >= 15L) "2" else if (hanianol_level >= 11L) "1" else "1/2"
+        beast_stats <- if (hanianol_level >= 15L) c(hp = 35L, ac = 14L) else if (hanianol_level >= 11L) c(hp = 22L, ac = 13L) else c(hp = 12L, ac = 12L)
+        summon <- create_encounter_summon(
+          eid, caster_id, paste0(core$state$char$meta$name %||% "Hanianol", "'s Beast"),
+          max_cr = max_cr, hp_max = beast_stats[["hp"]], ac = beast_stats[["ac"]],
+          expires_round = round_number + duration_rounds
+        )
+        if (!is.null(summon) && nrow(summon)) {
+          upsert_encounter_actor_position(eid, "summon", as.character(summon$summon_uuid[1]), center_x, center_y)
+          created <- create_encounter_effect(
+            eid, "player", caster_id, spell_id, "summon", payload,
+            target_actor_type = "summon", target_actor_id = as.character(summon$summon_uuid[1]),
+            starts_round = round_number, ends_round = round_number + duration_rounds,
+            concentration = TRUE
+          )
+        }
+      } else {
+        created <- create_encounter_effect(
+          eid, "player", caster_id, spell_id,
+          if (identical(spell_id, "wasting_sickness")) "condition_aura" else "area",
+          payload, center_x = center_x, center_y = center_y, radius_ft = radius,
+          starts_round = round_number, ends_round = round_number + duration_rounds,
+          concentration = TRUE
+        )
+      }
+
+      if (is.null(created)) {
+        log_safe("⚠️ Natural Magic could not be stored. Apply database migration 002 first.")
+        return()
+      }
+
+      affected_names <- character()
+      if (spell_id %in% c("grasping_vines", "wasting_sickness")) {
+        enemies <- snapshot_data()$enemies %||% data.frame()
+        enemy_actors <- actors[as.character(actors$actor_type) == "enemy", , drop = FALSE]
+        save_ability <- as.character(spell$resolution$ability %||% "con")
+        save_dc <- class_spell_save_dc(char, spell)
+        condition <- if (identical(spell_id, "grasping_vines")) "restrained" else "poisoned"
+        for (i in seq_len(nrow(enemy_actors))) {
+          actor <- enemy_actors[i, , drop = FALSE]
+          dx <- abs(as.integer(actor$x[1]) - center_x)
+          dy <- abs(as.integer(actor$y[1]) - center_y)
+          if (is.na(dx) || is.na(dy) || max(dx, dy) * 5L > radius) next
+          enemy_id <- as.character(actor$actor_id[1])
+          enemy <- enemies[as.character(enemies$enemy_uuid %||% "") == enemy_id, , drop = FALSE]
+          save_col <- paste0(save_ability, "_save")
+          save_mod <- if (nrow(enemy) && save_col %in% names(enemy)) as.integer(enemy[[save_col]][1] %||% 0L) else 0L
+          rolls <- sample.int(20L, if (isTRUE(spell$resolved_upgrade$save_disadvantage %||% FALSE)) 2L else 1L)
+          save_roll <- if (length(rolls) > 1L) min(rolls) else rolls[[1L]]
+          if (save_roll + save_mod < save_dc) {
+            create_encounter_effect(
+              eid, "player", caster_id, spell_id, "condition",
+              payload = list(condition = condition, save_ability = save_ability,
+                             save_dc = save_dc, repeat_save = spell$resolved_upgrade$repeat_save %||%
+                               spell$effects[[length(spell$effects)]]$repeat_save %||% "end_of_turn"),
+              target_actor_type = "enemy", target_actor_id = enemy_id,
+              starts_round = round_number, ends_round = round_number + 10L,
+              concentration = TRUE
+            )
+            affected_names <- c(affected_names, as.character(actor$display_name[1]))
+          }
+        }
+      }
+      char$resources$sindre$cur <- sindre - as.integer(spell$cost %||% 20L)
+      core$state$char <- char
+      log_game_event(
+        encounter_id = eid, event_type = "spell", actor_type = "player", actor_id = caster_id,
+        payload = list(spell_id = spell_id, spell_name = spell$name, level = hanianol_level,
+                       center_x = center_x, center_y = center_y, radius_ft = radius, resource_cost = spell$cost)
+      )
+      removeModal()
+      log_safe(paste0(
+        "🌿 ", spell$name, " is now active.",
+        if (length(affected_names)) paste0(" Affected: ", paste(affected_names, collapse = ", "), ".") else ""
+      ))
+      bump_refresh()
     }, ignoreInit = TRUE)
     
     
@@ -333,6 +566,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     }
     
     movement_allowance_ft <- function() {
+      if ("restrained" %in% actor_conditions(active_actor_id())) return(0L)
       
       base <- base_speed_ft()
       
@@ -1251,6 +1485,20 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
           total = as.integer(manual_bonus)
         )))
       }
+
+      if (!is.null(preview$target_id)) {
+        parts <- lapply(parts, function(part) {
+          modifier <- rain_damage_modifier(preview$target_id, part$type %||% "")
+          part$total <- max(0L, as.integer(part$total %||% 0L) + modifier)
+          if (modifier != 0L) {
+            part$source <- paste0(
+              part$source %||% "Damage", " [Rain ",
+              if (modifier > 0L) "+" else "", modifier, "]"
+            )
+          }
+          part
+        })
+      }
       
       raw_total <- sum(vapply(parts, function(x) as.integer(x$total %||% 0L), integer(1)))
       adjusted <- apply_damage_traits_to_parts(parts, preview$target_traits)
@@ -1801,6 +2049,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
           if (length(move_cost) < 1 || is.na(move_cost) || move_cost <= 0) {
             move_cost <- 1
           }
+          if (tile_in_spell_area(nx, ny, "grasping_vines")) move_cost <- move_cost * 2
           
           step_ft <- as.integer(round(move_cost * 5))
           
@@ -2722,6 +2971,14 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       if (identical(mode, "normal")) return("Normal")
 
       if (identical(cunning_mode(), "hide")) return("Advantage")
+
+      attacker_effects <- actor_conditions(attacker_id)
+      target_effects <- actor_conditions(target_id)
+      has_advantage <- "restrained" %in% target_effects
+      has_disadvantage <- any(c("restrained", "poisoned") %in% attacker_effects)
+      if (has_advantage && has_disadvantage) return("Normal")
+      if (has_advantage) return("Advantage")
+      if (has_disadvantage) return("Disadvantage")
       
       # Future automatic rules go here:
       # - target has cover -> "Disadvantage"

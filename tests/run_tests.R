@@ -55,7 +55,7 @@ load_functions(
     "character_level_choice", "class_spellcasting_ability",
     "character_proficiency_bonus", "class_spell_save_dc", "spell_choice_is_unlocked",
     "spell_subclass_is_unlocked",
-    "get_unlocked_class_spells", "CLASS_FEATURE_MECHANICS",
+    "get_unlocked_class_spells", "scale_class_spell", "CLASS_FEATURE_MECHANICS",
     "infer_class_feature_tags", "class_feature_metadata",
     "get_unlocked_class_features", "get_unlocked_combat_actions",
     "resolve_class_action_damage", "resolve_class_action_healing",
@@ -183,6 +183,8 @@ test("live session refresh uses one connection and selects the current player", 
     if (grepl("FROM combat_state", sql, fixed = TRUE)) return(data.frame(encounter_id = 11L, round_number = 2L))
     if (grepl("FROM game_events", sql, fixed = TRUE)) return(data.frame())
     if (grepl("FROM encounter_enemies", sql, fixed = TRUE)) return(data.frame())
+    if (grepl("FROM encounter_effects", sql, fixed = TRUE)) return(data.frame())
+    if (grepl("FROM encounter_summons", sql, fixed = TRUE)) return(data.frame())
     stop("Unexpected query: ", sql)
   }
 
@@ -196,7 +198,7 @@ test("live session refresh uses one connection and selects the current player", 
 
   stopifnot(calls$connections == 1L)
   stopifnot(calls$releases == 1L)
-  stopifnot(calls$queries == 7L)
+  stopifnot(calls$queries == 9L)
   stopifnot(nrow(snapshot$self_player) == 1L)
   stopifnot(identical(snapshot$self_player$character_id[[1L]], "mine"))
   stopifnot(identical(snapshot$combat$round_number[[1L]], 2L))
@@ -584,6 +586,15 @@ test("offensive magic includes executable resolution and level scaling", {
   stopifnot(identical(spell$damage$dice, "3d8"))
   stopifnot(identical(spell$damage$scaling[["17"]], "5d8"))
   stopifnot(identical(spell$effects[[1L]]$value, "blinded"))
+})
+
+test("Natural Magic applies its highest eligible class-level upgrade", {
+  vines <- test_env$scale_class_spell(test_env$CLASS_SPELL_DEFINITIONS$grasping_vines, 15L)
+  rain <- test_env$scale_class_spell(test_env$CLASS_SPELL_DEFINITIONS$calling_rain, 11L)
+  stopifnot(vines$target$size_ft == 40L)
+  stopifnot(isTRUE(vines$resolved_upgrade$save_disadvantage))
+  stopifnot(rain$target$size_ft == 60L)
+  stopifnot(rain$resolved_upgrade$cold_lightning_modifier == 4L)
 })
 
 test("blood magic uses Blood Strength save DC and multiclass proficiency", {

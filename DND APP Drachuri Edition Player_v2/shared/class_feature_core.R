@@ -53,7 +53,7 @@ CLASS_FEATURE_INTEGRATION <- list(
     status = "working", note = "Dexterity saves default to advantage; use the explicit normal/disadvantage controls when the effect is unseen or another rule overrides it."
   ),
   "Hanianol Sorcerer::2::natural_magic" = list(
-    status = "partial", note = "Medicine proficiency and speciality selection work; fixed Deep Magic is defined but not yet castable through combat."
+    status = "working", note = "Medicine, speciality selection and synchronized combat casting work across all four paths, including level-11 and level-15 upgrades."
   ),
   "Na'Haran Sorcerer::2::mind_bender" = list(
     status = "working", note = "Can be activated from Skills for 10 Sindre and is consumed by the next Persuasion check."
@@ -105,6 +105,10 @@ CLASS_SPELL_DEFINITIONS <- list(
            repeat_save = "end_of_turn")
     ),
     duration = "1_minute", concentration = TRUE,
+    scaling = list(
+      `11` = list(radius_ft = 30L, save_disadvantage = TRUE),
+      `15` = list(radius_ft = 40L, save_disadvantage = TRUE, repeat_save = "action")
+    ),
     description = "Vines fill a 20-foot-radius area. Enemies that fail a Strength save are restrained and may repeat the save at the end of each turn; the whole area is difficult terrain."
   ),
   calling_rain = list(
@@ -118,6 +122,10 @@ CLASS_SPELL_DEFINITIONS <- list(
       list(type = "damage_modifier", damage_type = c("cold", "lightning"), value = 2L)
     ),
     duration = "1_hour", concentration = TRUE,
+    scaling = list(
+      `11` = list(radius_ft = 60L, fire_modifier = -6L, cold_lightning_modifier = 4L),
+      `15` = list(radius_ft = 90L, fire_modifier = -8L, cold_lightning_modifier = 6L)
+    ),
     description = "A storm fills a 40-foot-radius area. Fire damage dealt inside it is reduced by 4; cold and lightning damage is increased by 2."
   ),
   call_beast = list(
@@ -140,6 +148,10 @@ CLASS_SPELL_DEFINITIONS <- list(
     effects = list(list(type = "condition", value = "poisoned", duration = "1_minute",
                         repeat_save = "end_of_turn")),
     duration = "1_minute", concentration = TRUE,
+    scaling = list(
+      `11` = list(radius_ft = 60L, repeat_save = "end_of_turn_disadvantage"),
+      `15` = list(radius_ft = 90L, repeat_save = "end_of_turn_disadvantage", healing_received = "half")
+    ),
     description = "Enemies within 60 feet make a Constitution save or become poisoned for up to 1 minute, repeating the save at the end of each turn."
   ),
   mind_bender = list(
@@ -354,6 +366,20 @@ get_unlocked_class_spells <- function(char, spell_defs = CLASS_SPELL_DEFINITIONS
     level >= as.integer(spell$level %||% 99L) &&
       spell_subclass_is_unlocked(spell, char) && spell_choice_is_unlocked(spell, char)
   }, spell_defs)
+}
+
+scale_class_spell <- function(spell, class_level) {
+  scaled <- spell
+  scaling <- spell$scaling %||% list()
+  thresholds <- suppressWarnings(as.integer(names(scaling)))
+  eligible <- which(!is.na(thresholds) & thresholds <= as.integer(class_level %||% 0L))
+  if (!length(eligible)) return(scaled)
+  upgrade <- scaling[[eligible[which.max(thresholds[eligible])]]]
+  if (!is.null(upgrade$radius_ft)) {
+    scaled$target$size_ft <- as.integer(upgrade$radius_ft)
+  }
+  scaled$resolved_upgrade <- upgrade
+  scaled
 }
 
 CLASS_FEATURE_MECHANICS <- list(
