@@ -228,4 +228,14 @@ test("party HUD is the authoritative combat roster", {
   stopifnot(grepl('Initiative ', party_hud_source, fixed = TRUE))
 })
 
+test("Character and Level camp shortcuts route to different modules", {
+  camp_module_file <- file.path(
+    project_dir,
+    "DND APP Drachuri Edition Player_v2", "server", "camp_module.R"
+  )
+  camp_source <- paste(readLines(camp_module_file, warn = FALSE), collapse = "\n")
+  stopifnot(grepl('character    = "character"', camp_source, fixed = TRUE))
+  stopifnot(grepl('level        = "level"', camp_source, fixed = TRUE))
+})
+
 cat("\n", tests_run, " tests passed.\n", sep = "")

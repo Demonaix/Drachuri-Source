@@ -355,7 +355,7 @@ campServer <- function(
       armoury      = "armoury",
       runes        = "runes",
       diary        = "diary",
-      character    = "level",
+      character    = "character",
       dice         = "dice",
       magic        = "magic",
       blood        = "blood",
