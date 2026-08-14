@@ -70,7 +70,8 @@ load_functions(
   level_file,
   c(
     "normalise_character_classes", "level_options_for",
-    "level_features_for", "class_max_level", "apply_character_level_up"
+    "level_features_for", "apply_ability_score_increase",
+    "class_max_level", "apply_character_level_up"
   )
 )
 
@@ -422,6 +423,35 @@ test("class resource pools spend charges and respect their maximum", {
   stopifnot(is.null(test_env$spend_class_resource(spent, "superiority_dice", 4L, "short_rest")))
 })
 
+test("every level-four class feature has an integration review", {
+  class_names <- c("Rogue", "Fighter", "Barbarian", "Hanianol Sorcerer", "Na'Haran Sorcerer")
+  class_defs <- stats::setNames(lapply(class_names, function(class_name) {
+    list(levels = list("4" = list(features = list(
+      asi = list(name = "Ability Score Improvement")
+    ))))
+  }), class_names)
+  audit <- test_env$audit_class_level_integration(4L, class_defs)
+  stopifnot(nrow(audit) == 5L)
+  stopifnot(all(audit$status == "working"))
+  stopifnot(all(audit$feature_id == "asi"))
+})
+
+test("ability score improvement enforces its cap and updates Constitution HP", {
+  char <- list(
+    build = list(class = "Fighter", level = 4L, classes = list(list(class = "Fighter", level = 4L, subclass = "Champion"))),
+    abilities = list(str = 18L, dex = 20L, con = 11L, int = 10L, bld_str = 10L, cha = 10L),
+    resources = list(hp = list(cur = 24L, max = 30L, temp = 0L))
+  )
+  stronger <- test_env$apply_ability_score_increase(char, c("str", "str"))
+  stopifnot(stronger$abilities$str == 20L)
+  healthier <- test_env$apply_ability_score_increase(char, c("con", "cha"))
+  stopifnot(healthier$abilities$con == 12L)
+  stopifnot(healthier$resources$hp$max == 34L)
+  stopifnot(healthier$resources$hp$cur == 28L)
+  capped <- tryCatch(test_env$apply_ability_score_increase(char, c("dex", "cha")), error = identity)
+  stopifnot(inherits(capped, "error"))
+})
+
 test("Hanianol Blood Magic prevents natural Sindre recovery", {
   test_env$validate_character <- identity
   hanianol <- list(
@@ -604,11 +634,11 @@ test("ability score improvement applies two required stat increases", {
   )
   result <- test_env$apply_character_level_up(
     character, 1L,
-    selections = list(asi_first = "str", asi_second = "dex"),
+    selections = list(asi_first = "str", asi_second = "str"),
     class_defs = class_defs, level_options = list(),
     timestamp = as.POSIXct("2026-01-01", tz = "UTC")
   )
-  stopifnot(result$character$abilities$str == 19L)
+  stopifnot(result$character$abilities$str == 20L)
   stopifnot(result$character$abilities$dex == 20L)
 })
 

@@ -346,7 +346,7 @@ CLASSES <- list(
         features = list(
           asi = list(
             name = "Ability Score Improvement",
-            desc = "Increase ability scores or take a feat."
+            desc = "Allocate two points between your ability scores (maximum 20)."
           )
         )
       ),
@@ -388,7 +388,7 @@ CLASSES <- list(
         features = list(
           asi = list(
             name = "Ability Score Improvement",
-            desc = "Increase ability scores or take a feat."
+            desc = "Allocate two points between your ability scores (maximum 20)."
           )
         )
       ),
@@ -576,7 +576,7 @@ CLASSES <- list(
         features = list(
           asi = list(
             name = "Ability Score Improvement",
-            desc = "Increase ability scores or take a feat."
+            desc = "Allocate two points between your ability scores (maximum 20)."
           )
         )
       ),
@@ -800,7 +800,7 @@ CLASSES <- list(
       features = list(
         asi = list(
           name = "Ability Score Improvement",
-          desc = "Increase ability scores or take a feat."
+          desc = "Allocate two points between your ability scores (maximum 20)."
         )
       )
     ),
@@ -1015,7 +1015,7 @@ CLASSES <- list(
     
     "4" = list(
       features = list(
-        asi = list(name = "Ability Score Improvement", desc = "Increase ability scores.")
+        asi = list(name = "Ability Score Improvement", desc = "Allocate two points between your ability scores (maximum 20).")
       )
     ),
     

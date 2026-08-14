@@ -79,7 +79,12 @@ CLASS_FEATURE_INTEGRATION <- list(
   "Hanianol Sorcerer::3::exquisite_taste" = list(status = "working", note = "Blood restores HP; hearts fully restore Sindre and grant temporary HP overheal."),
   "Hanianol Sorcerer::3::shadow_step" = list(status = "working", note = "Heart Eaters can phase through blocked map tiles within their normal movement range."),
   "Na'Haran Sorcerer::3::spellsword" = list(status = "working", note = "Magical combat abilities reduce matching immunity to resistance and resistance to normal damage."),
-  "Na'Haran Sorcerer::3::wild_insight" = list(status = "working", note = "Available in combat as a bonus-action d100 Wild Magic roll.")
+  "Na'Haran Sorcerer::3::wild_insight" = list(status = "working", note = "Available in combat as a bonus-action d100 Wild Magic roll."),
+  "Rogue::4::asi" = list(status = "working", note = "Two points are allocated to one or two abilities, capped at 20; Constitution updates HP retroactively."),
+  "Fighter::4::asi" = list(status = "working", note = "Two points are allocated to one or two abilities, capped at 20; Constitution updates HP retroactively."),
+  "Barbarian::4::asi" = list(status = "working", note = "Two points are allocated to one or two abilities, capped at 20; Constitution updates HP retroactively."),
+  "Hanianol Sorcerer::4::asi" = list(status = "working", note = "Two points are allocated to one or two abilities, capped at 20; Blood Strength immediately updates spell attacks and save DC."),
+  "Na'Haran Sorcerer::4::asi" = list(status = "working", note = "Two points are allocated to one or two abilities, capped at 20; Blood Strength immediately updates spell attacks and save DC.")
 )
 
 class_feature_integration <- function(class_name, level, feature_id) {

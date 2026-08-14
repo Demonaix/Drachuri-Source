@@ -81,6 +81,44 @@ level_features_for <- function(class_name, level, subclass = "", class_defs = CL
   c(base_features, subclass_features)
 }
 
+apply_ability_score_increase <- function(char, choices, maximum = 20L) {
+  choices <- as.character(choices %||% character())
+  allowed <- c("str", "dex", "con", "int", "bld_str", "cha")
+  if (length(choices) != 2L || any(!choices %in% allowed)) {
+    stop("Allocate exactly two valid ability-score points.")
+  }
+  char$abilities <- char$abilities %||% list()
+  before_con <- suppressWarnings(as.integer(char$abilities$con %||% 10L))
+  if (is.na(before_con)) before_con <- 10L
+  counts <- table(factor(choices, levels = allowed))
+  for (stat in allowed[counts > 0L]) {
+    current <- suppressWarnings(as.integer(char$abilities[[stat]] %||% 10L))
+    if (is.na(current)) current <- 10L
+    increase <- as.integer(counts[[stat]])
+    if (current + increase > maximum) {
+      stop(paste0(tools::toTitleCase(gsub("_", " ", stat)), " cannot exceed ", maximum, ". Choose another ability."))
+    }
+    char$abilities[[stat]] <- current + increase
+  }
+
+  after_con <- as.integer(char$abilities$con %||% before_con)
+  con_mod_gain <- floor((after_con - 10L) / 2L) - floor((before_con - 10L) / 2L)
+  if (con_mod_gain > 0L) {
+    classes <- char$build$classes %||% list()
+    total_level <- if (is.list(classes) && length(classes)) {
+      sum(vapply(classes, function(entry) as.integer(entry$level %||% 0L), integer(1)))
+    } else {
+      as.integer(char$build$level %||% 1L)
+    }
+    hp_gain <- con_mod_gain * max(1L, total_level)
+    char$resources <- char$resources %||% list()
+    char$resources$hp <- char$resources$hp %||% list(cur = 0L, max = 0L, temp = 0L)
+    char$resources$hp$max <- as.integer(char$resources$hp$max %||% 0L) + hp_gain
+    char$resources$hp$cur <- as.integer(char$resources$hp$cur %||% 0L) + hp_gain
+  }
+  char
+}
+
 class_max_level <- function(class_name, class_defs = CLASSES) {
   levels <- suppressWarnings(as.integer(names(class_defs[[as.character(class_name)]]$levels %||% list())))
   levels <- levels[!is.na(levels)]
@@ -157,12 +195,7 @@ apply_character_level_up <- function(char, class_index, selections = list(), hp_
 
   asi_choices <- unname(unlist(stored_choices[grepl("^asi_", names(stored_choices))]))
   if (length(asi_choices)) {
-    char$abilities <- char$abilities %||% list()
-    for (stat in asi_choices) {
-      current <- suppressWarnings(as.integer(char$abilities[[stat]] %||% 10L))
-      if (is.na(current)) current <- 10L
-      char$abilities[[stat]] <- min(20L, current + 1L)
-    }
+    char <- apply_ability_score_increase(char, asi_choices)
   }
 
   hp_gain <- suppressWarnings(as.integer(hp_gain))
