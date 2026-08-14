@@ -14,6 +14,10 @@ level_file <- file.path(
   project_dir,
   "DND APP Drachuri Edition Player_v2", "server", "level_module.R"
 )
+feature_file <- file.path(
+  project_dir,
+  "DND APP Drachuri Edition Player_v2", "shared", "class_feature_core.R"
+)
 
 test_env <- new.env(parent = baseenv())
 test_env$`%||%` <- function(a, b) if (!is.null(a)) a else b
@@ -40,10 +44,19 @@ load_functions(
   )
 )
 load_functions(
+  feature_file,
+  c(
+    "CLASS_FEATURE_TAGS", "CLASS_FEATURE_MECHANICS",
+    "infer_class_feature_tags", "class_feature_metadata",
+    "get_unlocked_class_features", "get_unlocked_combat_actions",
+    "resolve_class_action_damage"
+  )
+)
+load_functions(
   level_file,
   c(
     "normalise_character_classes", "level_options_for",
-    "level_features_for", "apply_character_level_up"
+    "level_features_for", "class_max_level", "apply_character_level_up"
   )
 )
 
@@ -314,6 +327,75 @@ test("multiclass level up advances only the selected class", {
   stopifnot(result$character$build$classes[[1L]]$level == 3L)
   stopifnot(result$character$build$classes[[2L]]$level == 3L)
   stopifnot(result$character$build$level == 6L)
+})
+
+test("ability score improvement applies two required stat increases", {
+  class_defs <- list(Rogue = list(
+    levels = list(
+      "3" = list(features = list()),
+      "4" = list(features = list(asi = list(
+        name = "Ability Score Improvement", desc = "Increase ability scores."
+      )))
+    ),
+    subclasses = list()
+  ))
+  character <- list(
+    build = list(class = "Rogue", level = 3L, classes = list(
+      list(class = "Rogue", level = 3L, subclass = "")
+    )),
+    abilities = list(str = 18L, dex = 20L, con = 10L, int = 10L, bld_str = 10L, cha = 10L),
+    resources = list(hp = list(cur = 20L, max = 20L, temp = 0L))
+  )
+  result <- test_env$apply_character_level_up(
+    character, 1L,
+    selections = list(asi_first = "str", asi_second = "dex"),
+    class_defs = class_defs, level_options = list(),
+    timestamp = as.POSIXct("2026-01-01", tz = "UTC")
+  )
+  stopifnot(result$character$abilities$str == 19L)
+  stopifnot(result$character$abilities$dex == 20L)
+})
+
+test("class features receive tags and explicit combat actions", {
+  class_defs <- list(
+    "Na'Haran Sorcerer" = list(
+      levels = list(
+        "1" = list(features = list(water_channeler = list(
+          name = "Water Channeler", desc = "Drain water to damage a creature. Costs Sindre."
+        ))),
+        "11" = list(features = list(improved_channeling = list(
+          name = "Improved Water Channeler", desc = "Drain more water and damage."
+        )))
+      ),
+      subclasses = list()
+    )
+  )
+  character <- list(build = list(
+    class = "Na'Haran Sorcerer", level = 11L,
+    classes = list(list(class = "Na'Haran Sorcerer", level = 11L, subclass = ""))
+  ))
+  actions <- test_env$get_unlocked_combat_actions(character, class_defs)
+  stopifnot(length(actions) == 1L)
+  stopifnot(identical(actions[[1L]]$action$name, "Improved Water Channeler"))
+  stopifnot(all(c("ability", "combat", "spell") %in% actions[[1L]]$tags))
+})
+
+test("class combat actions resolve fixed-percent and dice damage", {
+  percent <- test_env$resolve_class_action_damage(
+    list(damage = list(mode = "percent_max_hp", value = 0.10, type = "necrotic")),
+    target_max_hp = 95L,
+    char = list(abilities = list(str = 10L))
+  )
+  stopifnot(percent$amount == 9L)
+  stopifnot(identical(percent$damage_type, "necrotic"))
+
+  dice <- test_env$resolve_class_action_damage(
+    list(damage = list(mode = "dice_plus_modifier", value = "1d8", stat = "str", type = "piercing")),
+    target_max_hp = 10L,
+    char = list(abilities = list(str = 16L)),
+    roll_function = function(expr) list(total = 5L)
+  )
+  stopifnot(dice$amount == 8L)
 })
 
 cat("\n", tests_run, " tests passed.\n", sep = "")

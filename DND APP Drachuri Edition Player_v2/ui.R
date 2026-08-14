@@ -1,6 +1,7 @@
 # ui.R
 source("library.R")
 source("plug/game_data.R")
+source("shared/class_feature_core.R")
 
 source("server/skills_module.R")
 source("server/inventory_module.R")

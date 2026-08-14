@@ -109,6 +109,7 @@ server_player <- function(input, output, session) {
   source("plug/combat_data.R")
   source("plug/magic_data.R")
   source("plug/game_data.R")
+  source("shared/class_feature_core.R")
   
   
   source("server/stats_module.R")

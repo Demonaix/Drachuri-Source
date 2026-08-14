@@ -37,9 +37,30 @@ normalise_character_classes <- function(char, class_defs = CLASSES) {
   })
 }
 
-level_options_for <- function(class_name, level, level_options = LEVEL_OPTIONS) {
+level_options_for <- function(class_name, level, level_options = LEVEL_OPTIONS,
+                              class_defs = CLASSES) {
   options <- level_options[[as.character(class_name)]][[as.character(level)]] %||% list()
-  if (!is.list(options)) list() else options
+  if (!is.list(options)) options <- list()
+
+  level_features <- class_defs[[as.character(class_name)]]$levels[[as.character(level)]]$features %||% list()
+  has_asi <- "asi" %in% names(level_features) || any(vapply(
+    level_features,
+    function(feature) "stat_increase" %in% infer_class_feature_tags("", feature),
+    logical(1)
+  ))
+
+  if (has_asi && !any(vapply(options, function(x) grepl("^asi_", x$id %||% ""), logical(1)))) {
+    stats <- c(
+      "Strength" = "str", "Dexterity" = "dex", "Constitution" = "con",
+      "Intelligence" = "int", "Blood Strength" = "bld_str", "Charisma" = "cha"
+    )
+    options <- c(options, list(
+      list(id = "asi_first", label = "Ability Score Increase (+1)", options = stats),
+      list(id = "asi_second", label = "Ability Score Increase (+1)", options = stats)
+    ))
+  }
+
+  options
 }
 
 level_features_for <- function(class_name, level, subclass = "", class_defs = CLASSES) {
@@ -52,6 +73,13 @@ level_features_for <- function(class_name, level, subclass = "", class_defs = CL
   }
 
   c(base_features, subclass_features)
+}
+
+class_max_level <- function(class_name, class_defs = CLASSES) {
+  levels <- suppressWarnings(as.integer(names(class_defs[[as.character(class_name)]]$levels %||% list())))
+  levels <- levels[!is.na(levels)]
+  if (!length(levels)) return(0L)
+  max(levels)
 }
 
 apply_character_level_up <- function(char, class_index, selections = list(), hp_gain = 0L,
@@ -71,14 +99,17 @@ apply_character_level_up <- function(char, class_index, selections = list(), hp_
 
   old_level <- suppressWarnings(as.integer(entry$level %||% 1L))
   new_level <- old_level + 1L
-  if (new_level > 20L) stop("This class is already level 20.")
+  max_level <- class_max_level(class_name, class_defs)
+  if (new_level > max_level) {
+    stop(paste0("Progression data for ", class_name, " currently ends at level ", max_level, "."))
+  }
 
-  required <- level_options_for(class_name, new_level, level_options)
+  required <- level_options_for(class_name, new_level, level_options, class_defs)
   stored_choices <- list()
 
   for (choice in required) {
     choice_id <- as.character(choice$id %||% "")
-    allowed <- as.character(choice$options %||% character())
+    allowed <- unname(as.character(choice$options %||% character()))
     selected <- as.character(selections[[choice_id]] %||% "")
 
     if (!nzchar(choice_id) || !nzchar(selected) || !selected %in% allowed) {
@@ -100,6 +131,16 @@ apply_character_level_up <- function(char, class_index, selections = list(), hp_
   char$build$level_choices <- char$build$level_choices %||% list()
   char$build$level_choices[[class_name]] <- char$build$level_choices[[class_name]] %||% list()
   char$build$level_choices[[class_name]][[as.character(new_level)]] <- stored_choices
+
+  asi_choices <- unname(unlist(stored_choices[grepl("^asi_", names(stored_choices))]))
+  if (length(asi_choices)) {
+    char$abilities <- char$abilities %||% list()
+    for (stat in asi_choices) {
+      current <- suppressWarnings(as.integer(char$abilities[[stat]] %||% 10L))
+      if (is.na(current)) current <- 10L
+      char$abilities[[stat]] <- min(20L, current + 1L)
+    }
+  }
 
   hp_gain <- suppressWarnings(as.integer(hp_gain))
   if (is.na(hp_gain) || hp_gain < 0L) hp_gain <- 0L
@@ -146,6 +187,7 @@ levelTabUI <- function(id) {
       .levelup-class{display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid rgba(191,167,111,.3)}
       .levelup-feature{padding:10px;border:1px solid rgba(191,167,111,.4);border-radius:10px;margin-top:8px;background:rgba(255,255,255,.55)}
       .levelup-feature-name{font-weight:900}.levelup-feature-desc{font-size:12px;opacity:.82;margin-top:3px}
+      .levelup-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}.levelup-tag{font-size:10px;font-weight:800;padding:2px 7px;border-radius:999px;background:#efe1c5;color:#60401f;text-transform:uppercase}
       .levelup-next{font-size:22px;font-weight:900;color:#70451f}.levelup-choice{padding:10px;margin-top:10px;border-left:4px solid #b2783d;background:rgba(244,226,191,.45)}
       .levelup-confirm{margin-top:14px;width:100%;font-weight:900}
       @media(max-width:850px){.levelup-wrap{grid-template-columns:1fr}}
@@ -236,7 +278,11 @@ levelTabServer <- function(id, state, restoring, add_log, char_rev) {
     output$level_summary_ui <- renderUI({
       entry <- selected_entry()
       target <- next_level()
-      if (target > 20L) return(div(class = "alert alert-info", "This class is already level 20."))
+      max_level <- class_max_level(entry$class)
+      if (target > max_level) return(div(
+        class = "alert alert-info",
+        paste0("Progression data for this class currently ends at level ", max_level, ".")
+      ))
       tagList(
         tags$hr(),
         div(class = "levelup-next", paste(entry$class, entry$level, "→", target)),
@@ -264,18 +310,27 @@ levelTabServer <- function(id, state, restoring, add_log, char_rev) {
     output$new_features_ui <- renderUI({
       entry <- selected_entry()
       target <- next_level()
-      if (target > 20L) return(NULL)
+      if (target > class_max_level(entry$class)) return(NULL)
       features <- level_features_for(entry$class, target, chosen_subclass())
       if (length(features) == 0L) {
         return(p(class = "levelup-muted", "No feature is listed for this level. The level still advances hit points and class scaling."))
       }
-      tagList(lapply(features, function(feature) {
+      feature_ids <- names(features)
+      if (is.null(feature_ids)) feature_ids <- paste0("feature_", seq_along(features))
+      tagList(Map(function(feature_id, feature) {
+        metadata <- class_feature_metadata(
+          entry$class, target, feature_id, feature, chosen_subclass()
+        )
         div(
           class = "levelup-feature",
           div(class = "levelup-feature-name", feature$name %||% "Class feature"),
-          div(class = "levelup-feature-desc", feature$desc %||% "")
+          div(class = "levelup-feature-desc", feature$desc %||% ""),
+          div(
+            class = "levelup-tags",
+            lapply(metadata$tags, function(tag) div(class = "levelup-tag", gsub("_", " ", tag)))
+          )
         )
-      }))
+      }, feature_ids, features))
     })
 
     output$level_choices_ui <- renderUI({
@@ -289,7 +344,7 @@ levelTabServer <- function(id, state, restoring, add_log, char_rev) {
           selectInput(
             session$ns(paste0("level_choice_", choice_id)),
             as.character(choice$label %||% "Choose an option"),
-            choices = c("Choose…" = "", as.character(choice$options %||% character())),
+            choices = c("Choose…" = "", choice$options %||% character()),
             selected = ""
           )
         )
@@ -304,7 +359,7 @@ levelTabServer <- function(id, state, restoring, add_log, char_rev) {
           "This character's class is not present in the progression data yet, so it cannot be levelled safely."
         ))
       }
-      if (next_level() > 20L) return(NULL)
+      if (next_level() > class_max_level(entry$class)) return(NULL)
       actionButton(
         session$ns("confirm_level_up"),
         "Confirm Level Up",
@@ -316,8 +371,8 @@ levelTabServer <- function(id, state, restoring, add_log, char_rev) {
       if (isTRUE(restoring())) return()
       entry <- selected_entry()
       target <- next_level()
-      if (target > 20L) {
-        showNotification("This class is already level 20.", type = "error")
+      if (target > class_max_level(entry$class)) {
+        showNotification("No further progression is defined for this class yet.", type = "error")
         return()
       }
 

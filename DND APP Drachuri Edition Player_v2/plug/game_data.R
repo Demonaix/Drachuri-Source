@@ -1593,3 +1593,46 @@ LEVEL_OPTIONS <- list(
   )
 )
 )
+
+# Complete the shared ability-score progression for full 20-level classes.
+# Sparse class levels are valid: a level may grant only scaling plus its ASI.
+for (class_name in c("Hanianol Sorcerer", "Na'Haran Sorcerer")) {
+  for (level_name in c("4", "8", "12", "16", "19")) {
+    CLASSES[[class_name]]$levels[[level_name]] <-
+      CLASSES[[class_name]]$levels[[level_name]] %||% list(features = list())
+    CLASSES[[class_name]]$levels[[level_name]]$features <-
+      CLASSES[[class_name]]$levels[[level_name]]$features %||% list()
+    CLASSES[[class_name]]$levels[[level_name]]$features$asi <- list(
+      name = "Ability Score Improvement",
+      desc = "Increase one ability by 2, or two abilities by 1 (maximum 20)."
+    )
+  }
+}
+
+# Choices already described by the class text, now made explicit and saved by
+# the guided level-up workflow. Mechanical combat automation can be added to a
+# choice later without changing saved characters.
+LEVEL_OPTIONS[["Hanianol Sorcerer"]][["2"]] <- c(
+  LEVEL_OPTIONS[["Hanianol Sorcerer"]][["2"]] %||% list(),
+  list(list(
+    id = "natural_specialty",
+    label = "Natural Magic Specialty",
+    options = c("Plants", "Rain", "Animals", "Disease")
+  ))
+)
+LEVEL_OPTIONS[["Na'Haran Sorcerer"]][["5"]] <- c(
+  LEVEL_OPTIONS[["Na'Haran Sorcerer"]][["5"]] %||% list(),
+  list(list(
+    id = "thermal_path",
+    label = "Thermal Wild Magic",
+    options = c("Exothermic", "Endothermic")
+  ))
+)
+LEVEL_OPTIONS[["Na'Haran Sorcerer"]][["6"]] <- c(
+  LEVEL_OPTIONS[["Na'Haran Sorcerer"]][["6"]] %||% list(),
+  list(list(
+    id = "electromagnetic_path",
+    label = "Electromagnetic Magic",
+    options = c("Flesh Witherer", "Lightbringer")
+  ))
+)

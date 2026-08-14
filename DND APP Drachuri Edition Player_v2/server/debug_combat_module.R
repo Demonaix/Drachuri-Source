@@ -25,7 +25,8 @@ debugCombatUI <- function(id) {
             class = "combat-compact-header",
             uiOutput(ns("header_ui")),
             div(
-              class = "combat-compact-actions",
+            class = "combat-compact-actions",
+              uiOutput(ns("class_actions_ui")),
               actionButton(ns("end_turn"), "End Turn", class = "btn btn-warning"),
               checkboxInput(ns("dash_move"), "Dash / Sprint", value = FALSE),
               uiOutput(ns("phase_move_ui")),
@@ -2034,6 +2035,152 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     
 
     
+    class_combat_actions <- reactive({
+      char <- core$state$char
+      if (is.null(char)) return(list())
+      get_unlocked_combat_actions(char)
+    })
+
+    output$class_actions_ui <- renderUI({
+      actions <- class_combat_actions()
+      if (!length(actions)) return(NULL)
+      actionButton(
+        session$ns("open_class_action"),
+        paste0("Abilities (", length(actions), ")"),
+        class = "btn btn-primary"
+      )
+    })
+
+    observeEvent(input$open_class_action, {
+      if (!isTRUE(is_players_turn())) {
+        log_safe("⚠️ Combat abilities can only be used on your turn.")
+        return()
+      }
+
+      actions <- class_combat_actions()
+      if (!length(actions)) return()
+      actors <- encounter_actors_tbl()
+      targets <- actors[as.character(actors$actor_type %||% "") == "enemy", , drop = FALSE]
+      if (!is.data.frame(targets) || nrow(targets) == 0L) {
+        log_safe("⚠️ There are no enemy targets in this encounter.")
+        return()
+      }
+
+      action_choices <- stats::setNames(
+        as.character(seq_along(actions)),
+        vapply(actions, function(feature) as.character(feature$action$name %||% feature$name), character(1))
+      )
+      target_choices <- stats::setNames(
+        as.character(targets$actor_id),
+        as.character(targets$display_name %||% targets$actor_id)
+      )
+
+      showModal(modalDialog(
+        title = "Use Combat Ability",
+        selectInput(session$ns("class_action_index"), "Ability", choices = action_choices),
+        selectInput(session$ns("class_action_target"), "Target", choices = target_choices),
+        uiOutput(session$ns("class_action_preview_ui")),
+        footer = tagList(
+          modalButton("Cancel"),
+          actionButton(session$ns("confirm_class_action"), "Use Ability", class = "btn btn-danger")
+        ),
+        easyClose = TRUE
+      ))
+    }, ignoreInit = TRUE)
+
+    output$class_action_preview_ui <- renderUI({
+      actions <- class_combat_actions()
+      idx <- suppressWarnings(as.integer(input$class_action_index %||% 1L))
+      if (is.na(idx) || idx < 1L || idx > length(actions)) return(NULL)
+      feature <- actions[[idx]]
+      action <- feature$action
+      resource <- action$resource %||% list()
+      div(
+        class = "confirm-box",
+        tags$strong(action$name %||% feature$name),
+        tags$p(feature$desc),
+        if (length(resource)) tags$p(
+          tags$strong("Cost: "), resource$cost %||% 0L, " ", tools::toTitleCase(resource$name %||% "resource")
+        ),
+        if (nzchar(action$note %||% "")) tags$p(class = "confirm-note", action$note)
+      )
+    })
+
+    observeEvent(input$confirm_class_action, {
+      req(isTRUE(is_players_turn()))
+      actions <- class_combat_actions()
+      idx <- suppressWarnings(as.integer(input$class_action_index %||% NA))
+      target_id <- as.character(input$class_action_target %||% "")
+      if (is.na(idx) || idx < 1L || idx > length(actions) || !nzchar(target_id)) return()
+
+      feature <- actions[[idx]]
+      action <- feature$action
+      damage <- action$damage %||% list()
+      target_row <- get_actor_row(target_id, "enemy")
+      if (!is.data.frame(target_row) || nrow(target_row) == 0L) {
+        log_safe("⚠️ That target is no longer available.")
+        removeModal()
+        return()
+      }
+
+      char <- validate_character(core$state$char)
+      resource <- action$resource %||% list()
+      if (length(resource) && identical(as.character(resource$name %||% ""), "sindre")) {
+        cost <- suppressWarnings(as.integer(resource$cost %||% 0L))
+        available <- suppressWarnings(as.integer(char$resources$sindre$cur %||% 0L))
+        if (is.na(cost)) cost <- 0L
+        if (is.na(available)) available <- 0L
+        if (available < cost) {
+          log_safe("⚠️ Not enough Sindre for that ability.")
+          return()
+        }
+        char$resources$sindre$cur <- available - cost
+      }
+
+      max_hp <- suppressWarnings(as.integer(target_row$hp_max[1] %||% target_row$max_hp[1] %||% 1L))
+      resolved_damage <- resolve_class_action_damage(action, max_hp, char)
+      raw_damage <- resolved_damage$amount
+
+      target_char <- load_actor_for_combat(target_id, "enemy")
+      traits <- get_damage_traits(target_char)
+      adjusted <- apply_damage_traits_to_parts(
+        list(list(total = raw_damage, type = resolved_damage$damage_type)),
+        traits
+      )
+      final_damage <- as.integer(adjusted$total %||% raw_damage)
+      eid <- current_encounter_id()
+      result <- tryCatch(
+        damage_encounter_enemy(eid, target_id, final_damage),
+        error = function(e) NULL
+      )
+      if (is.null(result)) {
+        log_safe("⚠️ The ability could not be applied.")
+        return()
+      }
+
+      core$state$char <- char
+      ability_name <- as.character(action$name %||% feature$name)
+      target_name <- get_actor_display_name(target_id, "enemy")
+      log_game_event(
+        encounter_id = eid,
+        event_type = "ability",
+        actor_type = "player",
+        actor_id = as.character(core$state$char_id %||% ""),
+        target_id = target_id,
+        payload = list(
+          ability_name = ability_name,
+          target_name = target_name,
+          raw_damage = raw_damage,
+          damage = final_damage,
+          damage_type = resolved_damage$damage_type,
+          resource_cost = resource$cost %||% 0L
+        )
+      )
+      removeModal()
+      log_safe(paste0("✨ ", ability_name, " deals ", final_damage, " damage to ", target_name, "."))
+      bump_refresh()
+    }, ignoreInit = TRUE)
+
     output$initiative_ui <- renderUI({
       actors <- encounter_actors_tbl()
       aid <- active_actor_id()
@@ -2162,6 +2309,18 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         }
         
         return("Initiative rolled.")
+      }
+
+      if (typ == "ability") {
+        if (is.list(payload)) {
+          return(paste0(
+            actor_name, " uses ", payload$ability_name %||% "an ability",
+            " on ", payload$target_name %||% target_name,
+            " for ", payload$damage %||% 0, " ",
+            payload$damage_type %||% "", " damage."
+          ))
+        }
+        return(paste0(actor_name, " uses an ability."))
       }
       
       if (typ == "move") {
