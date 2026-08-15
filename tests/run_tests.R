@@ -688,12 +688,26 @@ test("standard combat actions are wired to shared action and effect mechanics", 
 test("combat UI exposes lifecycle, summon control, and module shortcuts", {
   player_file <- file.path(project_dir, "DND APP Drachuri Edition Player_v2", "server", "debug_combat_module.R")
   control_file <- file.path(project_dir, "DND APP Drachuri Edition 2 Control", "control_app", "modules", "control_live_combat_module.R")
+  server_file <- file.path(project_dir, "DND APP Drachuri Edition Player_v2", "server.R")
   player_source <- paste(readLines(player_file, warn = FALSE), collapse = "\n")
   control_source <- paste(readLines(control_file, warn = FALSE), collapse = "\n")
-  stopifnot(grepl('input$go_armoury', player_source, fixed = TRUE))
-  stopifnot(grepl('input$go_magic', player_source, fixed = TRUE))
+  server_source <- paste(readLines(server_file, warn = FALSE), collapse = "\n")
+  stopifnot(grepl('input$shortcut_armoury', server_source, fixed = TRUE))
+  stopifnot(grepl('input$shortcut_magic', server_source, fixed = TRUE))
+  stopifnot(grepl('input$shortcut_combat', server_source, fixed = TRUE))
   stopifnot(grepl('create_encounter_summon(', player_source, fixed = TRUE))
   stopifnot(grepl('input$confirm_end_combat', control_source, fixed = TRUE))
+})
+
+test("Magic and Balance use authoritative class progression", {
+  magic_source <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition Player_v2", "server", "magic_module.R"), warn = FALSE), collapse = "\n")
+  level_source <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition Player_v2", "server", "level_module.R"), warn = FALSE), collapse = "\n")
+  combat_source <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition Player_v2", "server", "debug_combat_module.R"), warn = FALSE), collapse = "\n")
+  stopifnot(grepl("get_unlocked_class_spells(validate_character(state$char))", magic_source, fixed = TRUE))
+  stopifnot(!grepl("Ember Oath", magic_source, fixed = TRUE))
+  stopifnot(grepl('input$confirm_balance', level_source, fixed = TRUE))
+  stopifnot(!grepl('input$confirm_balance', combat_source, fixed = TRUE))
+  stopifnot(grepl('input$confirm_action_override', combat_source, fixed = TRUE))
 })
 
 test("level-two abilities are connected to action and skill interfaces", {

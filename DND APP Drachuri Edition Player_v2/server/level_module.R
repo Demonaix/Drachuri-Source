@@ -282,6 +282,7 @@ levelTabUI <- function(id) {
       div(
         class = "levelup-card",
         h3("Unlocked Features & Abilities"),
+        uiOutput(ns("balance_action_ui")),
         uiOutput(ns("unlocked_features_ui"))
       ),
       div(
@@ -349,6 +350,65 @@ levelTabServer <- function(id, state, restoring, add_log, char_rev) {
         )
       }))
     })
+
+    has_balance <- reactive({
+      any(vapply(get_unlocked_class_features(display_character_r()), function(feature) {
+        identical(as.character(feature$id %||% ""), "balance")
+      }, logical(1)))
+    })
+
+    output$balance_action_ui <- renderUI({
+      if (!isTRUE(has_balance())) return(NULL)
+      char <- validate_character(state$char)
+      action <- list(usage = list(key = "balance", recharge = "long_rest"))
+      active <- length(char$status$balance_boosts %||% character()) > 0L
+      div(
+        class = "levelup-feature",
+        tags$strong("⚖️ Balance"),
+        p(class = "levelup-muted", if (active) {
+          paste0("Active: +1 to ", paste(char$status$balance_boosts, collapse = ", "), ". Resets automatically on long rest.")
+        } else "Spend 15 Sindre once per long rest to add +1 to three different abilities until long rest."),
+        actionButton(session$ns("open_balance"), if (active) "Balance Active" else "Use Balance",
+                     class = "btn btn-primary btn-sm",
+                     disabled = if (active || !class_action_use_available(char, action)) "disabled" else NULL)
+      )
+    })
+
+    observeEvent(input$open_balance, {
+      stats <- c("Strength" = "str", "Dexterity" = "dex", "Constitution" = "con",
+                 "Intelligence" = "int", "Blood Strength" = "bld_str", "Charisma" = "cha")
+      showModal(modalDialog(
+        title = "Use Balance?",
+        p("Cost: 15 Sindre. Choose three different abilities; each gains +1 until your next long rest."),
+        selectInput(session$ns("balance_stat_1"), "Ability 1", stats),
+        selectInput(session$ns("balance_stat_2"), "Ability 2", stats, selected = "dex"),
+        selectInput(session$ns("balance_stat_3"), "Ability 3", stats, selected = "con"),
+        footer = tagList(modalButton("Cancel"), actionButton(session$ns("confirm_balance"), "Spend 15 Sindre", class = "btn btn-primary"))
+      ))
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$confirm_balance, {
+      char <- validate_character(state$char)
+      action <- list(usage = list(key = "balance", recharge = "long_rest"))
+      stats <- as.character(c(input$balance_stat_1, input$balance_stat_2, input$balance_stat_3))
+      if (length(stats) != 3L || anyDuplicated(stats)) {
+        showNotification("Balance requires three different abilities.", type = "error")
+        return()
+      }
+      sindre <- as.integer(char$resources$sindre$cur %||% 0L)
+      if (!class_action_use_available(char, action) || sindre < 15L) {
+        showNotification("Balance is unavailable or you do not have 15 Sindre.", type = "error")
+        return()
+      }
+      char$resources$sindre$cur <- sindre - 15L
+      for (stat in stats) char$abilities[[stat]] <- as.integer(char$abilities[[stat]] %||% 10L) + 1L
+      char$status <- char$status %||% list()
+      char$status$balance_boosts <- stats
+      state$char <- mark_class_action_used(char, action)
+      if (is.function(char_rev)) char_rev(isolate(char_rev()) + 1L)
+      removeModal()
+      log_safe(paste0("⚖️ Balance strengthens ", paste(stats, collapse = ", "), " until long rest."))
+    }, ignoreInit = TRUE)
 
     output$unlocked_spells_ui <- renderUI({
       spells <- get_unlocked_class_spells(display_character_r())

@@ -295,6 +295,7 @@ body.parchment #app-panel .tab-content > .tab-pane.active .container-fluid{
   z-index: 999950;
   display: none;
 }
+#return-camp-wrap{display:none;flex-direction:column;align-items:stretch;gap:6px}
 #return-camp-wrap .btn{
   border-radius: 999px;
   padding: 10px 14px;
@@ -628,7 +629,7 @@ window.showToast = function(message, timeoutMs = 2500) {
 
     var showReturn = (!isCamp && value !== 'landing');
     var wrap = document.getElementById('return-camp-wrap');
-    if (wrap) wrap.style.display = showReturn ? 'block' : 'none';
+    if (wrap) wrap.style.display = showReturn ? 'flex' : 'none';
   }
 
   function activePaneValue(){
@@ -698,7 +699,10 @@ window.showToast = function(message, timeoutMs = 2500) {
   # Return to camp
   div(
     id = "return-camp-wrap",
-    actionButton("return_to_camp", "↩ Return to Camp", class = "btn btn-default")
+    actionButton("return_to_camp", "↩ Return to Camp", class = "btn btn-default"),
+    actionButton("shortcut_armoury", "🛡 Armoury", class = "btn btn-default"),
+    actionButton("shortcut_magic", "✨ Magic", class = "btn btn-default"),
+    actionButton("shortcut_combat", "⚔ Combat", class = "btn btn-default")
   ),
 
   # Main app

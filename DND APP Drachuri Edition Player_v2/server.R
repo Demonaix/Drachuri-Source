@@ -333,6 +333,9 @@ server_player <- function(input, output, session) {
   observeEvent(input$return_to_camp, {
     updateTabsetPanel(session, "main_tabs", selected = "camp")
   }, ignoreInit = TRUE)
+  observeEvent(input$shortcut_armoury, updateTabsetPanel(session, "main_tabs", selected = "armoury"), ignoreInit = TRUE)
+  observeEvent(input$shortcut_magic, updateTabsetPanel(session, "main_tabs", selected = "magic"), ignoreInit = TRUE)
+  observeEvent(input$shortcut_combat, updateTabsetPanel(session, "main_tabs", selected = "debug_combat"), ignoreInit = TRUE)
   
   
   # Now wire tabs via calls (Demand.R pattern)

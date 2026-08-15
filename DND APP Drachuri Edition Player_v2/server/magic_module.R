@@ -154,10 +154,10 @@ magicTabUI <- function(id) {
       # -------------------------
       div(
         class = "card",
-        h4("Deep Magic Spells"),
+        h4("Unlocked Spells & Magical Abilities"),
         tags$p(
           style="opacity:.85;",
-          "Fixed-cost spells with descriptions. Unlocks will come from the Level-Up / Classing module later."
+          "These are the spells and magical abilities unlocked by your saved class progression."
         ),
         uiOutput(ns("deep_magic_ui"))
       )
@@ -739,41 +739,20 @@ magicTabServer <- function(
 
     
     # -------------------------
-    # Deep magic spells (placeholder)
-    # Later module can write: state$char$magic$deep_spells (df or list)
+    # Authoritative progression spells shared with Level and Combat.
     # -------------------------
     deep_spells <- reactive({
-      x <- validate_character(state$char)
-      ds <- NULL
-      if (is.list(x$magic) && !is.null(x$magic$deep_spells)) ds <- x$magic$deep_spells
-      
-      if (is.null(ds)) {
-        ds <- data.frame(
-          name = c("Ember Oath", "Iron Hymn"),
-          cost = c(25, 40),
-          desc = c(
-            "A binding vow of heat and ash. (placeholder)",
-            "A ringing mechanical chant that bends motion. (placeholder)"
-          ),
-          stringsAsFactors = FALSE
-        )
-      }
-      
-      if (is.data.frame(ds)) return(ds)
-      
-      # list -> data.frame best effort
-      tryCatch({
-        do.call(rbind, lapply(ds, function(it) {
+      spells <- get_unlocked_class_spells(validate_character(state$char))
+      if (!length(spells)) return(data.frame(name=character(), cost=integer(), desc=character(), action=character(), stringsAsFactors = FALSE))
+      do.call(rbind, lapply(spells, function(it) {
           data.frame(
             name = as.character(it$name %||% ""),
             cost = as.integer(it$cost %||% 0),
-            desc = as.character(it$desc %||% ""),
+            desc = as.character(it$description %||% ""),
+            action = as.character(it$action_type %||% "action"),
             stringsAsFactors = FALSE
           )
         }))
-      }, error = function(e) {
-        data.frame(name=character(), cost=integer(), desc=character(), stringsAsFactors = FALSE)
-      })
     })
     
     output$deep_magic_ui <- renderUI({
@@ -788,6 +767,7 @@ magicTabServer <- function(
             class="magic-card",
             tags$div(class="k", ds$name[[i]] %||% ""),
             tags$div(class="tier", paste0("Cost: ", as.integer(ds$cost[[i]] %||% 0), " Sindre")),
+            tags$div(class="tier", paste0("Use: ", tools::toTitleCase(ds$action[[i]] %||% "action"))),
             tags$div(class="hint", ds$desc[[i]] %||% "")
           )
         })

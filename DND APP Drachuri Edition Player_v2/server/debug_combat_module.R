@@ -27,12 +27,11 @@ debugCombatUI <- function(id) {
             div(
             class = "combat-compact-actions",
               uiOutput(ns("turn_actions_ui")),
+              actionButton(ns("override_action_budget"), "Override Action", class = "btn btn-default"),
               actionButton(ns("open_standard_actions"), "Combat Actions", class = "btn btn-default"),
               uiOutput(ns("level_two_actions_ui")),
               uiOutput(ns("level_three_actions_ui")),
               uiOutput(ns("class_actions_ui")),
-              actionButton(ns("go_armoury"), "Armoury", class = "btn btn-default"),
-              actionButton(ns("go_magic"), "Magic", class = "btn btn-default"),
               actionButton(ns("end_turn"), "End Turn", class = "btn btn-warning"),
               uiOutput(ns("dash_button_ui")),
               uiOutput(ns("phase_move_ui")),
@@ -258,17 +257,28 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       )
     })
 
+    observeEvent(input$override_action_budget, {
+      if (!isTRUE(is_players_turn())) {
+        log_safe("⚠️ Action override is only available on your own turn.")
+        return()
+      }
+      showModal(modalDialog(
+        title = "Override action limit?",
+        p("This grants one extra action for the current turn. Use it to recover from a mistaken click while combat actions are being tested."),
+        footer = tagList(modalButton("Cancel"), actionButton(session$ns("confirm_action_override"), "Grant +1 Action", class = "btn btn-warning"))
+      ))
+    }, ignoreInit = TRUE)
+    observeEvent(input$confirm_action_override, {
+      removeModal()
+      turn_budget(grant_turn_action(turn_budget(), 1L))
+      log_game_event(current_encounter_id(), "action_override", "player", as.character(core$state$char_id %||% ""), payload = list(actions_added = 1L))
+      log_safe("🛠️ Action override granted: +1 action this turn.")
+    }, ignoreInit = TRUE)
+
     output$dash_button_ui <- renderUI({
       actionButton(session$ns("arm_dash"), if (isTRUE(movement_dash())) "Dash Armed ✓" else "Dash / Sprint",
                    class = if (isTRUE(movement_dash())) "btn btn-success" else "btn btn-default")
     })
-
-    observeEvent(input$go_armoury, {
-      updateTabsetPanel(session$rootScope(), "main_tabs", selected = "armoury")
-    }, ignoreInit = TRUE)
-    observeEvent(input$go_magic, {
-      updateTabsetPanel(session$rootScope(), "main_tabs", selected = "magic")
-    }, ignoreInit = TRUE)
 
     observeEvent(input$arm_dash, {
       if (isTRUE(movement_dash()) && !isTRUE(dash_action_spent())) {
@@ -368,6 +378,15 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
 
     apply_combat_condition <- function(condition, target_id, target_type = "player", source = "standard_action",
                                        ends_round = current_round_number() + 1L, payload = list()) {
+      target_char <- tryCatch(load_actor_for_combat(target_id, target_type), error = function(e) NULL)
+      if (!is.null(target_char)) {
+        target_char <- apply_unlocked_class_effects(validate_character(target_char))
+        immunities <- tolower(as.character(target_char$combat_profile$condition_immunities %||% character()))
+        if (tolower(as.character(condition)) %in% immunities) {
+          log_safe(paste0("🛡️ ", get_actor_display_name(target_id), " is immune to ", condition, "."))
+          return(FALSE)
+        }
+      }
       payload$condition <- condition
       created <- create_encounter_effect(
         current_encounter_id(), "player", as.character(core$state$char_id %||% ""),
@@ -632,13 +651,6 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       if (player_has_feature("fast_hands")) {
         buttons <- c(buttons, list(actionButton(session$ns("fast_hands"), "Fast Hands", class = "btn btn-default")))
       }
-      if (player_has_feature("balance")) {
-        action <- list(usage = list(key = "balance", recharge = "long_rest"))
-        buttons <- c(buttons, list(actionButton(
-          session$ns("open_balance"), "Balance",
-          class = "btn btn-default", disabled = if (!class_action_use_available(char, action)) "disabled" else NULL
-        )))
-      }
       if (player_has_feature("predator")) {
         action <- list(usage = list(key = "predator", recharge = "short_rest"))
         buttons <- c(buttons, list(actionButton(
@@ -746,46 +758,6 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       if (!spend_action_safe("bonus_action", paste("Fast Hands:", choice))) return()
       removeModal()
       log_safe(paste0("🖐️ Fast Hands: ", choice, ". Resolve the selected object, tool or check."))
-    }, ignoreInit = TRUE)
-
-    observeEvent(input$open_balance, {
-      if (!isTRUE(is_players_turn())) return()
-      stats <- c("Strength" = "str", "Dexterity" = "dex", "Constitution" = "con",
-                 "Intelligence" = "int", "Blood Strength" = "bld_str", "Charisma" = "cha")
-      showModal(modalDialog(
-        title = "Balance",
-        p("Spend 15 Sindre to increase three different abilities by +1 until your next long rest."),
-        selectInput(session$ns("balance_stat_1"), "Ability 1", stats),
-        selectInput(session$ns("balance_stat_2"), "Ability 2", stats, selected = "dex"),
-        selectInput(session$ns("balance_stat_3"), "Ability 3", stats, selected = "con"),
-        footer = tagList(modalButton("Cancel"), actionButton(session$ns("confirm_balance"), "Spend 15 Sindre", class = "btn btn-primary"))
-      ))
-    }, ignoreInit = TRUE)
-
-    observeEvent(input$confirm_balance, {
-      char <- validate_character(core$state$char)
-      action <- list(usage = list(key = "balance", recharge = "long_rest"))
-      if (!class_action_use_available(char, action)) return()
-      stats <- c(input$balance_stat_1, input$balance_stat_2, input$balance_stat_3)
-      stats <- as.character(stats)
-      if (length(stats) != 3L || anyDuplicated(stats)) {
-        log_safe("⚠️ Balance requires three different abilities.")
-        return()
-      }
-      sindre <- as.integer(char$resources$sindre$cur %||% 0L)
-      if (sindre < 15L) {
-        log_safe("⚠️ Not enough Sindre for Balance.")
-        return()
-      }
-      if (!spend_action_safe("action", "Balance")) return()
-      char$resources$sindre$cur <- sindre - 15L
-      for (stat in stats) char$abilities[[stat]] <- as.integer(char$abilities[[stat]] %||% 10L) + 1L
-      char$status <- char$status %||% list()
-      char$status$balance_boosts <- stats
-      char <- mark_class_action_used(char, action)
-      core$state$char <- char
-      removeModal()
-      log_safe(paste0("⚖️ Balance strengthens ", paste(stats, collapse = ", "), " until long rest."))
     }, ignoreInit = TRUE)
 
     observeEvent(input$use_predator, {
@@ -942,8 +914,6 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         log_safe("⚠️ Not enough Sindre for Natural Magic.")
         return()
       }
-      if (!spend_action_safe("action", spell$name)) return()
-
       classes <- normalise_character_classes(char)
       hanianol_level <- sum(vapply(classes, function(entry) {
         if (identical(as.character(entry$class %||% ""), "Hanianol Sorcerer")) as.integer(entry$level %||% 0L) else 0L
@@ -966,6 +936,8 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         }
         center_x <- as.integer(target$x[1]); center_y <- as.integer(target$y[1])
       }
+
+      if (!spend_action_safe("action", spell$name)) return()
 
       end_actor_concentration(eid, caster_id)
       radius <- as.integer(spell$target$size_ft %||% 0L)

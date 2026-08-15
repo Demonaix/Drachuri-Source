@@ -73,9 +73,9 @@ partyHudUI <- function(id) {
     }
 
     #", root_id, " .party-strip.active-turn{
-      border-color: rgba(180,90,40,0.98);
-      background: rgba(255,248,232,0.97);
-      box-shadow: 0 0 0 2px rgba(220,140,60,0.22), 0 8px 20px rgba(0,0,0,0.18);
+      border-color: rgba(125,28,28,0.98);
+      background: rgba(244,215,208,0.98);
+      box-shadow: 0 0 0 2px rgba(125,28,28,0.32), 0 8px 20px rgba(0,0,0,0.22);
     }
 
     #", root_id, " .party-strip.self-player{
@@ -160,6 +160,7 @@ partyHudUI <- function(id) {
       font-size: 9px;
       line-height: 1;
     }
+    #", root_id, " .party-condition{font-size:7px;font-weight:900;padding:2px 5px;border-radius:999px;background:#6f3030;color:#fff;text-transform:uppercase}
 
     #", root_id, " .party-minirow{
       display: grid;
@@ -445,6 +446,19 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
       if (in_combat && "turn_order" %in% names(rows)) {
         rows <- rows[order(rows$turn_order, na.last = TRUE), , drop = FALSE]
       }
+      effects <- snapshot$effects %||% data.frame()
+      rows$conditions <- vapply(as.character(rows$actor_id), function(actor_id) {
+        if (!is.data.frame(effects) || !nrow(effects)) return("")
+        hit <- effects[as.character(effects$target_actor_id %||% "") == actor_id &
+                         as.character(effects$effect_type %||% "") == "condition", , drop = FALSE]
+        if (!nrow(hit)) return("")
+        values <- vapply(seq_len(nrow(hit)), function(j) {
+          payload <- hit$payload[[j]]
+          if (!is.list(payload)) payload <- tryCatch(jsonlite::fromJSON(as.character(payload)), error = function(e) list())
+          as.character(payload$condition %||% "")
+        }, character(1))
+        paste(unique(values[nzchar(values)]), collapse = ",")
+      }, character(1))
       
       rows
     }
@@ -464,7 +478,7 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
       
       cols <- intersect(
         c("actor_id", "actor_type", "display_name", "current_hp", "temp_hp",
-          "max_hp", "initiative", "turn_order", "is_active", "updated_at"),
+          "max_hp", "initiative", "turn_order", "is_active", "conditions", "updated_at"),
         names(rows)
       )
       
@@ -564,6 +578,8 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
         if (!nzchar(class_txt)) class_txt <- "—"
         
         status_icons <- extra$status_icons %||% character(0)
+        conditions <- strsplit(as.character(row$conditions[1] %||% ""), ",", fixed = TRUE)[[1L]]
+        conditions <- conditions[nzchar(conditions)]
         
         tags$div(
           class = "party-row",
@@ -595,7 +611,10 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
                 lapply(status_icons, function(ic) {
                   tags$span(class = "party-status-icon", ic)
                 })
-              }
+              },
+              if (length(conditions)) lapply(conditions, function(condition) {
+                tags$span(class = "party-condition", title = paste("Condition:", condition), condition)
+              })
             ),
             tags$div(
               class = "party-minirow",
