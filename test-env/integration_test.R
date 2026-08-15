@@ -143,6 +143,10 @@ accepted<-resolve_trade_offer(offer$offer_id,"1002",TRUE);stopifnot(accepted$sta
 received<-accepted$character$inventory$items;stopifnot(any(received$name==loot_row$name),identical(Filter(function(x)length(x$material)>0,received$meta)[[1]]$material,"steel"))
 gold_offer<-create_trade_offer(1L,"1001","1002","gold",gold_amount=5L);stopifnot(gold_offer$sender$inventory$gold==15)
 declined<-resolve_trade_offer(gold_offer$offer_id,"1002",FALSE);stopifnot(declined$status=="declined",declined$character$inventory$gold==20)
+note_id<-send_private_note(1L,"1001","1002","Meet me beside the old standing stone.")
+stopifnot(!is.null(note_id));notes<-get_private_notes("1002",TRUE);stopifnot(any(notes$id==note_id),grepl("QA Rogue",notes$sender_name[notes$id==note_id],fixed=TRUE))
+stopifnot(mark_private_note(note_id,"1002","read"));stopifnot(!note_id%in%get_private_notes("1002",TRUE)$id)
+reply_id<-send_private_note(1L,"1002","1001","I will be there.",reply_to_id=note_id);stopifnot(!is.null(reply_id));stopifnot(mark_private_note(note_id,"1002","acknowledged"))
 
 stopifnot(isTRUE(end_encounter_combat(1L)))
 ended_snapshot <- get_player_live_snapshot(1L, "1002")

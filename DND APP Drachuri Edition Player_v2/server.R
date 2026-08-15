@@ -120,6 +120,7 @@ server_player <- function(input, output, session) {
   source("server/camp_module.R")
   source("server/sidebar_module.R")
   source("server/landing_module.R")
+  source("server/private_notes_module.R")
   source("server/dice_module.R")
   source("server/magic_module.R")
   source("server/blood_module.R")
@@ -354,6 +355,7 @@ server_player <- function(input, output, session) {
   source("calls/inventory_call.R", local=TRUE)
   source("calls/debug_combat_call.R", local=TRUE)
   source("calls/party_hud_call.R", local=TRUE)
+  privateNotesServer("notes", core$state)
  source("calls/character_3d_call.R", local=TRUE)
   source("calls/rune_call.R", local=TRUE)
   

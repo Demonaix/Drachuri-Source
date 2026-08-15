@@ -10,6 +10,7 @@ source("server/diary_module.R")
 source("server/sidebar_module.R")
 source("server/camp_module.R")
 source("server/landing_module.R")
+source("server/private_notes_module.R")
 source("server/dice_module.R")
 source("server/magic_module.R")
 source("server/blood_module.R")
@@ -670,6 +671,7 @@ window.showToast = function(message, timeoutMs = 2500) {
   tags$div(id = "screen-flash"),
   hudUI("hud"),
  partyHudUI("partyhud"),
+ privateNotesUI("notes"),
 
   # Landing overlay
   div(

@@ -68,6 +68,24 @@ resolve_trade_offer <- function(offer_id,recipient_id,accept=TRUE) {
   }),error=function(e){message("resolve_trade_offer failed: ",e$message);NULL})
 }
 
+send_private_note <- function(session_id,sender_id,recipient_id,body,reply_to_id=NULL) {
+  body<-trimws(as.character(body%||%""));if(!nzchar(body)||nchar(body)>4000L)return(NULL)
+  con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE)
+  tryCatch(DBI::dbGetQuery(con,"INSERT INTO private_notes(session_id,sender_character_id,recipient_character_id,body,reply_to_id) VALUES($1,$2,$3,$4,$5) RETURNING id",params=list(as.integer(session_id),as.character(sender_id),as.character(recipient_id),body,suppressWarnings(as.integer(reply_to_id%||%NA))))$id[[1]],error=function(e){message("send_private_note failed: ",e$message);NULL})
+}
+
+get_private_notes <- function(character_id,unread_only=FALSE) {
+  con<-get_db_connection();if(is.null(con))return(data.frame());on.exit(release_db_connection(con),add=TRUE)
+  extra<-if(isTRUE(unread_only))" AND n.status='sent'" else ""
+  tryCatch(DBI::dbGetQuery(con,paste0("SELECT n.*,s.char_name AS sender_name,r.char_name AS recipient_name FROM private_notes n LEFT JOIN character_blobs s ON s.id::text=n.sender_character_id LEFT JOIN character_blobs r ON r.id::text=n.recipient_character_id WHERE n.recipient_character_id=$1",extra," ORDER BY n.created_at DESC LIMIT 50"),params=list(as.character(character_id))),error=function(e)data.frame())
+}
+
+mark_private_note <- function(note_id,recipient_id,status=c("read","acknowledged")) {
+  status<-match.arg(status);con<-get_db_connection();if(is.null(con))return(FALSE);on.exit(release_db_connection(con),add=TRUE)
+  set_sql<-if(status=="read")"status=$3,read_at=COALESCE(read_at,now())" else "status=$3,acknowledged_at=now(),read_at=COALESCE(read_at,now())"
+  tryCatch({DBI::dbExecute(con,paste0("UPDATE private_notes SET ",set_sql," WHERE id=$1 AND recipient_character_id=$2"),params=list(as.integer(note_id),as.character(recipient_id),status));TRUE},error=function(e){message("mark_private_note failed: ",e$message);FALSE})
+}
+
 # ============================================================
 # READ HELPERS
 # ============================================================
