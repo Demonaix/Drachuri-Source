@@ -82,11 +82,14 @@ inventoryTabServer <- function(id, state, restoring, add_log, char_rev, session_
     uid <- function() {
       paste0("i_", as.integer(Sys.time()), "_", sample(1000:9999, 1))
     }
+    current_trade_session <- function(){value<-if(is.function(session_id))session_id() else session_id;suppressWarnings(as.integer(value%||%NA))}
+    current_trade_character <- function(){value<-if(is.function(character_id))character_id() else character_id;if(is.null(value)||!length(value)||is.na(value[[1]]))"" else as.character(value[[1]])}
 
     observeEvent(input$trade_item, {
-      sid<-as.integer(if(is.function(session_id))session_id() else session_id%||%NA);cid<-as.character(if(is.function(character_id))character_id() else character_id%||%"")
+      sid<-current_trade_session();cid<-current_trade_character()
+      if(length(sid)!=1L||is.na(sid)||sid<1L||!nzchar(cid)){showNotification("Join a session with another player before trading.",type="warning");return()}
       players<-get_session_players(sid);players<-players[as.character(players$character_id)!=cid,,drop=FALSE]
-      if(is.na(sid)||!nzchar(cid)||!nrow(players)){showNotification("Join a session with another player before trading.",type="warning");return()}
+      if(!nrow(players)){showNotification("Join a session with another player before trading.",type="warning");return()}
       inv<-get_items();item_choices<-if(nrow(inv))setNames(inv$id,paste0(inv$name," · ",inv$type," · qty ",inv$qty)) else character()
       showModal(modalDialog(title="Offer a trade",selectInput(ns("trade_recipient"),"Player",choices=setNames(as.character(players$character_id),as.character(players$char_name))),
         radioButtons(ns("trade_kind"),"Offer",choices=c("Item / weapon / armour"="item","Gold"="gold"),inline=TRUE),uiOutput(ns("trade_value_ui")),
@@ -95,14 +98,14 @@ inventoryTabServer <- function(id, state, restoring, add_log, char_rev, session_
     },ignoreInit=TRUE)
 
     observeEvent(input$send_trade, {
-      sid<-as.integer(if(is.function(session_id))session_id() else session_id);cid<-as.character(if(is.function(character_id))character_id() else character_id)
+      sid<-current_trade_session();cid<-current_trade_character()
       result<-create_trade_offer(sid,cid,input$trade_recipient,input$trade_kind,item_id=input$trade_item_id,gold_amount=input$trade_gold%||%0L)
       if(is.null(result)){showNotification("Trade could not be created. The item or gold may no longer be available.",type="error");return()}
       state$char<-result$sender;removeModal();showNotification("Trade offer sent.",type="message")
     },ignoreInit=TRUE)
 
     observe({
-      invalidateLater(3000,session);cid<-as.character(if(is.function(character_id))character_id() else character_id%||%"");if(!nzchar(cid)||isTRUE(state$offline_mode))return()
+      invalidateLater(3000,session);cid<-current_trade_character();if(!nzchar(cid)||isTRUE(state$offline_mode))return()
       sender_update<-consume_trade_sender_update(cid);if(!is.null(sender_update)&&is.list(sender_update$character)){state$char<-sender_update$character;showNotification("A trade was resolved; your inventory and purse have been refreshed.",type="message")}
       offers<-get_pending_trade_offers(cid);if(!nrow(offers))return();fresh<-offers[!offers$id%in%shown_trade_ids(),,drop=FALSE];if(!nrow(fresh))return();o<-fresh[1,,drop=FALSE];shown_trade_ids(unique(c(shown_trade_ids(),o$id)))
       summary<-enemy_db_json(o$summary[[1]],list());meta<-summary$meta%||%list();stat_line<-if(identical(summary$type,"weapon"))paste0("\nDamage: ",meta$damage1%||%"—"," ",meta$dmg_type1%||%""," · uses ",toupper(meta$stat%||%"str")," · material ",meta$material%||%"standard") else if(identical(summary$type,"armor"))paste0("\nArmour: AC ",meta$base_ac%||%"—"," · ",meta$type%||%"Armour") else ""
@@ -111,7 +114,7 @@ inventoryTabServer <- function(id, state, restoring, add_log, char_rev, session_
       session$userData$pending_trade_id<-o$id[[1]]
     })
 
-    resolve_visible_trade <- function(accept){id<-session$userData$pending_trade_id;if(is.null(id))return();result<-resolve_trade_offer(id,as.character(if(is.function(character_id))character_id() else character_id),accept);removeModal();session$userData$pending_trade_id<-NULL;if(is.null(result)){showNotification("Trade is no longer available.",type="error");return()};if(isTRUE(accept))state$char<-result$character;showNotification(if(accept)"Trade accepted and added to your character." else "Trade declined; it was returned to the sender.",type="message")}
+    resolve_visible_trade <- function(accept){id<-session$userData$pending_trade_id;if(is.null(id))return();result<-resolve_trade_offer(id,current_trade_character(),accept);removeModal();session$userData$pending_trade_id<-NULL;if(is.null(result)){showNotification("Trade is no longer available.",type="error");return()};if(isTRUE(accept))state$char<-result$character;showNotification(if(accept)"Trade accepted and added to your character." else "Trade declined; it was returned to the sender.",type="message")}
     observeEvent(input$accept_trade,resolve_visible_trade(TRUE),ignoreInit=TRUE)
     observeEvent(input$decline_trade,resolve_visible_trade(FALSE),ignoreInit=TRUE)
     
