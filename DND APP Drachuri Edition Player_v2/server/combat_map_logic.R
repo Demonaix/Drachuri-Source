@@ -895,7 +895,10 @@ add_encounter_enemy <- function(
     movement_speed,
     attack_bonus = 2L,
     damage_expr = "1d6",
-    damage_type = "slashing"
+    damage_type = "slashing",
+    template_key = NULL, enemy_type = "Custom", characteristics = list(),
+    abilities = list(), attacks = list(), loot = list(), resistances = character(),
+    immunities = character(), vulnerabilities = character(), condition_immunities = character()
 ) {
   `%||%` <- get("%||%", inherits = TRUE)
   
@@ -943,6 +946,8 @@ add_encounter_enemy <- function(
         attack_bonus,
         damage_expr,
         damage_type,
+        template_key, enemy_type, characteristics, abilities, attacks, loot,
+        resistances, immunities, vulnerabilities, condition_immunities,
         created_at,
         updated_at
       )
@@ -960,6 +965,8 @@ add_encounter_enemy <- function(
         $7,   -- attack_bonus
         $8,   -- damage_expr
         $9,   -- damage_type
+        $10, $11, $12::jsonb, $13::jsonb, $14::jsonb, $15::jsonb,
+        $16::text[], $17::text[], $18::text[], $19::text[],
         NOW(),
         NOW()
       )
@@ -974,7 +981,10 @@ add_encounter_enemy <- function(
         movement_speed,
         attack_bonus,
         damage_expr,
-        damage_type
+        damage_type,
+        as.character(template_key %||% ""), as.character(enemy_type %||% "Custom"),
+        enemy_json(characteristics), enemy_json(abilities), enemy_json(attacks), enemy_json(loot),
+        enemy_pg_array(resistances), enemy_pg_array(immunities), enemy_pg_array(vulnerabilities), enemy_pg_array(condition_immunities)
       )
     ),
     error = function(e) {

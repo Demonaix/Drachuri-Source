@@ -769,7 +769,12 @@ controlEncounterSetupServer <- function(
             attack_bonus = as.integer(npc$attack_bonus[1] %||% 0L),
             damage_expr = as.character(npc$damage_expr[1] %||% "1d4"),
             damage_type = as.character(npc$damage_type[1] %||% "bludgeoning"),
-            attacks_json = as.character(npc$attacks_json[1] %||% "")
+            attacks_json = as.character(npc$attacks_json[1] %||% ""),
+            template_key = as.character(npc$npc_id[1]), enemy_type = as.character(npc$enemy_type[1] %||% "Custom"),
+            characteristics = enemy_db_json(npc$characteristics[[1]], list()), abilities = enemy_db_json(npc$abilities[[1]], list()),
+            attacks = enemy_db_json(npc$attacks[[1]], list()), loot = enemy_db_json(npc$loot[[1]], list()),
+            resistances = enemy_db_values(npc$resistances[[1]]), immunities = enemy_db_values(npc$immunities[[1]]),
+            vulnerabilities = enemy_db_values(npc$vulnerabilities[[1]]), condition_immunities = enemy_db_values(npc$condition_immunities[[1]])
           ),
           error = function(e) {
             message("add_encounter_enemy from NPC template failed: ", e$message)

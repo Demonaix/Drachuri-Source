@@ -105,12 +105,26 @@ stopifnot(isTRUE(set_actor_turn_order(1L, double_id, "summon", 12L, 12L)))
 summons <- get_encounter_summons(1L)
 stopifnot(any(as.character(summons$summon_uuid) == double_id & summons$turn_order == 12L))
 
+generated_enemy <- resolve_enemy_blueprint("Bandit", c("Speedy", "Boss", "Fae"))
+stopifnot(generated_enemy$movement_speed == 40L, generated_enemy$abilities[["dex"]] == 18L)
+stopifnot(generated_enemy$hp_max == 24L, "iron" %in% generated_enemy$vulnerabilities)
+stopifnot(any(vapply(generated_enemy$attacks, function(x) identical(x$name, "Shortsword"), logical(1))))
+
 reinforcement_id <- add_encounter_enemy(
   1L, "QA Reinforcement", hp_max = 14L, ac = 13L, movement_speed = 30L,
-  attack_bonus = 3L, damage_expr = "1d6+1", damage_type = "slashing"
+  attack_bonus = 3L, damage_expr = "1d6+1", damage_type = "slashing",
+  template_key = "qa_generated", enemy_type = generated_enemy$enemy_type,
+  characteristics = generated_enemy$characteristics, abilities = generated_enemy$abilities,
+  attacks = generated_enemy$attacks, loot = generated_enemy$loot,
+  vulnerabilities = generated_enemy$vulnerabilities, condition_immunities = c("frightened")
 )
 stopifnot(is.character(reinforcement_id), nzchar(reinforcement_id))
 stopifnot(isTRUE(upsert_encounter_actor_position(1L, "enemy", reinforcement_id, 7L, 7L)))
+reinforcement <- get_encounter_enemies(1L)
+reinforcement <- reinforcement[as.character(reinforcement$enemy_uuid) == reinforcement_id,,drop=FALSE]
+stopifnot(nrow(reinforcement) == 1L, reinforcement$enemy_type[[1L]] == "Bandit")
+stopifnot("iron" %in% enemy_db_values(reinforcement$vulnerabilities[[1L]]))
+stopifnot("frightened" %in% enemy_db_values(reinforcement$condition_immunities[[1L]]))
 
 stopifnot(isTRUE(end_encounter_combat(1L)))
 ended_snapshot <- get_player_live_snapshot(1L, "1002")
@@ -118,7 +132,7 @@ ended_combat <- get_combat_state(1L)
 stopifnot(identical(as.character(ended_combat$phase[[1L]]), "ended"))
 stopifnot(is.na(ended_snapshot$session$active_encounter_id[[1L]]))
 
-cat("PASS: character save, two-player sync, HP, movement, turn, and reconnection\n")
+cat("PASS: character save, sync, HP, movement, turns, enemy generation/traits, and reconnection\n")
 cat("Snapshot:", elapsed_ms, "ms,", payload_kib, "KiB\n")
 
 stopifnot(length(.drachuri_db$checked_out) == 0L)

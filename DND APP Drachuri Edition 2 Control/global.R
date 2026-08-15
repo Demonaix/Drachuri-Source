@@ -4,6 +4,10 @@ source(
   "../DND APP Drachuri Edition Player_v2/shared/global_core.R",
   local = FALSE
 )
+source(
+  "../DND APP Drachuri Edition Player_v2/shared/enemy_generator_core.R",
+  local = FALSE
+)
 
 # global.R is loaded for both Shiny application layouts. Keep the session and
 # encounter helpers available even when runApp() bypasses app.R in favour of

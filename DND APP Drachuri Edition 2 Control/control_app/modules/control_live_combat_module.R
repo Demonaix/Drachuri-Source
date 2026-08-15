@@ -1121,9 +1121,7 @@ limit 1
             class = "Enemy",
             level = 1
           ),
-          abilities = list(
-            str = 10, dex = 10, con = 10, int = 10, cha = 10, bld_str = 10
-          ),
+          abilities = enemy_db_json(row$abilities[[1]] %||% NULL, list(str=10,dex=10,con=10,int=10,cha=10,bld_str=10)),
           resources = list(
             hp = list(
               max = as.integer(row$hp_max[1] %||% 1L),
@@ -1138,9 +1136,10 @@ limit 1
             bloodlust = FALSE
           ),
           combat_profile = list(
-            resistances = character(0),
-            immunities = character(0),
-            vulnerabilities = character(0),
+            resistances = enemy_db_values(row$resistances[[1]] %||% NULL),
+            immunities = enemy_db_values(row$immunities[[1]] %||% NULL),
+            vulnerabilities = enemy_db_values(row$vulnerabilities[[1]] %||% NULL),
+            condition_immunities = enemy_db_values(row$condition_immunities[[1]] %||% NULL),
             ac_override = as.integer(row$ac[1] %||% 10L),
             speed_ft = as.integer(row$movement_speed[1] %||% row$speed_ft[1] %||% 30L),
             initiative_mod = as.integer(row$initiative_mod[1] %||% 0L),
@@ -1592,7 +1591,9 @@ limit 1
     attack_bonus = 2L,
     damage_expr = "1d6",
     damage_type = "slashing",
-    attacks_json = NULL
+    attacks_json = NULL, template_key = NULL, enemy_type = "Custom", characteristics = list(),
+    abilities = list(), attacks = list(), loot = list(), resistances = character(), immunities = character(),
+    vulnerabilities = character(), condition_immunities = character()
     ) {
       attack_bonus <- suppressWarnings(as.integer(attack_bonus))
       if (is.na(attack_bonus)) attack_bonus <- 0L
@@ -1606,7 +1607,10 @@ limit 1
           movement_speed = movement_speed,
           attack_bonus = attack_bonus,
           damage_expr = damage_expr,
-          damage_type = damage_type
+          damage_type = damage_type, attacks_json = attacks_json, template_key = template_key,
+          enemy_type = enemy_type, characteristics = characteristics, abilities = abilities, attacks = attacks, loot = loot,
+          resistances = resistances, immunities = immunities, vulnerabilities = vulnerabilities,
+          condition_immunities = condition_immunities
         ),
         error = function(e) {
           message("add_encounter_enemy failed: ", e$message)
@@ -2618,7 +2622,11 @@ limit 1
             attack_bonus = as.integer(npc$attack_bonus[1] %||% 0L),
             damage_expr = as.character(npc$damage_expr[1] %||% "1d4"),
             damage_type = as.character(npc$damage_type[1] %||% "bludgeoning"),
-            attacks_json = as.character(npc$attacks_json[1] %||% "")
+            attacks_json = as.character(npc$attacks_json[1] %||% ""), template_key = npc_id,
+            enemy_type = as.character(npc$enemy_type[1] %||% "Custom"), characteristics = enemy_db_json(npc$characteristics[[1]],list()),
+            abilities = enemy_db_json(npc$abilities[[1]],list()), attacks = enemy_db_json(npc$attacks[[1]],list()), loot = enemy_db_json(npc$loot[[1]],list()),
+            resistances = enemy_db_values(npc$resistances[[1]]), immunities = enemy_db_values(npc$immunities[[1]]),
+            vulnerabilities = enemy_db_values(npc$vulnerabilities[[1]]), condition_immunities = enemy_db_values(npc$condition_immunities[[1]])
           ),
           error = function(e) {
             message("spawn_encounter_enemy from template failed: ", e$message)

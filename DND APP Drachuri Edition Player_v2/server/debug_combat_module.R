@@ -1612,7 +1612,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         return(list(
           meta = list(name = as.character(row$name[1] %||% "Enemy"), race = "Enemy"),
           build = list(class = "Enemy", level = 1),
-          abilities = list(str = 10, dex = 10, con = 10, int = 10, cha = 10, bld_str = 10),
+          abilities = enemy_db_json(row$abilities[[1]] %||% NULL, list(str=10,dex=10,con=10,int=10,cha=10,bld_str=10)),
           resources = list(
             hp = list(
               max = as.integer(row$hp_max[1] %||% 1),
@@ -1627,9 +1627,12 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
             bloodlust = FALSE
           ),
           combat_profile = list(
-            resistances = character(0),
-            immunities = character(0),
-            vulnerabilities = character(0),
+            resistances = enemy_db_values(row$resistances[[1]] %||% NULL),
+            immunities = enemy_db_values(row$immunities[[1]] %||% NULL),
+            vulnerabilities = enemy_db_values(row$vulnerabilities[[1]] %||% NULL),
+            condition_immunities = enemy_db_values(row$condition_immunities[[1]] %||% NULL),
+            attacks = enemy_db_json(row$attacks[[1]] %||% NULL, list()),
+            loot = enemy_db_json(row$loot[[1]] %||% NULL, list()),
             ac_override = as.integer(row$ac[1] %||% 10),
             speed_ft = as.integer(row$movement_speed[1] %||% row$speed_ft[1] %||% 30L),
             initiative_mod = as.integer(row$initiative_mod[1] %||% 0L),
@@ -1871,17 +1874,19 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       
       res <- lapply(parts, function(part) {
         typ <- normalize_damage_type(part$type %||% "")
+        material <- normalize_damage_type(part$material %||% "")
+        keys <- unique(c(typ, material))
         raw <- as.integer(part$total %||% 0)
         adj <- raw
         rule <- "normal"
         
-        if (length(typ) > 0 && typ %in% normalize_damage_type(traits$immunities)) {
+        if (length(keys) > 0 && any(keys %in% normalize_damage_type(traits$immunities))) {
           adj <- 0L
           rule <- "immune"
-        } else if (length(typ) > 0 && typ %in% normalize_damage_type(traits$resistances)) {
+        } else if (length(keys) > 0 && any(keys %in% normalize_damage_type(traits$resistances))) {
           adj <- floor(raw / 2)
           rule <- "resistant"
-        } else if (length(typ) > 0 && typ %in% normalize_damage_type(traits$vulnerabilities)) {
+        } else if (length(keys) > 0 && any(keys %in% normalize_damage_type(traits$vulnerabilities))) {
           adj <- raw * 2L
           rule <- "vulnerable"
         }
@@ -1968,6 +1973,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
             source = "Weapon",
             expr = dmg1_expr,
             type = as.character(weapon_row$dmg_type1[1] %||% ""),
+            material = as.character(weapon_row$material[1] %||% weapon_row$weapon_material[1] %||% ""),
             rolls = d1$rolls,
             total = as.integer(d1$total)
           )))
@@ -1980,6 +1986,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
             source = "Weapon Extra",
             expr = dmg2_expr,
             type = as.character(weapon_row$dmg_type2[1] %||% ""),
+            material = as.character(weapon_row$material[1] %||% weapon_row$weapon_material[1] %||% ""),
             rolls = d2$rolls,
             total = as.integer(d2$total)
           )))
