@@ -129,6 +129,19 @@ test("combat wraps to a new round", {
   stopifnot(identical(result$round_number, 5L))
 })
 
+test("combat does not skip actors tied on turn order", {
+  tied <- data.frame(
+    actor_id = c("p1", "e1", "p2"), actor_type = c("player", "enemy", "player"),
+    turn_order = c(1L, 2L, 2L), stringsAsFactors = FALSE
+  )
+  combat <- data.frame(
+    current_turn_order = 2L, round_number = 4L,
+    active_actor_type = "enemy", active_actor_id = "e1", stringsAsFactors = FALSE
+  )
+  result <- test_env$next_combat_turn(tied, combat)
+  stopifnot(identical(result$actor_id, "p2"), identical(result$round_number, 4L))
+})
+
 test("session snapshot combines players, enemies, and positions", {
   snapshot <- list(
     players = data.frame(
@@ -657,6 +670,19 @@ test("turn action budget tracks action types and Action Surge", {
   budget <- test_env$spend_turn_action(budget, "action")
   budget <- test_env$grant_turn_action(budget)
   stopifnot(test_env$turn_action_available(budget, "action"))
+})
+
+test("standard combat actions are wired to shared action and effect mechanics", {
+  combat_file <- file.path(project_dir, "DND APP Drachuri Edition Player_v2", "server", "debug_combat_module.R")
+  combat_source <- paste(readLines(combat_file, warn = FALSE), collapse = "\n")
+  for (control in c(
+    "standard_dash", "standard_disengage", "standard_hide", "standard_dodge",
+    "standard_help", "standard_grapple", "standard_escape_grapple", "standard_ready",
+    "confirm_force_end_turn"
+  )) stopifnot(grepl(paste0("input$", control), combat_source, fixed = TRUE))
+  stopifnot(grepl('projected_move > base_speed_ft()', combat_source, fixed = TRUE))
+  stopifnot(grepl('get_opportunity_attackers(eid', combat_source, fixed = TRUE))
+  stopifnot(grepl('player_reaction_available(FALSE)', combat_source, fixed = TRUE))
 })
 
 test("level-two abilities are connected to action and skill interfaces", {

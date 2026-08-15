@@ -999,7 +999,7 @@ damage_session_player <- function(session_id, character_id, amount) {
 next_combat_turn <- function(actors, combat) {
   if (!is.data.frame(actors) || nrow(actors) == 0) return(FALSE)
   
-  actors <- actors[order(actors$turn_order, na.last = TRUE), , drop = FALSE]
+  actors <- actors[order(actors$turn_order, actors$actor_type, actors$actor_id, na.last = TRUE), , drop = FALSE]
   actors <- actors[!is.na(actors$turn_order), , drop = FALSE]
   if (nrow(actors) == 0) return(FALSE)
   
@@ -1008,29 +1008,28 @@ next_combat_turn <- function(actors, combat) {
   
   if (is.na(current_round) || current_round < 1) current_round <- 1L
   
-  orders <- sort(unique(as.integer(actors$turn_order)))
-  orders <- orders[!is.na(orders)]
-  if (length(orders) == 0) return(FALSE)
-  
-  if (is.na(current_order)) current_order <- orders[1]
-  
-  idx <- match(current_order, orders)
-  
-  if (is.na(idx) || idx >= length(orders)) {
-    next_order <- orders[1]
+  current_actor_id <- as.character(combat$active_actor_id[1] %||% "")
+  current_actor_type <- as.character(combat$active_actor_type[1] %||% "")
+  idx <- which(
+    as.character(actors$actor_id) == current_actor_id &
+      as.character(actors$actor_type) == current_actor_type
+  )[1]
+  if (!length(idx) || is.na(idx)) {
+    idx <- which(as.integer(actors$turn_order) == current_order)[1]
+  }
+  if (!length(idx) || is.na(idx)) idx <- 0L
+
+  if (idx >= nrow(actors)) {
+    next_actor <- actors[1, , drop = FALSE]
     next_round <- current_round + 1L
   } else {
-    next_order <- orders[idx + 1]
+    next_actor <- actors[idx + 1L, , drop = FALSE]
     next_round <- current_round
   }
-  
-  next_actor <- actors[actors$turn_order == next_order, , drop = FALSE]
-  if (nrow(next_actor) == 0) return(FALSE)
-  next_actor <- next_actor[1, , drop = FALSE]
 
   list(
     round_number = as.integer(next_round),
-    turn_order = as.integer(next_order),
+    turn_order = as.integer(next_actor$turn_order[1]),
     actor_type = as.character(next_actor$actor_type[1] %||% "player"),
     actor_id = as.character(next_actor$actor_id[1] %||% "")
   )
@@ -1430,6 +1429,14 @@ create_encounter_effect <- function(encounter_id, source_actor_type, source_acto
   con <- get_db_connection()
   if (is.null(con)) return(NULL)
   on.exit(release_db_connection(con), add = TRUE)
+  nullable_character <- function(value) {
+    value <- as.character(value %||% character())
+    if (!length(value) || is.na(value[1]) || !nzchar(value[1])) NA_character_ else value[1]
+  }
+  nullable_integer <- function(value) {
+    value <- suppressWarnings(as.integer(value %||% integer()))
+    if (!length(value) || is.na(value[1])) NA_integer_ else value[1]
+  }
   tryCatch(DBI::dbGetQuery(con, paste(
     "INSERT INTO encounter_effects (encounter_id, source_actor_type, source_actor_id,",
     "spell_id, effect_type, target_actor_type, target_actor_id, center_x, center_y,",
@@ -1437,12 +1444,30 @@ create_encounter_effect <- function(encounter_id, source_actor_type, source_acto
     "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb) RETURNING *"
   ), params = list(
     as.integer(encounter_id), as.character(source_actor_type), as.character(source_actor_id),
-    as.character(spell_id), as.character(effect_type), target_actor_type, target_actor_id,
-    center_x, center_y, radius_ft, as.integer(starts_round), ends_round,
+    as.character(spell_id), as.character(effect_type), nullable_character(target_actor_type),
+    nullable_character(target_actor_id), nullable_integer(center_x), nullable_integer(center_y),
+    nullable_integer(radius_ft), as.integer(starts_round), nullable_integer(ends_round),
     isTRUE(concentration), jsonlite::toJSON(payload, auto_unbox = TRUE, null = "null")
   )), error = function(e) {
     message("create_encounter_effect failed: ", e$message)
     NULL
+  })
+}
+
+end_encounter_condition <- function(encounter_id, target_actor_id, condition) {
+  con <- get_db_connection()
+  if (is.null(con)) return(FALSE)
+  on.exit(release_db_connection(con), add = TRUE)
+  tryCatch({
+    changed <- DBI::dbExecute(con, paste(
+      "UPDATE encounter_effects SET is_active = FALSE, updated_at = NOW()",
+      "WHERE encounter_id = $1 AND target_actor_id = $2",
+      "AND effect_type = 'condition' AND payload->>'condition' = $3 AND is_active = TRUE"
+    ), params = list(as.integer(encounter_id), as.character(target_actor_id), as.character(condition)))
+    changed > 0L
+  }, error = function(e) {
+    message("end_encounter_condition failed: ", e$message)
+    FALSE
   })
 }
 

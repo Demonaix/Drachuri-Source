@@ -27,6 +27,7 @@ debugCombatUI <- function(id) {
             div(
             class = "combat-compact-actions",
               uiOutput(ns("turn_actions_ui")),
+              actionButton(ns("open_standard_actions"), "Combat Actions", class = "btn btn-default"),
               uiOutput(ns("level_two_actions_ui")),
               uiOutput(ns("level_three_actions_ui")),
               uiOutput(ns("class_actions_ui")),
@@ -70,6 +71,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     map_visual_key <- reactiveVal(0L)
     selected_target_id <- reactiveVal("")
     current_attack_is_opp <- reactiveVal(FALSE)
+    current_attack_is_ready <- reactiveVal(FALSE)
     
     bump_map_visual <- function() {
       map_visual_key(isolate(map_visual_key()) + 1L)
@@ -172,6 +174,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     turn_move_ft <- reactiveVal(0L)
     pending_move <- reactiveVal(NULL)
     movement_dash <- reactiveVal(FALSE)
+    dash_action_spent <- reactiveVal(FALSE)
     movement_phase <- reactiveVal(FALSE)
     turn_budget <- reactiveVal(new_turn_action_budget())
     cunning_mode <- reactiveVal("")
@@ -213,6 +216,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         manoeuvre_active("")
         sneak_attack_used(FALSE)
         movement_dash(FALSE)
+        dash_action_spent(FALSE)
         updateCheckboxInput(session, "dash_move", value = FALSE)
         if (identical(as.character(active_actor_id() %||% ""), as.character(core$state$char_id %||% ""))) {
           player_reaction_available(TRUE)
@@ -309,7 +313,11 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       cunning_mode(tolower(mode))
       if (identical(tolower(mode), "dash")) {
         movement_dash(TRUE)
+        dash_action_spent(TRUE)
         updateCheckboxInput(session, "dash_move", value = TRUE)
+      }
+      if (identical(tolower(mode), "hide")) {
+        apply_combat_condition("hidden", as.character(core$state$char_id), "player", "cunning_hide")
       }
       removeModal()
       log_safe(paste0("🗡️ Cunning Action: ", mode, "."))
@@ -317,6 +325,161 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     observeEvent(input$cunning_dash, use_cunning_action("Dash"), ignoreInit = TRUE)
     observeEvent(input$cunning_disengage, use_cunning_action("Disengage"), ignoreInit = TRUE)
     observeEvent(input$cunning_hide, use_cunning_action("Hide"), ignoreInit = TRUE)
+
+    current_round_number <- function() {
+      value <- suppressWarnings(as.integer(combat_tbl()$round_number[1] %||% 1L))
+      if (is.na(value) || value < 1L) 1L else value
+    }
+
+    apply_combat_condition <- function(condition, target_id, target_type = "player", source = "standard_action",
+                                       ends_round = current_round_number() + 1L, payload = list()) {
+      payload$condition <- condition
+      created <- create_encounter_effect(
+        current_encounter_id(), "player", as.character(core$state$char_id %||% ""),
+        source, "condition", payload = payload,
+        target_actor_type = target_type, target_actor_id = as.character(target_id),
+        starts_round = current_round_number(), ends_round = ends_round
+      )
+      if (is.data.frame(created) && nrow(created)) bump_refresh()
+      is.data.frame(created) && nrow(created) > 0L
+    }
+
+    use_standard_action <- function(mode) {
+      if (!isTRUE(is_players_turn())) {
+        log_safe("⚠️ Standard actions can only be taken on your turn.")
+        return()
+      }
+      mode <- tolower(as.character(mode))
+      cid <- as.character(core$state$char_id %||% "")
+      if (mode == "dash") {
+        movement_dash(TRUE)
+        updateCheckboxInput(session, "dash_move", value = TRUE)
+        removeModal()
+        log_safe("🏃 Dash armed. Your action is spent only if you move beyond normal speed.")
+        return()
+      }
+      if (!spend_action_safe("action", tools::toTitleCase(mode))) return()
+      if (mode == "disengage") cunning_mode("disengage")
+      if (mode == "hide") {
+        cunning_mode("hide")
+        dex_mod <- floor((as.integer(core$state$char$abilities$dex %||% 10L) - 10L) / 2L)
+        stealth_rank <- as.character(core$state$char$prof$skills$stealth %||% "None")
+        proficiency <- if (stealth_rank == "Expertise") 2L * character_proficiency_bonus(core$state$char) else
+          if (stealth_rank == "Proficient") character_proficiency_bonus(core$state$char) else 0L
+        stealth_total <- sample.int(20L, 1L) + dex_mod + proficiency
+        apply_combat_condition("hidden", cid, "player", "hide", payload = list(stealth_total = stealth_total))
+        log_safe(paste0("🥷 Stealth total: ", stealth_total, ". The DM decides whether cover permits hiding."))
+      }
+      if (mode == "dodge") apply_combat_condition("dodging", cid, "player", "dodge")
+      removeModal()
+      log_game_event(current_encounter_id(), "standard_action", "player", cid,
+                     payload = list(action = mode))
+      log_safe(paste0("⚔️ ", tools::toTitleCase(mode), " action used."))
+    }
+
+    observeEvent(input$open_standard_actions, {
+      showModal(modalDialog(
+        title = "Combat Actions",
+        p("Choose an action. Select a map target first for Help or Grapple."),
+        footer = tagList(
+          modalButton("Cancel"),
+          actionButton(session$ns("standard_dash"), "Dash"),
+          actionButton(session$ns("standard_disengage"), "Disengage"),
+          actionButton(session$ns("standard_hide"), "Hide"),
+          actionButton(session$ns("standard_dodge"), "Dodge"),
+          actionButton(session$ns("standard_help"), "Help"),
+          actionButton(session$ns("standard_grapple"), "Grapple"),
+          actionButton(session$ns("standard_escape_grapple"), "Escape Grapple"),
+          actionButton(session$ns("standard_ready"), "Ready")
+        ), easyClose = TRUE
+      ))
+    }, ignoreInit = TRUE)
+    observeEvent(input$standard_dash, use_standard_action("dash"), ignoreInit = TRUE)
+    observeEvent(input$standard_disengage, use_standard_action("disengage"), ignoreInit = TRUE)
+    observeEvent(input$standard_hide, use_standard_action("hide"), ignoreInit = TRUE)
+    observeEvent(input$standard_dodge, use_standard_action("dodge"), ignoreInit = TRUE)
+
+    observeEvent(input$standard_help, {
+      target_id <- as.character(selected_target_id() %||% "")
+      target_type <- get_actor_type_by_id(target_id)
+      actors <- encounter_actors_tbl()
+      self <- actors[as.character(actors$actor_id) == as.character(core$state$char_id %||% ""), , drop = FALSE]
+      target <- actors[as.character(actors$actor_id) == target_id, , drop = FALSE]
+      adjacent <- nrow(self) && nrow(target) && is_adjacent_5ft(self$x[1], self$y[1], target$x[1], target$y[1])
+      if (!nzchar(target_id) || identical(target_type, "player") || !isTRUE(adjacent)) {
+        log_safe("⚠️ Combat Help requires a selected adjacent enemy to distract.")
+        return()
+      }
+      if (!spend_action_safe("action", "Help")) return()
+      apply_combat_condition("helped_against", target_id, target_type, "help")
+      removeModal()
+      log_safe(paste0("🤝 ", get_actor_display_name(target_id), " is distracted; the next allied attack has advantage."))
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$standard_grapple, {
+      target_id <- as.character(selected_target_id() %||% "")
+      target_type <- get_actor_type_by_id(target_id)
+      actors <- encounter_actors_tbl()
+      self <- actors[as.character(actors$actor_id) == as.character(core$state$char_id %||% ""), , drop = FALSE]
+      target <- actors[as.character(actors$actor_id) == target_id, , drop = FALSE]
+      adjacent <- nrow(self) && nrow(target) && is_adjacent_5ft(self$x[1], self$y[1], target$x[1], target$y[1])
+      if (!nzchar(target_id) || identical(target_type, "player") || !isTRUE(adjacent)) {
+        log_safe("⚠️ Grapple requires a selected adjacent enemy.")
+        return()
+      }
+      if (!spend_attack_safe(core$state$char, "Grapple")) return()
+      str_mod <- floor((as.integer(core$state$char$abilities$str %||% 10L) - 10L) / 2L)
+      proficiency <- character_proficiency_bonus(core$state$char)
+      attacker_total <- sample.int(20L, 1L) + str_mod + proficiency
+      defender_total <- sample.int(20L, 1L) + 2L
+      success <- attacker_total >= defender_total
+      if (success) apply_combat_condition("grappled", target_id, target_type, "grapple", ends_round = NULL,
+                                          payload = list(grappler_id = as.character(core$state$char_id)))
+      removeModal()
+      log_safe(paste0(if (success) "🤼 Grapple succeeds" else "⚠️ Grapple fails",
+                      " (", attacker_total, " vs ", defender_total, ")."))
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$standard_escape_grapple, {
+      cid <- as.character(core$state$char_id %||% "")
+      if (!"grappled" %in% actor_conditions(cid)) {
+        log_safe("⚠️ You are not grappled.")
+        return()
+      }
+      if (!spend_action_safe("action", "Escape Grapple")) return()
+      str_mod <- floor((as.integer(core$state$char$abilities$str %||% 10L) - 10L) / 2L)
+      dex_mod <- floor((as.integer(core$state$char$abilities$dex %||% 10L) - 10L) / 2L)
+      escape_total <- sample.int(20L, 1L) + max(str_mod, dex_mod) + character_proficiency_bonus(core$state$char)
+      hold_total <- sample.int(20L, 1L) + 2L
+      escaped <- escape_total >= hold_total && end_encounter_condition(current_encounter_id(), cid, "grappled")
+      removeModal()
+      if (escaped) bump_refresh()
+      log_safe(paste0(if (escaped) "🤼 You escape the grapple" else "⚠️ The grapple holds",
+                      " (", escape_total, " vs ", hold_total, ")."))
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$standard_ready, {
+      showModal(modalDialog(
+        title = "Ready an Action",
+        textInput(session$ns("ready_trigger"), "Trigger", placeholder = "When the bandit enters the doorway…"),
+        textInput(session$ns("ready_response"), "Response", placeholder = "…I attack with my sword."),
+        footer = tagList(modalButton("Cancel"), actionButton(session$ns("confirm_ready"), "Ready Action"))
+      ))
+    }, ignoreInit = TRUE)
+    observeEvent(input$confirm_ready, {
+      trigger <- trimws(as.character(input$ready_trigger %||% ""))
+      response <- trimws(as.character(input$ready_response %||% ""))
+      if (!nzchar(trigger) || !nzchar(response)) {
+        log_safe("⚠️ A readied action needs both a trigger and response.")
+        return()
+      }
+      if (!spend_action_safe("action", "Ready")) return()
+      apply_combat_condition("readied", as.character(core$state$char_id), "player", "ready")
+      log_game_event(current_encounter_id(), "ready", "player", as.character(core$state$char_id),
+                     payload = list(trigger = trigger, response = response))
+      removeModal()
+      log_safe(paste0("⏱️ Readied: ", trigger, " → ", response, " (uses your reaction when triggered)."))
+    }, ignoreInit = TRUE)
 
     observeEvent(input$use_action_surge, {
       if (!isTRUE(is_players_turn())) return()
@@ -489,6 +652,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       if (!isTRUE(is_players_turn()) || !isTRUE(rage_is_active())) return()
       if (!spend_action_safe("bonus_action", "Eagle Totem Dash")) return()
       movement_dash(TRUE)
+      dash_action_spent(TRUE)
       updateCheckboxInput(session, "dash_move", value = TRUE)
       log_safe("🦅 Eagle Totem: Dash activated as a bonus action.")
     }, ignoreInit = TRUE)
@@ -889,7 +1053,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     }
     
     movement_allowance_ft <- function() {
-      if ("restrained" %in% actor_conditions(active_actor_id())) return(0L)
+      if (any(c("restrained", "grappled") %in% actor_conditions(active_actor_id()))) return(0L)
       
       base <- base_speed_ft()
       
@@ -1081,13 +1245,6 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     
     observeEvent(input$dash_move, {
       requested <- isTRUE(input$dash_move)
-      if (requested && !isTRUE(movement_dash())) {
-        is_cunning_dash <- identical(cunning_mode(), "dash")
-        if (!is_cunning_dash && !spend_action_safe("action", "Dash")) {
-          updateCheckboxInput(session, "dash_move", value = FALSE)
-          return()
-        }
-      }
       movement_dash(requested)
     }, ignoreInit = FALSE)
     
@@ -2729,6 +2886,16 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         ))
         return(FALSE)
       }
+
+      projected_move <- as.integer(turn_move_ft() %||% 0L) + total_ft
+      if (isTRUE(movement_dash()) && projected_move > base_speed_ft() && !isTRUE(dash_action_spent())) {
+        if (!spend_action_safe("action", "Dash")) {
+          log_safe("⚠️ You need an available action to move beyond your normal speed.")
+          return(FALSE)
+        }
+        dash_action_spent(TRUE)
+        log_safe("🏃 Dash committed as you exceed normal movement.")
+      }
       
       phased_any <- isTRUE(movement_phase()) && isTRUE(can_use_phase())
       
@@ -2743,6 +2910,22 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       if (!isTRUE(ok)) {
         log_safe("⚠️ Could not move active actor.")
         return(FALSE)
+      }
+
+      if (!identical(cunning_mode(), "disengage")) {
+        attackers <- tryCatch(
+          get_opportunity_attackers(eid, actor_id, actor_type, old_x, old_y, target_x, target_y),
+          error = function(e) data.frame()
+        )
+        if (is.data.frame(attackers) && nrow(attackers)) {
+          attacker_names <- unique(as.character(attackers$display_name %||% attackers$name %||% "Enemy"))
+          log_game_event(
+            eid, "opportunity_available", actor_type, actor_id,
+            payload = list(attacker_ids = as.list(as.character(attackers$actor_id)),
+                           attacker_names = as.list(attacker_names))
+          )
+          log_safe(paste0("⚔️ Opportunity attack available to: ", paste(attacker_names, collapse = ", "), "."))
+        }
       }
       
       log_game_event(
@@ -3507,8 +3690,10 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
 
       attacker_effects <- actor_conditions(attacker_id)
       target_effects <- actor_conditions(target_id)
-      has_advantage <- "restrained" %in% target_effects || "invisible" %in% attacker_effects
-      has_disadvantage <- any(c("restrained", "poisoned") %in% attacker_effects) || "invisible" %in% target_effects
+      has_advantage <- any(c("restrained", "hidden", "invisible") %in% attacker_effects) ||
+        "helped_against" %in% target_effects
+      has_disadvantage <- any(c("restrained", "poisoned") %in% attacker_effects) ||
+        any(c("dodging", "hidden", "invisible") %in% target_effects)
       if (has_advantage && has_disadvantage) return("Normal")
       if (has_advantage) return("Advantage")
       if (has_disadvantage) return("Disadvantage")
@@ -3522,16 +3707,33 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     
     open_attack_flow <- function(target_id) {
       
-      is_opp <- !isTRUE(is_players_turn())
+      self_id <- as.character(core$state$char_id %||% "")
+      is_reaction_attack <- !isTRUE(is_players_turn())
+      is_ready <- is_reaction_attack && "readied" %in% actor_conditions(self_id)
+      is_opp <- is_reaction_attack && !is_ready
       current_attack_is_opp(isTRUE(is_opp))
+      current_attack_is_ready(isTRUE(is_ready))
       
-      if (isTRUE(is_opp)) {
-        log_safe("⚠️ This is not your turn. This will be treated as an opportunity attack.")
+      if (isTRUE(is_reaction_attack)) {
+        if (!isTRUE(player_reaction_available())) {
+          log_safe("⚠️ Your reaction has already been used this round.")
+          return()
+        }
+        actors <- encounter_actors_tbl()
+        self <- actors[as.character(actors$actor_id) == self_id, , drop = FALSE]
+        target <- actors[as.character(actors$actor_id) == as.character(target_id), , drop = FALSE]
+        adjacent <- nrow(self) && nrow(target) && is_adjacent_5ft(self$x[1], self$y[1], target$x[1], target$y[1])
+        if (isTRUE(is_opp) && !isTRUE(adjacent)) {
+          log_safe("⚠️ An opportunity attack requires the target to be within your reach.")
+          return()
+        }
+        log_safe(if (isTRUE(is_ready)) "⏱️ Resolving your readied attack as a reaction."
+                 else "⚠️ This is not your turn. This will be treated as an opportunity attack.")
       }
       selected_target_id(as.character(target_id))
       
-      attacker_id <- active_actor_id()
-      attacker_type <- as.character(combat_tbl()$active_actor_type[1] %||% "")
+      attacker_id <- if (isTRUE(is_reaction_attack)) self_id else active_actor_id()
+      attacker_type <- if (isTRUE(is_reaction_attack)) "player" else as.character(combat_tbl()$active_actor_type[1] %||% "")
       
       
       if (is.null(attacker_id) || !nzchar(as.character(attacker_id))) {
@@ -3752,7 +3954,12 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     observeEvent(input$confirm_attack, {
       removeModal()
       
-      attacker_id <- active_actor_id()
+      reaction_attack <- isTRUE(current_attack_is_opp()) || isTRUE(current_attack_is_ready())
+      attacker_id <- if (isTRUE(reaction_attack)) {
+        as.character(core$state$char_id %||% "")
+      } else {
+        active_actor_id()
+      }
       target_id <- as.character(selected_target_id() %||% "")
       weapon_id <- as.character(input$attack_weapon_id %||% "")
       
@@ -3779,10 +3986,11 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         log_safe("⚠️ Could not load combatants.")
         return()
       }
-      if (!isTRUE(current_attack_is_opp()) && !spend_attack_safe(attacker_char, "Attack")) {
+      if (!isTRUE(reaction_attack) && !spend_attack_safe(attacker_char, "Attack")) {
         pending_attack(NULL)
         return()
       }
+      if (isTRUE(reaction_attack)) player_reaction_available(FALSE)
       
       weapons <- get_equipped_weapons_for_combat(attacker_char)
       weapon_row <- weapons[as.character(weapons$id) == weapon_id, , drop = FALSE]
@@ -3833,6 +4041,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       )
       
       preview$is_opportunity_attack <- isTRUE(current_attack_is_opp())
+      preview$is_readied_attack <- isTRUE(current_attack_is_ready())
       
       pending_attack(preview)
       if (nzchar(as.character(preview$superiority_manoeuvre %||% ""))) manoeuvre_active("")
@@ -3898,6 +4107,12 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         manual_type = manual_type
       )
       if (identical(cunning_mode(), "hide")) cunning_mode("")
+      end_encounter_condition(current_encounter_id(), preview$attacker_id, "hidden")
+      end_encounter_condition(current_encounter_id(), preview$target_id, "helped_against")
+      if (isTRUE(preview$is_readied_attack)) {
+        end_encounter_condition(current_encounter_id(), preview$attacker_id, "readied")
+        current_attack_is_ready(FALSE)
+      }
       if (isTRUE(apply_sneak)) sneak_attack_used(TRUE)
       
       eid <- current_encounter_id()
@@ -3920,6 +4135,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
           target_type = preview$target_type,
           weapon_name = preview$weapon_name,
           is_opportunity_attack = isTRUE(preview$is_opportunity_attack),
+          is_readied_attack = isTRUE(preview$is_readied_attack),
           attack_roll = preview$attack_roll,
           attack_rolls = as.list(preview$attack_rolls),
           attack_bonus = preview$attack_bonus,
@@ -4079,27 +4295,44 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       bump_refresh()
     }, ignoreInit = TRUE)
     
-    observeEvent(input$end_turn, {
+    end_current_turn <- function(forced = FALSE) {
       eid <- current_encounter_id()
       if (is.na(eid)) {
         log_safe("⚠️ Choose an encounter first.")
-        return()
+        return(FALSE)
       }
-      
       ok <- advance_turn(eid)
-      turn_move_ft(0L)
-      
       if (isTRUE(ok)) {
-        log_safe("⏭️ Turn advanced.")
+        turn_move_ft(0L)
+        log_safe(if (isTRUE(forced)) "⏭️ Turn advanced out of turn by confirmation." else "⏭️ Turn advanced.")
       } else {
         log_safe("⚠️ Could not advance turn.")
       }
-      
       bump_combat()
       bump_positions()
       bump_events()
       bump_initiative()
       bump_map_visual()
+      isTRUE(ok)
+    }
+
+    observeEvent(input$end_turn, {
+      if (!isTRUE(is_players_turn())) {
+        active_name <- get_actor_display_name(active_actor_id())
+        showModal(modalDialog(
+          title = "End somebody else's turn?",
+          p(paste0("It is currently ", active_name %||% "another actor", "'s turn. This may skip an enemy or a player.")),
+          p("Only continue if the DM wants to advance for an absent player or completed enemy."),
+          footer = tagList(modalButton("Cancel"), actionButton(session$ns("confirm_force_end_turn"), "Advance Anyway", class = "btn btn-warning"))
+        ))
+        return()
+      }
+      end_current_turn(FALSE)
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$confirm_force_end_turn, {
+      removeModal()
+      end_current_turn(TRUE)
     }, ignoreInit = TRUE)
     
     # --------------------------------------------------

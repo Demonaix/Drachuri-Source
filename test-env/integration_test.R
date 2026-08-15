@@ -76,6 +76,27 @@ reconnected <- get_player_live_snapshot(1L, "1002")
 stopifnot(identical(reconnected$self_player$current_hp[[1L]], 57L))
 stopifnot(identical(reconnected$combat$active_actor_id[[1L]], "1002"))
 
+# The seeded enemy and player 1003 deliberately share turn order 3. Both must
+# receive a turn instead of the enemy being collapsed out of the sequence.
+stopifnot(isTRUE(advance_turn(1L)))
+enemy_turn <- get_player_live_snapshot(1L, "1002")
+stopifnot(identical(enemy_turn$combat$active_actor_type[[1L]], "enemy"))
+stopifnot(isTRUE(advance_turn(1L)))
+after_tie <- get_player_live_snapshot(1L, "1002")
+stopifnot(identical(after_tie$combat$active_actor_id[[1L]], "1003"))
+
+grapple <- create_encounter_effect(
+  1L, "enemy", as.character(enemy_turn$combat$active_actor_id[[1L]]),
+  "grapple", "condition", payload = list(condition = "grappled"),
+  target_actor_type = "player", target_actor_id = "1002", starts_round = 1L
+)
+stopifnot(is.data.frame(grapple), nrow(grapple) == 1L)
+stopifnot(isTRUE(end_encounter_condition(1L, "1002", "grappled")))
+cleared <- get_player_live_snapshot(1L, "1002")$effects
+if (is.data.frame(cleared) && nrow(cleared)) {
+  stopifnot(!any(as.character(cleared$target_actor_id) == "1002" & grepl("grappled", as.character(cleared$payload))))
+}
+
 cat("PASS: character save, two-player sync, HP, movement, turn, and reconnection\n")
 cat("Snapshot:", elapsed_ms, "ms,", payload_kib, "KiB\n")
 
