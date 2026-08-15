@@ -3083,7 +3083,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
           dc <- class_spell_save_dc(char, feature$spell)
           if (sample.int(20L, 1L) + save_mod >= dc) amount <- floor(amount / 2L)
           target_char <- load_actor_for_combat(enemy_id, "enemy")
-          traits <- spellsword_traits(get_damage_traits(target_char), rolled$damage_type, char)
+          traits <- spellsword_traits(get_character_damage_traits(target_char), rolled$damage_type, char)
           adjusted <- apply_damage_traits_to_parts(list(list(total = amount, type = rolled$damage_type)), traits)
           dealt <- as.integer(adjusted$total %||% amount)
           damage_encounter_enemy(current_encounter_id(), enemy_id, dealt)
@@ -3136,7 +3136,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       }
 
       target_char <- load_actor_for_combat(target_id, "enemy")
-      traits <- get_damage_traits(target_char)
+      traits <- get_character_damage_traits(target_char)
       traits <- spellsword_traits(traits, resolved_damage$damage_type, char)
       adjusted <- apply_damage_traits_to_parts(
         list(list(total = raw_damage, type = resolved_damage$damage_type)),

@@ -808,6 +808,14 @@ test("class combat actions resolve fixed-percent and dice damage", {
   stopifnot(dice$amount == 8L)
 })
 
+test("combat abilities use the defined damage-trait helper", {
+  combat_source <- paste(readLines(file.path(
+    project_dir, "DND APP Drachuri Edition Player_v2", "server", "debug_combat_module.R"
+  ), warn = FALSE), collapse = "\n")
+  stopifnot(!grepl("get_damage_traits(", combat_source, fixed = TRUE))
+  stopifnot(grepl("get_character_damage_traits(target_char)", combat_source, fixed = TRUE))
+})
+
 test("fixed class spells are gated by level and saved speciality", {
   test_env$normalise_character_classes <- function(char, class_defs = NULL) char$build$classes
   character <- list(build = list(
