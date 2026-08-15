@@ -20,9 +20,9 @@ launch_app() {
   log=$3
   (
     cd "$app_dir"
-    R_LIBS="$r_library" Rscript --no-init-file --no-environ -e \
+    exec nohup env R_LIBS="$r_library" Rscript --no-init-file --no-environ -e \
       "shiny::runApp('.', host='127.0.0.1', port=$port, launch.browser=FALSE)"
-  ) >"$log" 2>&1 &
+  ) >"$log" 2>&1 </dev/null &
   printf '%s' "$!"
 }
 
@@ -39,4 +39,3 @@ printf '%s\n' \
   "  Player 2: http://127.0.0.1:3840" \
   "Logs: $log_dir" \
   "Stop them with: sh test-env/stop_local_apps.sh"
-
