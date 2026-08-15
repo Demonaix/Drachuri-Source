@@ -900,7 +900,7 @@ add_encounter_enemy <- function(
     attacks_json = NULL,
     template_key = NULL, enemy_type = "Custom", characteristics = list(),
     abilities = list(), attacks = list(), loot = list(), resistances = character(),
-    immunities = character(), vulnerabilities = character(), condition_immunities = character()
+    immunities = character(), vulnerabilities = character(), condition_immunities = character(), gold_min = 0L, gold_max = 0L
 ) {
   `%||%` <- get("%||%", inherits = TRUE)
   
@@ -958,7 +958,7 @@ add_encounter_enemy <- function(
         damage_type,
         attacks_json,
         template_key, enemy_type, characteristics, abilities, attacks, loot,
-        resistances, immunities, vulnerabilities, condition_immunities,
+        resistances, immunities, vulnerabilities, condition_immunities, gold_min, gold_max,
         created_at,
         updated_at
       )
@@ -979,7 +979,7 @@ add_encounter_enemy <- function(
         $10,  -- damage_type
         $11::jsonb, -- attacks_json
         $12, $13, $14::jsonb, $15::jsonb, $16::jsonb, $17::jsonb,
-        $18::text[], $19::text[], $20::text[], $21::text[],
+        $18::text[], $19::text[], $20::text[], $21::text[], $22, $23,
         NOW(),
         NOW()
       )
@@ -999,7 +999,8 @@ add_encounter_enemy <- function(
         attacks_json,
         as.character(template_key %||% ""), as.character(enemy_type %||% "Custom"),
         enemy_json(characteristics), enemy_json(abilities), enemy_json(attacks), enemy_json(loot),
-        enemy_pg_array(resistances), enemy_pg_array(immunities), enemy_pg_array(vulnerabilities), enemy_pg_array(condition_immunities)
+        enemy_pg_array(resistances), enemy_pg_array(immunities), enemy_pg_array(vulnerabilities), enemy_pg_array(condition_immunities),
+        as.integer(gold_min %||% 0L), as.integer(gold_max %||% 0L)
       )
     ),
     error = function(e) {

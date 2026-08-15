@@ -29,6 +29,7 @@ debugCombatUI <- function(id) {
               uiOutput(ns("turn_actions_ui")),
               actionButton(ns("override_action_budget"), "Override Action", class = "btn btn-default"),
               actionButton(ns("open_standard_actions"), "Combat Actions", class = "btn btn-default"),
+              actionButton(ns("open_loot"), "Loot Defeated", class = "btn btn-success"),
               uiOutput(ns("level_two_actions_ui")),
               uiOutput(ns("level_three_actions_ui")),
               uiOutput(ns("class_actions_ui")),
@@ -93,6 +94,26 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       bump_map_visual()
       if (is.function(refresh_live_snapshot)) refresh_live_snapshot()
     }
+
+    observeEvent(input$open_loot, {
+      enemies <- tryCatch(get_encounter_enemies(current_encounter_id()),error=function(e)data.frame())
+      if(!nrow(enemies)){showNotification("There are no enemies to loot.",type="warning");return()}
+      unlooted <- is.na(enemies$looted_by) | !nzchar(as.character(enemies$looted_by))
+      available <- enemies[as.integer(enemies$hp_current)<=0L & unlooted,,drop=FALSE]
+      if(!nrow(available)){showNotification("No defeated unlooted enemies.",type="warning");return()}
+      showModal(modalDialog(title="Loot defeated enemy",selectInput(session$ns("loot_enemy_id"),"Enemy",choices=setNames(as.character(available$enemy_uuid),as.character(available$name))),
+        p("Items go directly into Inventory or Armoury. Gold goes into your purse."),footer=tagList(modalButton("Cancel"),actionButton(session$ns("confirm_loot"),"Take loot",class="btn btn-success"))))
+    },ignoreInit=TRUE)
+
+    observeEvent(input$confirm_loot, {
+      result<-claim_defeated_enemy_loot(current_encounter_id(),input$loot_enemy_id,core$state$char_id)
+      if(is.null(result)){removeModal();showNotification("That enemy cannot be looted or was already claimed.",type="error");return()}
+      char<-validate_character(core$state$char); items<-inventory_normalize(char$inventory$items)
+      if(length(result$loot)) for(item in result$loot) items<-rbind(items,enemy_loot_to_inventory_row(item))
+      char$inventory$items<-inventory_normalize(items); char$inventory$gold<-as.numeric(char$inventory$gold%||%0)+as.numeric(result$gold%||%0); core$state$char<-char
+      save_character_to_db(char,core$state$char_id); removeModal(); bump_refresh()
+      showNotification(paste0("Looted ",result$name,": ",length(result$loot)," item(s) and ",result$gold," gold."),type="message",duration=7)
+    },ignoreInit=TRUE)
 
     snapshot_data <- reactive({
       if (!is.function(live_snapshot)) return(empty_player_live_snapshot())

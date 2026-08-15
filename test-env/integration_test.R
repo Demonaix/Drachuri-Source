@@ -109,6 +109,7 @@ generated_enemy <- resolve_enemy_blueprint("Bandit", c("Speedy", "Boss", "Fae"))
 stopifnot(generated_enemy$movement_speed == 40L, generated_enemy$abilities[["dex"]] == 18L)
 stopifnot(generated_enemy$hp_max == 24L, "iron" %in% generated_enemy$vulnerabilities)
 stopifnot(any(vapply(generated_enemy$attacks, function(x) identical(x$name, "Shortsword"), logical(1))))
+stopifnot(any(vapply(generated_enemy$loot, function(x) identical(x$name, "Shortsword"), logical(1))))
 
 reinforcement_id <- add_encounter_enemy(
   1L, "QA Reinforcement", hp_max = 14L, ac = 13L, movement_speed = 30L,
@@ -116,7 +117,7 @@ reinforcement_id <- add_encounter_enemy(
   template_key = "qa_generated", enemy_type = generated_enemy$enemy_type,
   characteristics = generated_enemy$characteristics, abilities = generated_enemy$abilities,
   attacks = generated_enemy$attacks, loot = generated_enemy$loot,
-  vulnerabilities = generated_enemy$vulnerabilities, condition_immunities = c("frightened")
+  vulnerabilities = generated_enemy$vulnerabilities, condition_immunities = c("frightened"), gold_min=7L, gold_max=7L
 )
 stopifnot(is.character(reinforcement_id), nzchar(reinforcement_id))
 stopifnot(isTRUE(upsert_encounter_actor_position(1L, "enemy", reinforcement_id, 7L, 7L)))
@@ -125,6 +126,13 @@ reinforcement <- reinforcement[as.character(reinforcement$enemy_uuid) == reinfor
 stopifnot(nrow(reinforcement) == 1L, reinforcement$enemy_type[[1L]] == "Bandit")
 stopifnot("iron" %in% enemy_db_values(reinforcement$vulnerabilities[[1L]]))
 stopifnot("frightened" %in% enemy_db_values(reinforcement$condition_immunities[[1L]]))
+con <- get_db_connection(); DBI::dbExecute(con,"UPDATE encounter_enemies SET hp_current=0 WHERE enemy_uuid=$1::uuid",params=list(reinforcement_id)); release_db_connection(con)
+claimed <- claim_defeated_enemy_loot(1L,reinforcement_id,"1001")
+stopifnot(is.list(claimed),claimed$gold==7L,length(claimed$loot)>=1L)
+stopifnot(is.null(claim_defeated_enemy_loot(1L,reinforcement_id,"1002")))
+weapon_drop <- Filter(function(x) identical(x$type,"weapon"),claimed$loot)[[1L]]
+loot_row <- enemy_loot_to_inventory_row(weapon_drop,"qa_loot")
+stopifnot(loot_row$type[[1L]]=="weapon",is.list(loot_row$meta[[1L]]))
 
 stopifnot(isTRUE(end_encounter_combat(1L)))
 ended_snapshot <- get_player_live_snapshot(1L, "1002")

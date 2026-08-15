@@ -1,0 +1,12 @@
+ALTER TABLE npc_templates
+  ADD COLUMN IF NOT EXISTS gold_min INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS gold_max INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE encounter_enemies
+  ADD COLUMN IF NOT EXISTS gold_min INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS gold_max INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS looted_by TEXT,
+  ADD COLUMN IF NOT EXISTS looted_at TIMESTAMPTZ;
+
+UPDATE npc_templates SET gold_min=0,gold_max=0 WHERE lower(enemy_type) IN ('animal','construct');
+

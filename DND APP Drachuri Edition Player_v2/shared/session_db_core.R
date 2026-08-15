@@ -20,6 +20,21 @@ is_db_available <- function() {
   })
 }
 
+claim_defeated_enemy_loot <- function(encounter_id, enemy_uuid, character_id) {
+  con <- get_db_connection(); if (is.null(con)) return(NULL); on.exit(release_db_connection(con),add=TRUE)
+  out <- tryCatch(DBI::dbWithTransaction(con, {
+    row <- DBI::dbGetQuery(con,"SELECT enemy_uuid,name,hp_current,loot,gold_min,gold_max,looted_by FROM encounter_enemies WHERE encounter_id=$1 AND enemy_uuid=$2::uuid FOR UPDATE",params=list(as.integer(encounter_id),as.character(enemy_uuid)))
+    already_looted <- !is.na(row$looted_by[1]) && nzchar(as.character(row$looted_by[1]))
+    if(!nrow(row)||as.integer(row$hp_current[1])>0L||already_looted) {
+      NULL
+    } else {
+      DBI::dbExecute(con,"UPDATE encounter_enemies SET looted_by=$3,looted_at=now(),updated_at=now() WHERE encounter_id=$1 AND enemy_uuid=$2::uuid",params=list(as.integer(encounter_id),as.character(enemy_uuid),as.character(character_id)))
+      lo<-as.integer(row$gold_min[1]%||%0L); hi<-as.integer(row$gold_max[1]%||%lo); if(is.na(lo))lo<-0L;if(is.na(hi)||hi<lo)hi<-lo
+      list(name=as.character(row$name[1]%||%"Enemy"),loot=enemy_db_json(row$loot[[1]]%||%NULL,list()),gold=if(hi>lo)sample.int(hi-lo+1L,1L)+lo-1L else lo)
+    }
+  }),error=function(e){message("claim_defeated_enemy_loot failed: ",e$message);NULL}); out
+}
+
 # ============================================================
 # READ HELPERS
 # ============================================================
@@ -62,6 +77,10 @@ get_encounter_enemies <- function(encounter_id) {
         immunities,
         vulnerabilities,
         condition_immunities,
+        gold_min,
+        gold_max,
+        looted_by,
+        looted_at,
         attack_bonus,
         damage_expr,
         damage_type,

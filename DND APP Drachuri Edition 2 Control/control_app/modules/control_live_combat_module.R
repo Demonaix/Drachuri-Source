@@ -1593,7 +1593,7 @@ limit 1
     damage_type = "slashing",
     attacks_json = NULL, template_key = NULL, enemy_type = "Custom", characteristics = list(),
     abilities = list(), attacks = list(), loot = list(), resistances = character(), immunities = character(),
-    vulnerabilities = character(), condition_immunities = character()
+    vulnerabilities = character(), condition_immunities = character(), gold_min = 0L, gold_max = 0L
     ) {
       attack_bonus <- suppressWarnings(as.integer(attack_bonus))
       if (is.na(attack_bonus)) attack_bonus <- 0L
@@ -1610,7 +1610,7 @@ limit 1
           damage_type = damage_type, attacks_json = attacks_json, template_key = template_key,
           enemy_type = enemy_type, characteristics = characteristics, abilities = abilities, attacks = attacks, loot = loot,
           resistances = resistances, immunities = immunities, vulnerabilities = vulnerabilities,
-          condition_immunities = condition_immunities
+          condition_immunities = condition_immunities, gold_min = gold_min, gold_max = gold_max
         ),
         error = function(e) {
           message("add_encounter_enemy failed: ", e$message)
@@ -2626,7 +2626,8 @@ limit 1
             enemy_type = as.character(npc$enemy_type[1] %||% "Custom"), characteristics = enemy_db_json(npc$characteristics[[1]],list()),
             abilities = enemy_db_json(npc$abilities[[1]],list()), attacks = enemy_db_json(npc$attacks[[1]],list()), loot = enemy_db_json(npc$loot[[1]],list()),
             resistances = enemy_db_values(npc$resistances[[1]]), immunities = enemy_db_values(npc$immunities[[1]]),
-            vulnerabilities = enemy_db_values(npc$vulnerabilities[[1]]), condition_immunities = enemy_db_values(npc$condition_immunities[[1]])
+            vulnerabilities = enemy_db_values(npc$vulnerabilities[[1]]), condition_immunities = enemy_db_values(npc$condition_immunities[[1]]),
+            gold_min = as.integer(npc$gold_min[1] %||% 0L), gold_max = as.integer(npc$gold_max[1] %||% 0L)
           ),
           error = function(e) {
             message("spawn_encounter_enemy from template failed: ", e$message)
