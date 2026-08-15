@@ -1918,7 +1918,7 @@ get_encounter_actors <- function(encounter_id) {
   
   player_df <- data.frame(
     actor_id = as.character(players$character_id %||% ""),
-    actor_type = "player",
+    actor_type = rep("player", nrow(players)),
     display_name = as.character(players$display_name %||% players$char_name %||% "Unknown"),
     
     current_hp = suppressWarnings(as.integer(players$current_hp %||% NA)),
@@ -1934,7 +1934,7 @@ get_encounter_actors <- function(encounter_id) {
   )
   enemy_df <- data.frame(
     actor_id = as.character(enemies$enemy_uuid %||% ""),
-    actor_type = "enemy",
+    actor_type = rep("enemy", nrow(enemies)),
     display_name = as.character(enemies$name %||% "Enemy"),
     
     current_hp = suppressWarnings(as.integer(enemies$hp_current %||% NA)),
@@ -1952,7 +1952,7 @@ get_encounter_actors <- function(encounter_id) {
   )
   summon_df <- data.frame(
     actor_id = as.character(summons$summon_uuid %||% ""),
-    actor_type = "summon",
+    actor_type = rep("summon", nrow(summons)),
     display_name = as.character(summons$name %||% "Summoned Beast"),
     current_hp = suppressWarnings(as.integer(summons$hp_current %||% NA)),
     hp_current = suppressWarnings(as.integer(summons$hp_current %||% NA)),

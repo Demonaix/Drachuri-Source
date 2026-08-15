@@ -91,10 +91,16 @@ Rscript scripts/profile_player_hotspots.R
 
 ## Isolated local multiplayer test
 
-PostgreSQL 18 is configured under `test-env/` with a separate database, two
-fictional characters, and one encounter. It never uses Supabase because the
+PostgreSQL 18 is configured under `test-env/` with a separate database, ten
+level-6 QA characters (one per subclass), and one encounter. It never uses Supabase because the
 test launchers disable machine-level R startup files and supply local database
 settings explicitly.
+
+Run the focused class-ability smoke test with:
+
+```sh
+sh test-env/run_ability_smoke_test.sh
+```
 
 Run the database integration test with:
 
