@@ -5,7 +5,7 @@ CLASS_FEATURE_TAGS <- c(
 
 CLASS_FEATURE_INTEGRATION <- list(
   "Rogue::1::sneak_attack" = list(
-    status = "partial", note = "Damage and level scaling work in combat; eligibility and once-per-turn use are still player-confirmed."
+    status = "partial", note = "Damage and level scaling work in combat and use is limited to once per turn; advantage/ally eligibility remains player-confirmed."
   ),
   "Rogue::1::thieves_cant" = list(
     status = "manual", note = "A narrative language feature; shown on the sheet and adjudicated through roleplay."
@@ -84,7 +84,13 @@ CLASS_FEATURE_INTEGRATION <- list(
   "Fighter::4::asi" = list(status = "working", note = "Two points are allocated to one or two abilities, capped at 20; Constitution updates HP retroactively."),
   "Barbarian::4::asi" = list(status = "working", note = "Two points are allocated to one or two abilities, capped at 20; Constitution updates HP retroactively."),
   "Hanianol Sorcerer::4::asi" = list(status = "working", note = "Two points are allocated to one or two abilities, capped at 20; Blood Strength immediately updates spell attacks and save DC."),
-  "Na'Haran Sorcerer::4::asi" = list(status = "working", note = "Two points are allocated to one or two abilities, capped at 20; Blood Strength immediately updates spell attacks and save DC.")
+  "Na'Haran Sorcerer::4::asi" = list(status = "working", note = "Two points are allocated to one or two abilities, capped at 20; Blood Strength immediately updates spell attacks and save DC."),
+  "Rogue::5::uncanny_dodge" = list(status = "working", note = "When hit by a visible attacker, the Rogue may spend their reaction to halve the final damage."),
+  "Fighter::5::extra_attack" = list(status = "working", note = "One Attack action supplies two weapon attacks and works correctly with Action Surge."),
+  "Barbarian::5::extra_attack" = list(status = "working", note = "One Attack action supplies two weapon attacks; Frenzy still grants only one bonus attack."),
+  "Barbarian::5::fast_movement" = list(status = "working", note = "Movement speed increases by 10 feet unless heavy armour is equipped."),
+  "Hanianol Sorcerer::5::thermal_wild_magic" = list(status = "working", note = "The saved Exothermic or Endothermic path unlocks an executable, Blood Strength-based combat spell."),
+  "Na'Haran Sorcerer::5::adept_sorcerer" = list(status = "working", note = "The saved Exothermic or Endothermic path unlocks an executable, Blood Strength-based combat spell.")
 )
 
 class_feature_integration <- function(class_name, level, feature_id) {
@@ -343,6 +349,11 @@ CLASS_SPELL_DEFINITIONS <- list(
   )
 )
 
+CLASS_SPELL_DEFINITIONS$hanianol_exothermic_burst <- CLASS_SPELL_DEFINITIONS$exothermic_burst
+CLASS_SPELL_DEFINITIONS$hanianol_exothermic_burst$class <- "Hanianol Sorcerer"
+CLASS_SPELL_DEFINITIONS$hanianol_endothermic_grasp <- CLASS_SPELL_DEFINITIONS$endothermic_grasp
+CLASS_SPELL_DEFINITIONS$hanianol_endothermic_grasp$class <- "Hanianol Sorcerer"
+
 character_level_choice <- function(char, class_name, level, choice_id) {
   choices <- char$build$level_choices[[class_name]][[as.character(level)]] %||% list()
   as.character(choices[[choice_id]] %||% "")
@@ -384,25 +395,26 @@ spell_choice_is_unlocked <- function(spell, char) {
   }, logical(1)))
 }
 
-spell_subclass_is_unlocked <- function(spell, char) {
+spell_subclass_is_unlocked <- function(spell, char, class_defs = CLASSES) {
   required <- as.character(spell$subclass %||% "")
   if (!nzchar(required)) return(TRUE)
-  classes <- normalise_character_classes(char)
+  classes <- normalise_character_classes(char, class_defs)
   any(vapply(classes, function(entry) {
     identical(as.character(entry$class %||% ""), as.character(spell$class %||% "")) &&
       identical(as.character(entry$subclass %||% ""), required)
   }, logical(1)))
 }
 
-get_unlocked_class_spells <- function(char, spell_defs = CLASS_SPELL_DEFINITIONS) {
-  classes <- normalise_character_classes(char)
+get_unlocked_class_spells <- function(char, spell_defs = CLASS_SPELL_DEFINITIONS,
+                                      class_defs = CLASSES) {
+  classes <- normalise_character_classes(char, class_defs)
   class_levels <- vapply(classes, function(entry) as.integer(entry$level %||% 0L), integer(1))
   names(class_levels) <- vapply(classes, function(entry) as.character(entry$class %||% ""), character(1))
   Filter(function(spell) {
     class_name <- as.character(spell$class %||% "")
     level <- if (class_name %in% names(class_levels)) class_levels[[class_name]] else 0L
     level >= as.integer(spell$level %||% 99L) &&
-      spell_subclass_is_unlocked(spell, char) && spell_choice_is_unlocked(spell, char)
+      spell_subclass_is_unlocked(spell, char, class_defs) && spell_choice_is_unlocked(spell, char)
   }, spell_defs)
 }
 
@@ -605,6 +617,7 @@ resolve_class_action_damage <- function(action, target_max_hp, char,
       modifier <- floor((ability - 10L) / 2L)
       max(0L, as.integer(rolled$total %||% 0L) + modifier)
     },
+    dice = as.integer(roll_function(as.character(damage$value %||% "1d4"))$total %||% 0L),
     suppressWarnings(as.integer(damage$value %||% 0L))
   )
   if (is.na(amount)) amount <- 0L
@@ -679,7 +692,43 @@ barbarian_rage_maximum <- function(char) {
 }
 
 new_turn_action_budget <- function(turn_key = "") {
-  list(key = as.character(turn_key), actions = 1L, bonus_actions = 1L, reactions = 1L)
+  list(
+    key = as.character(turn_key), actions = 1L, bonus_actions = 1L, reactions = 1L,
+    attack_chain = 0L, bonus_attacks = 0L
+  )
+}
+
+attacks_per_attack_action <- function(char) {
+  classes <- normalise_character_classes(char)
+  fighter_level <- sum(vapply(classes, function(entry) {
+    if (identical(as.character(entry$class %||% ""), "Fighter")) as.integer(entry$level %||% 0L) else 0L
+  }, integer(1)))
+  if (fighter_level >= 20L) return(4L)
+  if (fighter_level >= 11L) return(3L)
+  has_extra_attack <- any(vapply(get_unlocked_class_features(char), function(feature) {
+    identical(as.character(feature$id %||% ""), "extra_attack")
+  }, logical(1)))
+  if (has_extra_attack) 2L else 1L
+}
+
+spend_attack_from_budget <- function(budget, attacks_per_action = 1L) {
+  if (as.integer(budget$bonus_attacks %||% 0L) > 0L) {
+    budget$bonus_attacks <- as.integer(budget$bonus_attacks) - 1L
+    return(budget)
+  }
+  if (as.integer(budget$attack_chain %||% 0L) > 0L) {
+    budget$attack_chain <- as.integer(budget$attack_chain) - 1L
+    return(budget)
+  }
+  if (!turn_action_available(budget, "action")) return(NULL)
+  budget <- spend_turn_action(budget, "action")
+  budget$attack_chain <- max(0L, as.integer(attacks_per_action %||% 1L) - 1L)
+  budget
+}
+
+grant_bonus_attack <- function(budget, amount = 1L) {
+  budget$bonus_attacks <- as.integer(budget$bonus_attacks %||% 0L) + max(0L, as.integer(amount))
+  budget
 }
 
 turn_action_field <- function(action_type) {

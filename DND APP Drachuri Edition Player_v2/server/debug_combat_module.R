@@ -171,6 +171,8 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     cunning_mode <- reactiveVal("")
     reckless_active <- reactiveVal(FALSE)
     manoeuvre_active <- reactiveVal("")
+    player_reaction_available <- reactiveVal(TRUE)
+    sneak_attack_used <- reactiveVal(FALSE)
 
     player_has_feature <- function(feature_id) {
       char <- core$state$char
@@ -203,8 +205,12 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         cunning_mode("")
         reckless_active(FALSE)
         manoeuvre_active("")
+        sneak_attack_used(FALSE)
         movement_dash(FALSE)
         updateCheckboxInput(session, "dash_move", value = FALSE)
+        if (identical(as.character(active_actor_id() %||% ""), as.character(core$state$char_id %||% ""))) {
+          player_reaction_available(TRUE)
+        }
       }
     })
 
@@ -218,12 +224,25 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       TRUE
     }
 
+    spend_attack_safe <- function(char, label = "Attack") {
+      updated <- spend_attack_from_budget(turn_budget(), attacks_per_attack_action(char))
+      if (is.null(updated)) {
+        log_safe(paste0("⚠️ No attack remains for ", label, "."))
+        return(FALSE)
+      }
+      turn_budget(updated)
+      TRUE
+    }
+
     output$turn_actions_ui <- renderUI({
       budget <- turn_budget()
       div(
         class = "combat-pill",
         paste0("Actions ", budget$actions, " • Bonus ", budget$bonus_actions,
-               " • Reaction ", budget$reactions)
+               " • Reaction ", if (isTRUE(player_reaction_available())) 1L else 0L,
+               if (as.integer(budget$attack_chain %||% 0L) + as.integer(budget$bonus_attacks %||% 0L) > 0L) {
+                 paste0(" • Attacks ", as.integer(budget$attack_chain %||% 0L) + as.integer(budget$bonus_attacks %||% 0L))
+               } else "")
       )
     })
 
@@ -439,8 +458,8 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     observeEvent(input$use_frenzy, {
       if (!isTRUE(is_players_turn()) || !isTRUE(rage_is_active())) return()
       if (!spend_action_safe("bonus_action", "Frenzy Attack")) return()
-      turn_budget(grant_turn_action(turn_budget(), 1L))
-      log_safe("🔥 Frenzy grants one additional attack action this turn.")
+      turn_budget(grant_bonus_attack(turn_budget(), 1L))
+      log_safe("🔥 Frenzy grants one additional weapon attack this turn.")
     }, ignoreInit = TRUE)
 
     observeEvent(input$totem_eagle_dash, {
@@ -724,15 +743,22 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         
       ))
       
-      if (length(speed_ft) < 1 || is.na(speed_ft) || speed_ft < 0L) {
-        
-        30L
-        
-      } else {
-        
-        speed_ft
-        
+      if (length(speed_ft) < 1 || is.na(speed_ft) || speed_ft < 0L) speed_ft <- 30L
+      char <- core$state$char
+      if (!is.null(char) && player_has_feature("fast_movement")) {
+        items <- char$inventory$items %||% data.frame()
+        heavy <- FALSE
+        if (is.data.frame(items) && nrow(items) && all(c("type", "equipped") %in% names(items))) {
+          armour <- items[as.character(items$type) == "armor" & as.logical(items$equipped), , drop = FALSE]
+          if (nrow(armour) && "meta" %in% names(armour)) {
+            heavy <- any(vapply(armour$meta, function(meta) {
+              identical(tolower(as.character((meta %||% list())$type %||% "")), "heavy")
+            }, logical(1)))
+          }
+        }
+        if (!heavy) speed_ft <- speed_ft + 10L
       }
+      as.integer(speed_ft)
       
     }
     
@@ -1829,10 +1855,21 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         
         if (isTRUE(preview$is_hit)) {
           tagList(
+            if (identical(as.character(preview$target_id %||% ""), as.character(core$state$char_id %||% "")) &&
+                player_has_feature("uncanny_dodge")) {
+              div(
+                class = "confirm-box",
+                checkboxInput(
+                  session$ns("use_uncanny_dodge"),
+                  "Use reaction: Uncanny Dodge (halve final damage)",
+                  value = FALSE
+                )
+              )
+            },
             div(
               class = "confirm-box",
               div(class = "combat-section-title", "Modify Damage"),
-              if (isTRUE(preview$sneak_available)) {
+              if (isTRUE(preview$sneak_available) && !isTRUE(sneak_attack_used())) {
                 checkboxInput(
                   session$ns("final_apply_sneak"),
                   paste0("Apply Sneak Attack (", preview$sneak_part$expr %||% "", ")"),
@@ -2715,7 +2752,36 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     class_combat_actions <- reactive({
       char <- core$state$char
       if (is.null(char)) return(list())
-      get_unlocked_combat_actions(char)
+      actions <- get_unlocked_combat_actions(char)
+      classes <- normalise_character_classes(char)
+      class_levels <- stats::setNames(
+        vapply(classes, function(entry) as.integer(entry$level %||% 0L), integer(1)),
+        vapply(classes, function(entry) as.character(entry$class %||% ""), character(1))
+      )
+      spells <- get_unlocked_class_spells(char)
+      offensive <- Filter(function(spell) {
+        as.integer(spell$level %||% 0L) == 5L && is.list(spell$damage)
+      }, spells)
+      if (length(offensive)) {
+        spell_actions <- lapply(offensive, function(spell) {
+          level <- as.integer(class_levels[[as.character(spell$class)]] %||% spell$level)
+          spell <- scale_class_spell(spell, level)
+          dice <- as.character(spell$resolved_upgrade$damage_dice %||% spell$damage$dice %||% "1d8")
+          list(
+            id = paste0("spell_", gsub("[^a-z0-9]+", "_", tolower(spell$name))),
+            name = spell$name, desc = spell$description,
+            action = list(
+              name = spell$name, target = "enemy", action_type = spell$action_type,
+              damage = list(mode = "dice", value = dice, type = spell$damage$type),
+              resource = list(name = "sindre", cost = spell$cost),
+              resolution = spell$resolution, effects = spell$effects %||% list()
+            ),
+            spell = spell
+          )
+        })
+        actions <- c(actions, spell_actions)
+      }
+      actions
     })
 
     output$class_actions_ui <- renderUI({
@@ -2872,6 +2938,23 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       resolved_damage <- resolve_class_action_damage(action, max_hp, char)
       raw_damage <- resolved_damage$amount
 
+      save_succeeded <- FALSE
+      if (is.list(action$resolution) && identical(as.character(action$resolution$type %||% ""), "saving_throw")) {
+        ability <- as.character(action$resolution$ability %||% "con")
+        enemies <- snapshot_data()$enemies %||% data.frame()
+        enemy <- enemies[as.character(enemies$enemy_uuid %||% "") == target_id, , drop = FALSE]
+        save_col <- paste0(ability, "_save")
+        save_mod <- if (nrow(enemy) && save_col %in% names(enemy)) as.integer(enemy[[save_col]][1] %||% 0L) else 0L
+        save_roll <- sample.int(20L, 1L)
+        save_dc <- class_spell_save_dc(char, feature$spell %||% list(class = feature$class %||% ""))
+        save_succeeded <- save_roll + save_mod >= save_dc
+        if (save_succeeded && grepl("half_damage", as.character(action$resolution$on_success %||% ""), fixed = TRUE)) {
+          raw_damage <- floor(raw_damage / 2L)
+        }
+        log_safe(paste0("🎲 ", get_actor_display_name(target_id, "enemy"), " rolls ", save_roll + save_mod,
+                        " vs spell DC ", save_dc, if (save_succeeded) " — success." else " — failure."))
+      }
+
       target_char <- load_actor_for_combat(target_id, "enemy")
       traits <- get_damage_traits(target_char)
       traits <- spellsword_traits(traits, resolved_damage$damage_type, char)
@@ -2888,6 +2971,17 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       if (is.null(result)) {
         log_safe("⚠️ The ability could not be applied.")
         return()
+      }
+
+      if (!save_succeeded && length(action$effects %||% list()) &&
+          any(vapply(action$effects, function(effect) identical(effect$type %||% "", "speed_modifier"), logical(1)))) {
+        round_number <- as.integer(combat_tbl()$round_number[1] %||% 1L)
+        create_encounter_effect(
+          current_encounter_id(), "player", as.character(core$state$char_id %||% ""),
+          "endothermic_grasp", "condition", payload = list(condition = "slowed", speed_modifier = -10L),
+          target_actor_type = "enemy", target_actor_id = target_id,
+          starts_round = round_number, ends_round = round_number + 1L
+        )
       }
 
       core$state$char <- mark_class_action_used(char, action)
@@ -3459,13 +3553,6 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     
     observeEvent(input$confirm_attack, {
       removeModal()
-
-      if (identical(as.character(preview$attacker_type %||% "player"), "player") &&
-          !isTRUE(preview$is_opportunity_attack) &&
-          !spend_action_safe("action", "Attack")) {
-        pending_attack(NULL)
-        return()
-      }
       
       attacker_id <- active_actor_id()
       target_id <- as.character(selected_target_id() %||% "")
@@ -3492,6 +3579,10 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       
       if (is.null(attacker_char) || is.null(target_char)) {
         log_safe("⚠️ Could not load combatants.")
+        return()
+      }
+      if (!isTRUE(current_attack_is_opp()) && !spend_attack_safe(attacker_char, "Attack")) {
+        pending_attack(NULL)
         return()
       }
       
@@ -3583,10 +3674,24 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       removeModal()
       
       apply_sneak <- isTRUE(input$final_apply_sneak %||% FALSE)
+      if (isTRUE(sneak_attack_used())) apply_sneak <- FALSE
       manual_bonus <- suppressWarnings(as.integer(input$final_bonus_damage %||% 0))
       manual_type <- as.character(input$final_bonus_type %||% "same_as_primary")
       final_damage <- suppressWarnings(as.integer(input$final_damage_override %||% 0))
       if (is.na(final_damage) || final_damage < 0) final_damage <- 0L
+      used_uncanny_dodge <- FALSE
+      if (isTRUE(input$use_uncanny_dodge %||% FALSE) &&
+          identical(as.character(preview$target_id %||% ""), as.character(core$state$char_id %||% "")) &&
+          player_has_feature("uncanny_dodge")) {
+        if (isTRUE(player_reaction_available())) {
+          player_reaction_available(FALSE)
+          final_damage <- floor(final_damage / 2L)
+          used_uncanny_dodge <- TRUE
+          log_safe("🌀 Uncanny Dodge halves the incoming damage.")
+        } else {
+          log_safe("⚠️ Uncanny Dodge was selected, but no reaction remains.")
+        }
+      }
       
       calc <- compute_final_attack(
         preview = preview,
@@ -3595,6 +3700,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         manual_type = manual_type
       )
       if (identical(cunning_mode(), "hide")) cunning_mode("")
+      if (isTRUE(apply_sneak)) sneak_attack_used(TRUE)
       
       eid <- current_encounter_id()
       
@@ -3625,6 +3731,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
           is_crit = preview$is_crit,
           damage_total = calc$adjusted$total,
           final_damage = final_damage,
+          used_uncanny_dodge = used_uncanny_dodge,
           used_sneak_attack = isTRUE(apply_sneak),
           raw_damage_total = calc$raw_total,
           damage_parts = lapply(calc$adjusted$parts, function(x) {

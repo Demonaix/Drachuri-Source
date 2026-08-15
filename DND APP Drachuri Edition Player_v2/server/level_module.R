@@ -427,13 +427,16 @@ levelTabServer <- function(id, state, restoring, add_log, char_rev) {
     missing_level_three_choices_r <- reactive({
       char <- validate_character(state$char)
       for (entry in classes_r()) {
-        if (as.integer(entry$level %||% 0L) < 3L || !nzchar(as.character(entry$subclass %||% ""))) next
-        choices <- level_options_for(entry$class, 3L, subclass = entry$subclass)
-        choices <- Filter(function(choice) !identical(as.character(choice$id %||% ""), "subclass"), choices)
-        missing <- Filter(function(choice) {
-          !nzchar(character_level_choice(char, entry$class, 3L, as.character(choice$id %||% "")))
-        }, choices)
-        if (length(missing)) return(list(entry = entry, choices = missing))
+        if (!nzchar(as.character(entry$subclass %||% ""))) next
+        for (choice_level in c(3L, 5L)) {
+          if (as.integer(entry$level %||% 0L) < choice_level) next
+          choices <- level_options_for(entry$class, choice_level, subclass = entry$subclass)
+          choices <- Filter(function(choice) !identical(as.character(choice$id %||% ""), "subclass"), choices)
+          missing <- Filter(function(choice) {
+            !nzchar(character_level_choice(char, entry$class, choice_level, as.character(choice$id %||% "")))
+          }, choices)
+          if (length(missing)) return(list(entry = entry, level = choice_level, choices = missing))
+        }
       }
       NULL
     })
@@ -479,14 +482,14 @@ levelTabServer <- function(id, state, restoring, add_log, char_rev) {
         ),
         if (!is.null(missing_level_three)) div(
           class = "levelup-choice",
-          tags$strong(paste(missing_level_three$entry$class, "—", missing_level_three$entry$subclass, "choices")),
+          tags$strong(paste(missing_level_three$entry$class, "— level", missing_level_three$level, "choices")),
           lapply(missing_level_three$choices, function(choice) {
             selectInput(
               session$ns(paste0("legacy_level_three_", choice$id)),
               choice$label, choices = c("Choose…" = "", choice$options)
             )
           }),
-          actionButton(session$ns("save_legacy_level_three_choices"), "Save Level 3 Choices",
+          actionButton(session$ns("save_legacy_level_three_choices"), paste("Save Level", missing_level_three$level, "Choices"),
                        class = "btn btn-primary btn-sm")
         )
       )
@@ -571,21 +574,22 @@ levelTabServer <- function(id, state, restoring, add_log, char_rev) {
       char <- validate_character(state$char)
       char$build$level_choices <- char$build$level_choices %||% list()
       class_name <- as.character(missing$entry$class)
+      choice_level <- as.character(missing$level %||% 3L)
       char$build$level_choices[[class_name]] <- char$build$level_choices[[class_name]] %||% list()
-      char$build$level_choices[[class_name]][["3"]] <- char$build$level_choices[[class_name]][["3"]] %||% list()
+      char$build$level_choices[[class_name]][[choice_level]] <- char$build$level_choices[[class_name]][[choice_level]] %||% list()
       selected <- character()
       for (choice in missing$choices) {
         value <- as.character(input[[paste0("legacy_level_three_", choice$id)]] %||% "")
         if (!value %in% as.character(choice$options %||% character())) {
-          showNotification("Complete every level-3 choice before saving.", type = "error")
+          showNotification(paste("Complete every level", choice_level, "choice before saving."), type = "error")
           return()
         }
-        char$build$level_choices[[class_name]][["3"]][[choice$id]] <- value
+        char$build$level_choices[[class_name]][[choice_level]][[choice$id]] <- value
         if (grepl("^battle_master_manoeuvre_", choice$id)) selected <- c(selected, value)
       }
       existing <- unname(as.character(unlist(
-        char$build$level_choices[[class_name]][["3"]][grepl(
-          "^battle_master_manoeuvre_", names(char$build$level_choices[[class_name]][["3"]])
+        char$build$level_choices[[class_name]][[choice_level]][grepl(
+          "^battle_master_manoeuvre_", names(char$build$level_choices[[class_name]][[choice_level]])
         )]
       )))
       if (length(existing) && anyDuplicated(existing)) {
@@ -594,8 +598,8 @@ levelTabServer <- function(id, state, restoring, add_log, char_rev) {
       }
       state$char <- apply_unlocked_class_effects(char)
       if (is.function(char_rev)) char_rev(isolate(char_rev()) + 1L)
-      log_safe(paste0("🛡️ Saved legacy level-3 choices for ", class_name, "."))
-      showNotification("Level 3 choices saved", type = "message")
+      log_safe(paste0("🛡️ Saved legacy level-", choice_level, " choices for ", class_name, "."))
+      showNotification(paste("Level", choice_level, "choices saved"), type = "message")
     }, ignoreInit = TRUE)
 
     observeEvent(input$open_level_up, {

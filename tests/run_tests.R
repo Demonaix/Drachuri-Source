@@ -62,7 +62,8 @@ load_functions(
     "class_action_use_available", "mark_class_action_used",
     "class_resource_remaining", "spend_class_resource", "barbarian_rage_maximum",
     "new_turn_action_budget", "turn_action_field", "turn_action_available",
-    "spend_turn_action", "grant_turn_action",
+    "spend_turn_action", "grant_turn_action", "attacks_per_attack_action",
+    "spend_attack_from_budget", "grant_bonus_attack",
     "apply_unlocked_class_effects"
   )
 )
@@ -450,6 +451,65 @@ test("ability score improvement enforces its cap and updates Constitution HP", {
   stopifnot(healthier$resources$hp$cur == 28L)
   capped <- tryCatch(test_env$apply_ability_score_increase(char, c("dex", "cha")), error = identity)
   stopifnot(inherits(capped, "error"))
+})
+
+test("every level-five class feature has an integration review", {
+  class_defs <- list(
+    Rogue = list(levels = list("5" = list(features = list(uncanny_dodge = list(name = "Uncanny Dodge"))))),
+    Fighter = list(levels = list("5" = list(features = list(extra_attack = list(name = "Extra Attack"))))),
+    Barbarian = list(levels = list("5" = list(features = list(
+      extra_attack = list(name = "Extra Attack"), fast_movement = list(name = "Fast Movement")
+    )))),
+    `Hanianol Sorcerer` = list(levels = list("5" = list(features = list(
+      thermal_wild_magic = list(name = "Thermal Wild Magic")
+    )))),
+    `Na'Haran Sorcerer` = list(levels = list("5" = list(features = list(
+      adept_sorcerer = list(name = "Adept Sorcerer")
+    ))))
+  )
+  audit <- test_env$audit_class_level_integration(5L, class_defs)
+  stopifnot(nrow(audit) == 6L)
+  stopifnot(all(audit$status == "working"))
+})
+
+test("Extra Attack shares one action while Frenzy grants only one attack", {
+  budget <- test_env$new_turn_action_budget("turn")
+  first <- test_env$spend_attack_from_budget(budget, 2L)
+  stopifnot(first$actions == 0L, first$attack_chain == 1L)
+  second <- test_env$spend_attack_from_budget(first, 2L)
+  stopifnot(second$actions == 0L, second$attack_chain == 0L)
+  stopifnot(is.null(test_env$spend_attack_from_budget(second, 2L)))
+  frenzy <- test_env$grant_bonus_attack(second)
+  bonus <- test_env$spend_attack_from_budget(frenzy, 2L)
+  stopifnot(bonus$bonus_attacks == 0L, bonus$attack_chain == 0L)
+})
+
+test("both sorcerer traditions unlock their selected thermal spell", {
+  make_char <- function(class_name, choice) list(
+    build = list(
+      class = class_name, level = 5L,
+      classes = list(list(class = class_name, level = 5L, subclass = "")),
+      level_choices = setNames(list(list("5" = list(thermal_path = choice))), class_name)
+    ),
+    abilities = list(bld_str = 16L)
+  )
+  class_defs <- list(
+    `Hanianol Sorcerer` = list(levels = list(), subclasses = list()),
+    `Na'Haran Sorcerer` = list(levels = list(), subclasses = list())
+  )
+  spell_defs <- test_env$CLASS_SPELL_DEFINITIONS
+  spell_defs$hanianol_exothermic_burst <- spell_defs$exothermic_burst
+  spell_defs$hanianol_exothermic_burst$class <- "Hanianol Sorcerer"
+  spell_defs$hanianol_endothermic_grasp <- spell_defs$endothermic_grasp
+  spell_defs$hanianol_endothermic_grasp$class <- "Hanianol Sorcerer"
+  hanianol <- test_env$get_unlocked_class_spells(
+    make_char("Hanianol Sorcerer", "Exothermic"), spell_defs = spell_defs, class_defs = class_defs
+  )
+  naharan <- test_env$get_unlocked_class_spells(
+    make_char("Na'Haran Sorcerer", "Endothermic"), spell_defs = spell_defs, class_defs = class_defs
+  )
+  stopifnot(any(vapply(hanianol, function(spell) identical(spell$name, "Exothermic Burst"), logical(1))))
+  stopifnot(any(vapply(naharan, function(spell) identical(spell$name, "Endothermic Grasp"), logical(1))))
 })
 
 test("Hanianol Blood Magic prevents natural Sindre recovery", {

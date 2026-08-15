@@ -1668,6 +1668,14 @@ LEVEL_OPTIONS[["Na'Haran Sorcerer"]][["5"]] <- c(
     options = c("Exothermic", "Endothermic")
   ))
 )
+LEVEL_OPTIONS[["Hanianol Sorcerer"]][["5"]] <- c(
+  LEVEL_OPTIONS[["Hanianol Sorcerer"]][["5"]] %||% list(),
+  list(list(
+    id = "thermal_path",
+    label = "Thermal Wild Magic",
+    options = c("Exothermic", "Endothermic")
+  ))
+)
 LEVEL_OPTIONS[["Na'Haran Sorcerer"]][["6"]] <- c(
   LEVEL_OPTIONS[["Na'Haran Sorcerer"]][["6"]] %||% list(),
   list(list(
