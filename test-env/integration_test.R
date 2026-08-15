@@ -107,6 +107,7 @@ stopifnot(any(as.character(summons$summon_uuid) == double_id & summons$turn_orde
 
 generated_enemy <- resolve_enemy_blueprint("Bandit", c("Speedy", "Boss", "Fae"))
 stopifnot(generated_enemy$movement_speed == 40L, generated_enemy$abilities[["dex"]] == 18L)
+stopifnot(generated_enemy$armor_id=="leather",any(vapply(generated_enemy$loot,function(x)identical(x$name,"Leather Armour"),logical(1))))
 stopifnot(generated_enemy$hp_max == 24L, "iron" %in% generated_enemy$vulnerabilities)
 stopifnot(any(vapply(generated_enemy$attacks, function(x) identical(x$name, "Shortsword"), logical(1))))
 stopifnot(any(vapply(generated_enemy$loot, function(x) identical(x$name, "Shortsword"), logical(1))))
@@ -133,6 +134,15 @@ stopifnot(is.null(claim_defeated_enemy_loot(1L,reinforcement_id,"1002")))
 weapon_drop <- Filter(function(x) identical(x$type,"weapon"),claimed$loot)[[1L]]
 loot_row <- enemy_loot_to_inventory_row(weapon_drop,"qa_loot")
 stopifnot(loot_row$type[[1L]]=="weapon",is.list(loot_row$meta[[1L]]))
+
+trader<-load_character_from_db("1001");trader$inventory$items<-inventory_normalize(rbind(trader$inventory$items,loot_row));trader$inventory$gold<-20;save_character_to_db(trader,"1001")
+offer<-create_trade_offer(1L,"1001","1002","item",item_id="qa_loot")
+stopifnot(is.list(offer),!"qa_loot"%in%offer$sender$inventory$items$id)
+pending<-get_pending_trade_offers("1002");stopifnot(nrow(pending)==1L,pending$summary[[1]]!="")
+accepted<-resolve_trade_offer(offer$offer_id,"1002",TRUE);stopifnot(accepted$status=="accepted")
+received<-accepted$character$inventory$items;stopifnot(any(received$name==loot_row$name),identical(Filter(function(x)length(x$material)>0,received$meta)[[1]]$material,"steel"))
+gold_offer<-create_trade_offer(1L,"1001","1002","gold",gold_amount=5L);stopifnot(gold_offer$sender$inventory$gold==15)
+declined<-resolve_trade_offer(gold_offer$offer_id,"1002",FALSE);stopifnot(declined$status=="declined",declined$character$inventory$gold==20)
 
 stopifnot(isTRUE(end_encounter_combat(1L)))
 ended_snapshot <- get_player_live_snapshot(1L, "1002")

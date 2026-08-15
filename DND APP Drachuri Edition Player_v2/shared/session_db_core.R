@@ -35,6 +35,39 @@ claim_defeated_enemy_loot <- function(encounter_id, enemy_uuid, character_id) {
   }),error=function(e){message("claim_defeated_enemy_loot failed: ",e$message);NULL}); out
 }
 
+create_trade_offer <- function(session_id,sender_id,recipient_id,kind,item_id=NULL,gold_amount=0L) {
+  con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE)
+  tryCatch(DBI::dbWithTransaction(con,{
+    ids<-sort(c(as.character(sender_id),as.character(recipient_id))); rows<-DBI::dbGetQuery(con,"SELECT id,state_blob FROM character_blobs WHERE id::text=ANY($1::text[]) ORDER BY id FOR UPDATE",params=list(enemy_pg_array(ids)));if(nrow(rows)!=2L)stop("Both characters must exist.")
+    sender_row<-rows[as.character(rows$id)==as.character(sender_id),,drop=FALSE]; sender<-validate_character(unserialize(sender_row$state_blob[[1]])); item_blob<-NULL; summary<-list(kind=kind)
+    if(identical(kind,"gold")){amount<-as.integer(gold_amount);if(is.na(amount)||amount<1L||sender$inventory$gold<amount)stop("Not enough gold.");sender$inventory$gold<-sender$inventory$gold-amount;summary$gold<-amount
+    }else{inv<-inventory_normalize(sender$inventory$items);idx<-match(as.character(item_id),inv$id);if(is.na(idx))stop("Item is no longer available.");item<-inv[idx,,drop=FALSE];inv<-inv[-idx,,drop=FALSE];sender$inventory$items<-inventory_normalize(inv);item_blob<-serialize(item,NULL);summary<-list(kind="item",name=item$name[[1]],type=item$type[[1]],qty=item$qty[[1]],weight=item$weight[[1]],value=item$value[[1]],desc=item$desc[[1]],meta=item$meta[[1]])}
+    DBI::dbExecute(con,"UPDATE character_blobs SET state_blob=$1,char_name=$2,updated_at=now() WHERE id::text=$3",params=list(list(serialize(sender,NULL)),sender$meta$name,as.character(sender_id)))
+    offer<-DBI::dbGetQuery(con,"INSERT INTO trade_offers(session_id,sender_character_id,recipient_character_id,offer_kind,item_blob,gold_amount,summary) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb) RETURNING id",params=list(as.integer(session_id),as.character(sender_id),as.character(recipient_id),kind,list(item_blob%||%raw()),as.integer(gold_amount),enemy_json(summary)))
+    list(offer_id=offer$id[[1]],sender=sender)
+  }),error=function(e){message("create_trade_offer failed: ",e$message);structure(NULL,error=e$message)})
+}
+
+consume_trade_sender_update <- function(character_id) {
+  con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE)
+  tryCatch(DBI::dbWithTransaction(con,{rows<-DBI::dbGetQuery(con,"SELECT id,status FROM trade_offers WHERE sender_character_id=$1 AND status<>'pending' AND sender_seen=FALSE ORDER BY resolved_at FOR UPDATE",params=list(as.character(character_id)));if(!nrow(rows))NULL else {DBI::dbExecute(con,"UPDATE trade_offers SET sender_seen=TRUE WHERE id=ANY($1::bigint[])",params=list(enemy_pg_array(rows$id)));blob<-DBI::dbGetQuery(con,"SELECT state_blob FROM character_blobs WHERE id::text=$1",params=list(as.character(character_id)));list(character=unserialize(blob$state_blob[[1]]),statuses=rows$status)}}),error=function(e)NULL)
+}
+
+get_pending_trade_offers <- function(character_id) {
+  con<-get_db_connection();if(is.null(con))return(data.frame());on.exit(release_db_connection(con),add=TRUE)
+  tryCatch(DBI::dbGetQuery(con,"SELECT t.*,cb.char_name AS sender_name FROM trade_offers t LEFT JOIN character_blobs cb ON cb.id::text=t.sender_character_id WHERE t.recipient_character_id=$1 AND t.status='pending' ORDER BY t.created_at",params=list(as.character(character_id))),error=function(e)data.frame())
+}
+
+resolve_trade_offer <- function(offer_id,recipient_id,accept=TRUE) {
+  con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE)
+  tryCatch(DBI::dbWithTransaction(con,{
+    offer<-DBI::dbGetQuery(con,"SELECT * FROM trade_offers WHERE id=$1 FOR UPDATE",params=list(as.integer(offer_id)));if(!nrow(offer)||offer$status[[1]]!="pending"||offer$recipient_character_id[[1]]!=as.character(recipient_id))stop("Offer is no longer pending.")
+    target_id<-if(isTRUE(accept))as.character(recipient_id) else as.character(offer$sender_character_id[[1]]); row<-DBI::dbGetQuery(con,"SELECT id,state_blob FROM character_blobs WHERE id::text=$1 FOR UPDATE",params=list(target_id));char<-validate_character(unserialize(row$state_blob[[1]]))
+    if(offer$offer_kind[[1]]=="gold")char$inventory$gold<-char$inventory$gold+as.integer(offer$gold_amount[[1]]) else {item<-unserialize(offer$item_blob[[1]]);item$id[[1]]<-paste0("trade_",offer$id[[1]],"_",sample(1000:9999,1));item$equipped[[1]]<-FALSE;item$edit[[1]]<-FALSE;char$inventory$items<-inventory_normalize(rbind(inventory_normalize(char$inventory$items),item))}
+    DBI::dbExecute(con,"UPDATE character_blobs SET state_blob=$1,char_name=$2,updated_at=now() WHERE id::text=$3",params=list(list(serialize(char,NULL)),char$meta$name,target_id));status<-if(isTRUE(accept))"accepted" else "declined";DBI::dbExecute(con,"UPDATE trade_offers SET status=$2,resolved_at=now() WHERE id=$1",params=list(as.integer(offer_id),status));list(character=char,status=status)
+  }),error=function(e){message("resolve_trade_offer failed: ",e$message);NULL})
+}
+
 # ============================================================
 # READ HELPERS
 # ============================================================
