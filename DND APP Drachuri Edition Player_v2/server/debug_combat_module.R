@@ -123,9 +123,15 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         , drop = FALSE
       ]
       if (!nrow(rows)) return(character())
-      unique(vapply(seq_len(nrow(rows)), function(i) {
+      conditions <- unique(vapply(seq_len(nrow(rows)), function(i) {
         as.character(decode_effect_payload(rows$payload[[i]])$condition %||% "")
       }, character(1)))
+      if (identical(as.character(actor_id), as.character(core$state$char_id %||% "")) &&
+          isTRUE(core$state$char$status$raging %||% FALSE) &&
+          character_has_feature(core$state$char, "mindless_rage")) {
+        conditions <- setdiff(conditions, c("charmed", "frightened"))
+      }
+      conditions
     }
 
     tile_in_spell_area <- function(x, y, spell_id) {
@@ -428,6 +434,23 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       if (player_has_feature("fast_hands")) {
         buttons <- c(buttons, list(actionButton(session$ns("fast_hands"), "Fast Hands", class = "btn btn-default")))
       }
+      if (player_has_feature("balance")) {
+        action <- list(usage = list(key = "balance", recharge = "long_rest"))
+        buttons <- c(buttons, list(actionButton(
+          session$ns("open_balance"), "Balance",
+          class = "btn btn-default", disabled = if (!class_action_use_available(char, action)) "disabled" else NULL
+        )))
+      }
+      if (player_has_feature("predator")) {
+        action <- list(usage = list(key = "predator", recharge = "short_rest"))
+        buttons <- c(buttons, list(actionButton(
+          session$ns("use_predator"), "Predator",
+          class = "btn btn-danger", disabled = if (!class_action_use_available(char, action)) "disabled" else NULL
+        )))
+      }
+      if (player_has_feature("mislead")) {
+        buttons <- c(buttons, list(actionButton(session$ns("use_mislead"), "Mislead", class = "btn btn-default")))
+      }
       if (!length(buttons)) return(NULL)
       tagList(buttons)
     })
@@ -524,6 +547,109 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       if (!spend_action_safe("bonus_action", paste("Fast Hands:", choice))) return()
       removeModal()
       log_safe(paste0("🖐️ Fast Hands: ", choice, ". Resolve the selected object, tool or check."))
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$open_balance, {
+      if (!isTRUE(is_players_turn())) return()
+      stats <- c("Strength" = "str", "Dexterity" = "dex", "Constitution" = "con",
+                 "Intelligence" = "int", "Blood Strength" = "bld_str", "Charisma" = "cha")
+      showModal(modalDialog(
+        title = "Balance",
+        p("Spend 15 Sindre to increase three different abilities by +1 until your next long rest."),
+        selectInput(session$ns("balance_stat_1"), "Ability 1", stats),
+        selectInput(session$ns("balance_stat_2"), "Ability 2", stats, selected = "dex"),
+        selectInput(session$ns("balance_stat_3"), "Ability 3", stats, selected = "con"),
+        footer = tagList(modalButton("Cancel"), actionButton(session$ns("confirm_balance"), "Spend 15 Sindre", class = "btn btn-primary"))
+      ))
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$confirm_balance, {
+      char <- validate_character(core$state$char)
+      action <- list(usage = list(key = "balance", recharge = "long_rest"))
+      if (!class_action_use_available(char, action)) return()
+      stats <- c(input$balance_stat_1, input$balance_stat_2, input$balance_stat_3)
+      stats <- as.character(stats)
+      if (length(stats) != 3L || anyDuplicated(stats)) {
+        log_safe("⚠️ Balance requires three different abilities.")
+        return()
+      }
+      sindre <- as.integer(char$resources$sindre$cur %||% 0L)
+      if (sindre < 15L) {
+        log_safe("⚠️ Not enough Sindre for Balance.")
+        return()
+      }
+      if (!spend_action_safe("action", "Balance")) return()
+      char$resources$sindre$cur <- sindre - 15L
+      for (stat in stats) char$abilities[[stat]] <- as.integer(char$abilities[[stat]] %||% 10L) + 1L
+      char$status <- char$status %||% list()
+      char$status$balance_boosts <- stats
+      char <- mark_class_action_used(char, action)
+      core$state$char <- char
+      removeModal()
+      log_safe(paste0("⚖️ Balance strengthens ", paste(stats, collapse = ", "), " until long rest."))
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$use_predator, {
+      if (!isTRUE(is_players_turn())) return()
+      char <- validate_character(core$state$char)
+      action <- list(usage = list(key = "predator", recharge = "short_rest"))
+      if (!class_action_use_available(char, action) || !spend_action_safe("action", "Predator")) return()
+      actors <- encounter_actors_tbl()
+      caster_id <- as.character(core$state$char_id %||% "")
+      caster <- actors[as.character(actors$actor_id) == caster_id, , drop = FALSE]
+      enemies <- snapshot_data()$enemies %||% data.frame()
+      dc <- 8L + character_proficiency_bonus(char) + floor((as.integer(char$abilities$bld_str %||% 10L) - 10L) / 2L)
+      frightened <- character()
+      if (nrow(caster)) for (i in seq_len(nrow(actors))) {
+        actor <- actors[i, , drop = FALSE]
+        if (!identical(as.character(actor$actor_type[1]), "enemy")) next
+        distance <- max(abs(as.integer(actor$x[1]) - as.integer(caster$x[1])),
+                        abs(as.integer(actor$y[1]) - as.integer(caster$y[1]))) * 5L
+        if (is.na(distance) || distance > 15L) next
+        enemy_id <- as.character(actor$actor_id[1])
+        enemy <- enemies[as.character(enemies$enemy_uuid %||% "") == enemy_id, , drop = FALSE]
+        save_mod <- if (nrow(enemy) && "wis_save" %in% names(enemy)) as.integer(enemy$wis_save[1] %||% 0L) else 0L
+        if (sample.int(20L, 1L) + save_mod < dc) {
+          round_number <- as.integer(combat_tbl()$round_number[1] %||% 1L)
+          create_encounter_effect(
+            current_encounter_id(), "player", caster_id, "predator", "condition",
+            payload = list(condition = "frightened", save_dc = dc),
+            target_actor_type = "enemy", target_actor_id = enemy_id,
+            starts_round = round_number, ends_round = round_number + 1L
+          )
+          frightened <- c(frightened, as.character(actor$display_name[1] %||% enemy_id))
+        }
+      }
+      core$state$char <- mark_class_action_used(char, action)
+      log_safe(if (length(frightened)) paste0("🐺 Predator frightens: ", paste(frightened, collapse = ", "), ".") else "🐺 Predator: no nearby enemy was frightened.")
+      bump_refresh()
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$use_mislead, {
+      if (!isTRUE(is_players_turn())) return()
+      char <- validate_character(core$state$char)
+      sindre <- as.integer(char$resources$sindre$cur %||% 0L)
+      if (sindre < 25L) {
+        log_safe("⚠️ Not enough Sindre for Mislead.")
+        return()
+      }
+      if (!spend_action_safe("action", "Mislead")) return()
+      round_number <- as.integer(combat_tbl()$round_number[1] %||% 1L)
+      caster_id <- as.character(core$state$char_id %||% "")
+      created <- create_encounter_effect(
+        current_encounter_id(), "player", caster_id, "mislead", "condition",
+        payload = list(condition = "invisible", illusory_double = TRUE),
+        target_actor_type = "player", target_actor_id = caster_id,
+        starts_round = round_number, ends_round = round_number + 10L, concentration = TRUE
+      )
+      if (is.null(created)) {
+        log_safe("⚠️ Mislead could not be stored.")
+        return()
+      }
+      char$resources$sindre$cur <- sindre - 25L
+      core$state$char <- char
+      log_safe("🪞 Mislead creates an illusory double; you become invisible while concentrating.")
+      bump_refresh()
     }, ignoreInit = TRUE)
 
     natural_magic_spells <- reactive({
@@ -2760,7 +2886,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       )
       spells <- get_unlocked_class_spells(char)
       offensive <- Filter(function(spell) {
-        as.integer(spell$level %||% 0L) == 5L && is.list(spell$damage)
+        as.integer(spell$level %||% 0L) %in% c(5L, 6L) && is.list(spell$damage)
       }, spells)
       if (length(offensive)) {
         spell_actions <- lapply(offensive, function(spell) {
@@ -2771,7 +2897,10 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
             id = paste0("spell_", gsub("[^a-z0-9]+", "_", tolower(spell$name))),
             name = spell$name, desc = spell$description,
             action = list(
-              name = spell$name, target = "enemy", action_type = spell$action_type,
+              name = spell$name,
+              target = if (identical(as.character(spell$target$type %||% ""), "area")) "area_self" else "enemy",
+              radius_ft = as.integer(spell$target$size_ft %||% 0L),
+              action_type = spell$action_type,
               damage = list(mode = "dice", value = dice, type = spell$damage$type),
               resource = list(name = "sindre", cost = spell$cost),
               resolution = spell$resolution, effects = spell$effects %||% list()
@@ -2840,6 +2969,9 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       if (identical(as.character(action$target %||% "enemy"), "self")) {
         return(tags$p(class = "confirm-note", "Target: Self"))
       }
+      if (identical(as.character(action$target %||% "enemy"), "area_self")) {
+        return(tags$p(class = "confirm-note", paste0("Target: enemies within ", action$radius_ft %||% 0L, " feet")))
+      }
       actors <- encounter_actors_tbl()
       targets <- actors[as.character(actors$actor_type %||% "") == "enemy", , drop = FALSE]
       if (!is.data.frame(targets) || nrow(targets) == 0L) {
@@ -2878,7 +3010,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       feature <- actions[[idx]]
       action <- feature$action
       target_mode <- as.character(action$target %||% "enemy")
-      target_id <- if (identical(target_mode, "self")) {
+      target_id <- if (target_mode %in% c("self", "area_self")) {
         as.character(core$state$char_id %||% "self")
       } else as.character(input$class_action_target %||% "")
       if (!nzchar(target_id)) return()
@@ -2927,6 +3059,46 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         return()
       }
 
+      if (identical(target_mode, "area_self")) {
+        actors <- encounter_actors_tbl()
+        caster <- actors[as.character(actors$actor_id) == target_id, , drop = FALSE]
+        targets <- actors[as.character(actors$actor_type) == "enemy", , drop = FALSE]
+        radius <- as.integer(action$radius_ft %||% 0L)
+        affected <- character()
+        total_damage <- 0L
+        enemies <- snapshot_data()$enemies %||% data.frame()
+        if (nrow(caster) && nrow(targets)) for (i in seq_len(nrow(targets))) {
+          row <- targets[i, , drop = FALSE]
+          distance <- max(abs(as.integer(row$x[1]) - as.integer(caster$x[1])),
+                          abs(as.integer(row$y[1]) - as.integer(caster$y[1]))) * 5L
+          if (is.na(distance) || distance > radius) next
+          enemy_id <- as.character(row$actor_id[1])
+          max_hp <- as.integer(row$hp_max[1] %||% row$max_hp[1] %||% 1L)
+          rolled <- resolve_class_action_damage(action, max_hp, char)
+          amount <- rolled$amount
+          ability <- as.character(action$resolution$ability %||% "con")
+          enemy <- enemies[as.character(enemies$enemy_uuid %||% "") == enemy_id, , drop = FALSE]
+          save_col <- paste0(ability, "_save")
+          save_mod <- if (nrow(enemy) && save_col %in% names(enemy)) as.integer(enemy[[save_col]][1] %||% 0L) else 0L
+          dc <- class_spell_save_dc(char, feature$spell)
+          if (sample.int(20L, 1L) + save_mod >= dc) amount <- floor(amount / 2L)
+          target_char <- load_actor_for_combat(enemy_id, "enemy")
+          traits <- spellsword_traits(get_damage_traits(target_char), rolled$damage_type, char)
+          adjusted <- apply_damage_traits_to_parts(list(list(total = amount, type = rolled$damage_type)), traits)
+          dealt <- as.integer(adjusted$total %||% amount)
+          damage_encounter_enemy(current_encounter_id(), enemy_id, dealt)
+          affected <- c(affected, as.character(row$display_name[1] %||% enemy_id))
+          total_damage <- total_damage + dealt
+        }
+        core$state$char <- mark_class_action_used(char, action)
+        removeModal()
+        log_safe(if (length(affected)) {
+          paste0("✨ ", action$name, " hits ", paste(affected, collapse = ", "), " for ", total_damage, " total damage.")
+        } else paste0("✨ ", action$name, " finds no enemy within range."))
+        bump_refresh()
+        return()
+      }
+
       target_row <- get_actor_row(target_id, "enemy")
       if (!is.data.frame(target_row) || nrow(target_row) == 0L) {
         log_safe("⚠️ That target is no longer available.")
@@ -2939,7 +3111,15 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       raw_damage <- resolved_damage$amount
 
       save_succeeded <- FALSE
-      if (is.list(action$resolution) && identical(as.character(action$resolution$type %||% ""), "saving_throw")) {
+      resolution_type <- as.character(action$resolution$type %||% "")
+      if (identical(resolution_type, "spell_attack")) {
+        spell_attack <- sample.int(20L, 1L) + character_proficiency_bonus(char) +
+          floor((as.integer(char$abilities$bld_str %||% 10L) - 10L) / 2L)
+        target_ac <- as.integer(target_row$ac[1] %||% 10L)
+        if (spell_attack < target_ac) raw_damage <- 0L
+        log_safe(paste0("🎲 Spell attack ", spell_attack, " vs AC ", target_ac,
+                        if (raw_damage > 0L) " — hit." else " — miss."))
+      } else if (is.list(action$resolution) && identical(resolution_type, "saving_throw")) {
         ability <- as.character(action$resolution$ability %||% "con")
         enemies <- snapshot_data()$enemies %||% data.frame()
         enemy <- enemies[as.character(enemies$enemy_uuid %||% "") == target_id, , drop = FALSE]
@@ -2973,15 +3153,33 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         return()
       }
 
-      if (!save_succeeded && length(action$effects %||% list()) &&
-          any(vapply(action$effects, function(effect) identical(effect$type %||% "", "speed_modifier"), logical(1)))) {
+      if (!save_succeeded && raw_damage > 0L && length(action$effects %||% list())) {
         round_number <- as.integer(combat_tbl()$round_number[1] %||% 1L)
-        create_encounter_effect(
-          current_encounter_id(), "player", as.character(core$state$char_id %||% ""),
-          "endothermic_grasp", "condition", payload = list(condition = "slowed", speed_modifier = -10L),
-          target_actor_type = "enemy", target_actor_id = target_id,
-          starts_round = round_number, ends_round = round_number + 1L
-        )
+        for (effect in action$effects) {
+          condition <- switch(
+            as.character(effect$type %||% ""),
+            speed_modifier = "slowed", healing_block = "healing_blocked",
+            condition = as.character(effect$value %||% ""),
+            condition_save = {
+              ability <- as.character(effect$save %||% "con")
+              enemies <- snapshot_data()$enemies %||% data.frame()
+              enemy <- enemies[as.character(enemies$enemy_uuid %||% "") == target_id, , drop = FALSE]
+              save_col <- paste0(ability, "_save")
+              save_mod <- if (nrow(enemy) && save_col %in% names(enemy)) as.integer(enemy[[save_col]][1] %||% 0L) else 0L
+              dc <- class_spell_save_dc(char, feature$spell)
+              if (sample.int(20L, 1L) + save_mod < dc) as.character(effect$value %||% "") else ""
+            },
+            ""
+          )
+          if (!nzchar(condition)) next
+          create_encounter_effect(
+            current_encounter_id(), "player", as.character(core$state$char_id %||% ""),
+            as.character(feature$id %||% "class_spell"), "condition",
+            payload = list(condition = condition, speed_modifier = effect$value_ft %||% NULL),
+            target_actor_type = "enemy", target_actor_id = target_id,
+            starts_round = round_number, ends_round = round_number + 1L
+          )
+        }
       }
 
       core$state$char <- mark_class_action_used(char, action)
@@ -3309,8 +3507,8 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
 
       attacker_effects <- actor_conditions(attacker_id)
       target_effects <- actor_conditions(target_id)
-      has_advantage <- "restrained" %in% target_effects
-      has_disadvantage <- any(c("restrained", "poisoned") %in% attacker_effects)
+      has_advantage <- "restrained" %in% target_effects || "invisible" %in% attacker_effects
+      has_disadvantage <- any(c("restrained", "poisoned") %in% attacker_effects) || "invisible" %in% target_effects
       if (has_advantage && has_disadvantage) return("Normal")
       if (has_advantage) return("Advantage")
       if (has_disadvantage) return("Disadvantage")

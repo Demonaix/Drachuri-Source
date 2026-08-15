@@ -90,7 +90,17 @@ CLASS_FEATURE_INTEGRATION <- list(
   "Barbarian::5::extra_attack" = list(status = "working", note = "One Attack action supplies two weapon attacks; Frenzy still grants only one bonus attack."),
   "Barbarian::5::fast_movement" = list(status = "working", note = "Movement speed increases by 10 feet unless heavy armour is equipped."),
   "Hanianol Sorcerer::5::thermal_wild_magic" = list(status = "working", note = "The saved Exothermic or Endothermic path unlocks an executable, Blood Strength-based combat spell."),
-  "Na'Haran Sorcerer::5::adept_sorcerer" = list(status = "working", note = "The saved Exothermic or Endothermic path unlocks an executable, Blood Strength-based combat spell.")
+  "Na'Haran Sorcerer::5::adept_sorcerer" = list(status = "working", note = "The saved Exothermic or Endothermic path unlocks an executable, Blood Strength-based combat spell."),
+  "Rogue::6::expertise" = list(status = "working", note = "Two different saved skill choices are promoted to Expertise without reducing existing ranks."),
+  "Fighter::6::asi" = list(status = "working", note = "Uses the validated two-point ability improvement system, including the cap and Constitution HP adjustment."),
+  "Barbarian::6::mindless_rage" = list(status = "working", note = "Charm and fear conditions are suppressed while Rage is active."),
+  "Barbarian::6::aspect_of_the_beast" = list(status = "manual", note = "The level-3 Totem determines the exploration benefit and it is displayed for checks and travel adjudication."),
+  "Hanianol Sorcerer::6::balance" = list(status = "working", note = "Spend 15 Sindre once per long rest to add +1 to three different abilities until the next rest."),
+  "Hanianol Sorcerer::6::predator" = list(status = "working", note = "A short-rest combat action frightens nearby enemies that fail a Blood Strength-based save."),
+  "Na'Haran Sorcerer::6::electromagnetic" = list(status = "working", note = "The saved Flesh Witherer or Lightbringer path unlocks its executable combat spell."),
+  "Na'Haran Sorcerer::6::combat_magic" = list(status = "working", note = "Path of the Warrior uses the selected electromagnetic spell through the shared combat casting system."),
+  "Na'Haran Sorcerer::6::divination" = list(status = "manual", note = "A narrative, under-the-stars information feature displayed for roleplay and DM adjudication."),
+  "Na'Haran Sorcerer::6::mislead" = list(status = "working", note = "A 25-Sindre combat action creates an illusory double and invisibility effect.")
 )
 
 class_feature_integration <- function(class_name, level, feature_id) {
@@ -838,6 +848,29 @@ apply_unlocked_class_effects <- function(char, class_defs = CLASSES) {
       sources[[paste0("tool:", tool_key)]] %||% character(),
       "Fighter::Battle Master::3::student_of_war"
     ))
+  }
+
+  expertise_choices <- c(
+    character_level_choice(char, "Rogue", 6L, "expertise_skill_1"),
+    character_level_choice(char, "Rogue", 6L, "expertise_skill_2")
+  )
+  for (skill in unique(expertise_choices[nzchar(expertise_choices)])) {
+    char$prof$skills[[skill]] <- "Expertise"
+    sources[[paste0("skill:", skill)]] <- unique(c(
+      sources[[paste0("skill:", skill)]] %||% character(), "Rogue::::6::expertise"
+    ))
+  }
+
+  totem <- character_level_choice(char, "Barbarian", 3L, "spirit_totem")
+  if (nzchar(totem) && any(vapply(features, function(feature) identical(feature$id, "aspect_of_the_beast"), logical(1)))) {
+    char$derived_effects <- char$derived_effects %||% list()
+    char$derived_effects$aspect_of_the_beast <- switch(
+      totem,
+      Bear = "Double carrying capacity; advantage on Strength checks to push, pull, lift or break objects.",
+      Eagle = "See distant detail up to one mile and suffer no Perception disadvantage in dim light.",
+      Wolf = "Track at a fast pace and move stealthily at a normal travel pace.",
+      ""
+    )
   }
 
   char$derived_effects <- char$derived_effects %||% list()

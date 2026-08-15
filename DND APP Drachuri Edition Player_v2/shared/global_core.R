@@ -643,6 +643,14 @@ reset_class_uses_for_rest <- function(char, rest_type = c("short_rest", "long_re
   char$resources$class_pools <- pools
   char$status <- char$status %||% list()
   char$status$raging <- FALSE
+  if (identical(rest_type, "long_rest")) {
+    boosts <- char$status$balance_boosts %||% character()
+    for (stat in as.character(boosts)) {
+      current <- suppressWarnings(as.integer(char$abilities[[stat]] %||% 10L))
+      if (!is.na(current)) char$abilities[[stat]] <- current - 1L
+    }
+    char$status$balance_boosts <- character()
+  }
   char
 }
 

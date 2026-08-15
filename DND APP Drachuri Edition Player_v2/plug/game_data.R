@@ -1600,6 +1600,27 @@ LEVEL_OPTIONS[["Fighter"]][["1"]] <- list(list(
   options = c("Archery", "Defence", "Dueling", "Great Weapon Fighting")
 ))
 
+LEVEL_OPTIONS[["Rogue"]][["6"]] <- list(
+  list(
+    id = "expertise_skill_1", label = "Expertise Skill 1",
+    options = c("Acrobatics" = "acrobatics", "Animal Handling" = "animal_handling", "Arcana" = "arcana",
+                "Athletics" = "athletics", "Deception" = "deception", "History" = "history",
+                "Insight" = "insight", "Intimidation" = "intimidation", "Investigation" = "investigation",
+                "Medicine" = "medicine", "Nature" = "nature", "Perception" = "perception",
+                "Performance" = "performance", "Persuasion" = "persuasion", "Religion" = "religion",
+                "Sleight of Hand" = "sleight_of_hand", "Stealth" = "stealth", "Survival" = "survival")
+  ),
+  list(
+    id = "expertise_skill_2", label = "Expertise Skill 2",
+    options = c("Acrobatics" = "acrobatics", "Animal Handling" = "animal_handling", "Arcana" = "arcana",
+                "Athletics" = "athletics", "Deception" = "deception", "History" = "history",
+                "Insight" = "insight", "Intimidation" = "intimidation", "Investigation" = "investigation",
+                "Medicine" = "medicine", "Nature" = "nature", "Perception" = "perception",
+                "Performance" = "performance", "Persuasion" = "persuasion", "Religion" = "religion",
+                "Sleight of Hand" = "sleight_of_hand", "Stealth" = "stealth", "Survival" = "survival")
+  )
+)
+
 LEVEL_OPTIONS[["Fighter"]][["3"]] <- c(
   LEVEL_OPTIONS[["Fighter"]][["3"]],
   list(

@@ -512,6 +512,70 @@ test("both sorcerer traditions unlock their selected thermal spell", {
   stopifnot(any(vapply(naharan, function(spell) identical(spell$name, "Endothermic Grasp"), logical(1))))
 })
 
+test("every level-six class and subclass feature has an integration review", {
+  feature <- function(id) setNames(list(list(name = id)), id)
+  subclass <- function(...) list(levels = list("6" = list(features = do.call(c, list(...)))))
+  class_defs <- list(
+    Rogue = list(levels = list("6" = list(features = feature("expertise")))),
+    Fighter = list(levels = list("6" = list(features = feature("asi")))),
+    Barbarian = list(
+      levels = list("6" = list(features = list())),
+      subclasses = list(
+        Berserker = subclass(feature("mindless_rage")),
+        `Totem Warrior` = subclass(feature("aspect_of_the_beast"))
+      )
+    ),
+    `Hanianol Sorcerer` = list(
+      levels = list("6" = list(features = list())),
+      subclasses = list(
+        `Path of the Ancestor` = subclass(feature("balance")),
+        `Heart Eater` = subclass(feature("predator"))
+      )
+    ),
+    `Na'Haran Sorcerer` = list(
+      levels = list("6" = list(features = feature("electromagnetic"))),
+      subclasses = list(
+        `Path of the Warrior` = subclass(feature("combat_magic")),
+        `Path of the Prophet` = subclass(feature("divination"), feature("mislead"))
+      )
+    )
+  )
+  audit <- test_env$audit_class_level_integration(6L, class_defs)
+  stopifnot(nrow(audit) == 10L)
+  stopifnot(!any(audit$status == "unreviewed"))
+  stopifnot(all(audit$status %in% c("working", "manual")))
+})
+
+test("Rogue level-six Expertise promotes two distinct saved skills", {
+  class_defs <- list(Rogue = list(
+    levels = list("6" = list(features = list(expertise = list(name = "Expertise")))), subclasses = list()
+  ))
+  char <- list(
+    build = list(
+      class = "Rogue", level = 6L, classes = list(list(class = "Rogue", level = 6L, subclass = "")),
+      level_choices = list(Rogue = list("6" = list(
+        expertise_skill_1 = "stealth", expertise_skill_2 = "investigation"
+      )))
+    ),
+    prof = list(skills = list(stealth = "Proficient", investigation = "Proficient"))
+  )
+  result <- test_env$apply_unlocked_class_effects(char, class_defs)
+  stopifnot(identical(result$prof$skills$stealth, "Expertise"))
+  stopifnot(identical(result$prof$skills$investigation, "Expertise"))
+})
+
+test("long rest removes temporary Balance ability boosts", {
+  test_env$validate_character <- identity
+  char <- list(
+    abilities = list(str = 15L, dex = 13L, con = 12L),
+    resources = list(class_uses = list(balance = list(used = TRUE, recharge = "long_rest"))),
+    status = list(balance_boosts = c("str", "dex", "con"), raging = FALSE)
+  )
+  rested <- test_env$reset_class_uses_for_rest(char, "long_rest")
+  stopifnot(rested$abilities$str == 14L, rested$abilities$dex == 12L, rested$abilities$con == 11L)
+  stopifnot(!isTRUE(rested$resources$class_uses$balance$used))
+})
+
 test("Hanianol Blood Magic prevents natural Sindre recovery", {
   test_env$validate_character <- identity
   hanianol <- list(

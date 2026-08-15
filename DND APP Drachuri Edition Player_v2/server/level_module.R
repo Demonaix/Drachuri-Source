@@ -180,6 +180,18 @@ apply_character_level_up <- function(char, class_index, selections = list(), hp_
   if (length(manoeuvres) && anyDuplicated(manoeuvres)) {
     stop("Choose three different Battle Master manoeuvres.")
   }
+  expertise <- unname(unlist(stored_choices[grepl("^expertise_skill_", names(stored_choices))]))
+  if (length(expertise) && anyDuplicated(expertise)) {
+    stop("Choose two different skills for Expertise.")
+  }
+  if (length(expertise)) {
+    ranks <- vapply(expertise, function(skill) {
+      as.character(char$prof$skills[[skill]] %||% "None")
+    }, character(1))
+    if (any(!ranks %in% c("Proficient", "Expertise"))) {
+      stop("Expertise can only be applied to skills you are already proficient with.")
+    }
+  }
 
   entry$level <- new_level
   classes[[class_index]] <- entry
@@ -428,10 +440,11 @@ levelTabServer <- function(id, state, restoring, add_log, char_rev) {
       char <- validate_character(state$char)
       for (entry in classes_r()) {
         if (!nzchar(as.character(entry$subclass %||% ""))) next
-        for (choice_level in c(3L, 5L)) {
+        for (choice_level in c(3L, 5L, 6L)) {
           if (as.integer(entry$level %||% 0L) < choice_level) next
           choices <- level_options_for(entry$class, choice_level, subclass = entry$subclass)
           choices <- Filter(function(choice) !identical(as.character(choice$id %||% ""), "subclass"), choices)
+          choices <- Filter(function(choice) !grepl("^asi_", as.character(choice$id %||% "")), choices)
           missing <- Filter(function(choice) {
             !nzchar(character_level_choice(char, entry$class, choice_level, as.character(choice$id %||% "")))
           }, choices)
@@ -596,6 +609,22 @@ levelTabServer <- function(id, state, restoring, add_log, char_rev) {
         showNotification("Choose three different Battle Master manoeuvres.", type = "error")
         return()
       }
+      expertise <- unname(as.character(unlist(
+        char$build$level_choices[[class_name]][[choice_level]][grepl(
+          "^expertise_skill_", names(char$build$level_choices[[class_name]][[choice_level]])
+        )]
+      )))
+      if (length(expertise) && anyDuplicated(expertise)) {
+        showNotification("Choose two different skills for Expertise.", type = "error")
+        return()
+      }
+      if (length(expertise)) {
+        ranks <- vapply(expertise, function(skill) as.character(char$prof$skills[[skill]] %||% "None"), character(1))
+        if (any(!ranks %in% c("Proficient", "Expertise"))) {
+          showNotification("Expertise requires an already proficient skill.", type = "error")
+          return()
+        }
+      }
       state$char <- apply_unlocked_class_effects(char)
       if (is.function(char_rev)) char_rev(isolate(char_rev()) + 1L)
       log_safe(paste0("🛡️ Saved legacy level-", choice_level, " choices for ", class_name, "."))
@@ -740,12 +769,20 @@ levelTabServer <- function(id, state, restoring, add_log, char_rev) {
       if (length(choices) == 0L) return(NULL)
       tagList(lapply(choices, function(choice) {
         choice_id <- as.character(choice$id %||% "choice")
+        choice_options <- choice$options %||% character()
+        if (grepl("^expertise_skill_", choice_id)) {
+          char <- validate_character(state$char)
+          allowed <- vapply(as.character(choice_options), function(skill) {
+            as.character(char$prof$skills[[skill]] %||% "None") %in% c("Proficient", "Expertise")
+          }, logical(1))
+          choice_options <- choice_options[allowed]
+        }
         div(
           class = "levelup-choice",
           selectInput(
             session$ns(paste0("level_choice_", choice_id)),
             as.character(choice$label %||% "Choose an option"),
-            choices = c("Choose…" = "", choice$options %||% character()),
+            choices = c("Choose…" = "", choice_options),
             selected = ""
           )
         )
