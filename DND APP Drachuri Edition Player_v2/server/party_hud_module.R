@@ -13,6 +13,10 @@ partyHudUI <- function(id) {
   width: 156px;
   z-index: 10000;
   pointer-events: none;
+  max-height: calc(100vh - 125px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
 }
 
     #", root_id, " .partyhud-shell{
@@ -72,6 +76,12 @@ partyHudUI <- function(id) {
       border-color: rgba(180,90,40,0.98);
       background: rgba(255,248,232,0.97);
       box-shadow: 0 0 0 2px rgba(220,140,60,0.22), 0 8px 20px rgba(0,0,0,0.18);
+    }
+
+    #", root_id, " .party-strip.self-player{
+      border-color: rgba(36,130,190,0.98);
+      background: rgba(232,247,255,0.98);
+      box-shadow: 0 0 0 2px rgba(36,130,190,0.22), 0 8px 20px rgba(0,0,0,0.18);
     }
 
     #", root_id, " .party-name-row{
@@ -518,6 +528,7 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
         actor_id <- as.character(row$actor_id[1] %||% row$character_id[1] %||% "")
         actor_type <- as.character(row$actor_type[1] %||% "player")
         is_active_turn <- in_combat && nzchar(active_actor_id) && identical(actor_id, active_actor_id)
+        is_self <- identical(actor_type, "player") && identical(actor_id, as.character(state$char_id %||% ""))
         initiative <- suppressWarnings(as.integer(row$initiative[1] %||% NA))
         turn_order <- suppressWarnings(as.integer(row$turn_order[1] %||% NA))
         cur_hp  <- as.integer(row$current_hp[1] %||% 0)
@@ -557,10 +568,10 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
         tags$div(
           class = "party-row",
           tags$div(
-            class = paste("party-strip", if (is_active_turn) "active-turn" else ""),
+            class = paste("party-strip", if (is_active_turn) "active-turn" else "", if (is_self) "self-player" else ""),
             tags$div(
               class = "party-name-row",
-              tags$div(class = "party-name", nm),
+              tags$div(class = "party-name", paste0(nm, if (is_self) " (You)" else "")),
               if (in_combat) tags$span(
                 class = "party-turn-order",
                 if (!is.na(turn_order)) paste0("#", turn_order) else "#—"

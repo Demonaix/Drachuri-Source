@@ -685,6 +685,17 @@ test("standard combat actions are wired to shared action and effect mechanics", 
   stopifnot(grepl('player_reaction_available(FALSE)', combat_source, fixed = TRUE))
 })
 
+test("combat UI exposes lifecycle, summon control, and module shortcuts", {
+  player_file <- file.path(project_dir, "DND APP Drachuri Edition Player_v2", "server", "debug_combat_module.R")
+  control_file <- file.path(project_dir, "DND APP Drachuri Edition 2 Control", "control_app", "modules", "control_live_combat_module.R")
+  player_source <- paste(readLines(player_file, warn = FALSE), collapse = "\n")
+  control_source <- paste(readLines(control_file, warn = FALSE), collapse = "\n")
+  stopifnot(grepl('input$go_armoury', player_source, fixed = TRUE))
+  stopifnot(grepl('input$go_magic', player_source, fixed = TRUE))
+  stopifnot(grepl('create_encounter_summon(', player_source, fixed = TRUE))
+  stopifnot(grepl('input$confirm_end_combat', control_source, fixed = TRUE))
+})
+
 test("level-two abilities are connected to action and skill interfaces", {
   combat_file <- file.path(project_dir, "DND APP Drachuri Edition Player_v2", "server", "debug_combat_module.R")
   skills_file <- file.path(project_dir, "DND APP Drachuri Edition Player_v2", "server", "skills_module.R")

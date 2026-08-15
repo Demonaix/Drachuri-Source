@@ -142,11 +142,13 @@ function actorInitial2D(tile) {
   if (!name) return "?";
 
   const words = name.split(/\s+/).filter(Boolean);
-  if (words.length >= 2) {
-    return (words[0][0] + words[1][0]).toUpperCase();
-  }
-
-  return name.slice(0, 2).toUpperCase();
+  const initials = words.length >= 2
+    ? (words[0][0] + words[1][0]).toUpperCase()
+    : name.slice(0, 2).toUpperCase();
+  const id = safeText2D(tile.occupant_id || tile.actor_id || name);
+  let hash = 0;
+  for (let i = 0; i < id.length; i += 1) hash = ((hash * 31) + id.charCodeAt(i)) >>> 0;
+  return `${initials}${(hash % 9) + 1}`;
 }
 
 function injectCombat2DCSS() {
@@ -318,6 +320,11 @@ function injectCombat2DCSS() {
 
     .combat-2d-token.player{
       background:linear-gradient(135deg, #48c8ff, #176f9e);
+    }
+
+    .combat-2d-token.self-player{
+      background:linear-gradient(135deg, #54e39a, #16734d);
+      border-color:#eafff3;
     }
 
     .combat-2d-token.enemy{
@@ -672,6 +679,7 @@ function placeOrUpdateToken2D(tile) {
     tokenClass,
     isTruthy2D(tile.is_active_actor) ? "active" : ""
   ].filter(Boolean).join(" ");
+  if (tile.is_self_actor === true || tile.is_self_actor === "true") tokenEl.classList.add("self-player");
 
   tokenEl.textContent = actorInitial2D(tile);
   tokenEl.title = buildTokenTitle2D(tile);

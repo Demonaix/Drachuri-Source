@@ -31,8 +31,10 @@ debugCombatUI <- function(id) {
               uiOutput(ns("level_two_actions_ui")),
               uiOutput(ns("level_three_actions_ui")),
               uiOutput(ns("class_actions_ui")),
+              actionButton(ns("go_armoury"), "Armoury", class = "btn btn-default"),
+              actionButton(ns("go_magic"), "Magic", class = "btn btn-default"),
               actionButton(ns("end_turn"), "End Turn", class = "btn btn-warning"),
-              checkboxInput(ns("dash_move"), "Dash / Sprint", value = FALSE),
+              uiOutput(ns("dash_button_ui")),
               uiOutput(ns("phase_move_ui")),
               div(
                 class = "combat-turn-box",
@@ -255,6 +257,39 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
                } else "")
       )
     })
+
+    output$dash_button_ui <- renderUI({
+      actionButton(session$ns("arm_dash"), if (isTRUE(movement_dash())) "Dash Armed ✓" else "Dash / Sprint",
+                   class = if (isTRUE(movement_dash())) "btn btn-success" else "btn btn-default")
+    })
+
+    observeEvent(input$go_armoury, {
+      updateTabsetPanel(session$rootScope(), "main_tabs", selected = "armoury")
+    }, ignoreInit = TRUE)
+    observeEvent(input$go_magic, {
+      updateTabsetPanel(session$rootScope(), "main_tabs", selected = "magic")
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$arm_dash, {
+      if (isTRUE(movement_dash()) && !isTRUE(dash_action_spent())) {
+        movement_dash(FALSE)
+        return()
+      }
+      if (isTRUE(movement_dash())) {
+        log_safe("⚠️ Dash has already been committed this turn.")
+        return()
+      }
+      showModal(modalDialog(
+        title = "Use Dash / Sprint?",
+        p("Cost: 1 action, charged only when you move beyond normal speed. Sindre: 0."),
+        footer = tagList(modalButton("Cancel"), actionButton(session$ns("confirm_dash"), "Arm Dash", class = "btn btn-primary"))
+      ))
+    }, ignoreInit = TRUE)
+    observeEvent(input$confirm_dash, {
+      removeModal()
+      movement_dash(TRUE)
+      log_safe("🏃 Dash armed. It can be cancelled freely until extra movement is used.")
+    }, ignoreInit = TRUE)
 
     output$level_two_actions_ui <- renderUI({
       buttons <- list()
@@ -612,7 +647,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         )))
       }
       if (player_has_feature("mislead")) {
-        buttons <- c(buttons, list(actionButton(session$ns("use_mislead"), "Mislead", class = "btn btn-default")))
+        buttons <- c(buttons, list(actionButton(session$ns("use_mislead"), "Mislead (25 Sindre)", class = "btn btn-default")))
       }
       if (!length(buttons)) return(NULL)
       tagList(buttons)
@@ -790,6 +825,15 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     }, ignoreInit = TRUE)
 
     observeEvent(input$use_mislead, {
+      showModal(modalDialog(
+        title = "Cast Mislead?",
+        p("Cost: 1 action and 25 Sindre. Creates a controllable illusory double and requires concentration."),
+        footer = tagList(modalButton("Cancel"), actionButton(session$ns("confirm_mislead"), "Cast Mislead", class = "btn btn-primary"))
+      ))
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$confirm_mislead, {
+      removeModal()
       if (!isTRUE(is_players_turn())) return()
       char <- validate_character(core$state$char)
       sindre <- as.integer(char$resources$sindre$cur %||% 0L)
@@ -800,10 +844,30 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       if (!spend_action_safe("action", "Mislead")) return()
       round_number <- as.integer(combat_tbl()$round_number[1] %||% 1L)
       caster_id <- as.character(core$state$char_id %||% "")
+      actors <- encounter_actors_tbl()
+      caster <- actors[as.character(actors$actor_id) == caster_id, , drop = FALSE]
+      if (!nrow(caster)) {
+        log_safe("⚠️ Mislead needs your character placed on the map.")
+        return()
+      }
+      illusion <- create_encounter_summon(
+        current_encounter_id(), caster_id, paste0(char$meta$name %||% "Player", "'s Double"),
+        max_cr = "illusion", hp_max = 1L, ac = 10L, movement_speed = base_speed_ft(),
+        expires_round = round_number + 10L
+      )
+      if (is.null(illusion) || !nrow(illusion)) {
+        log_safe("⚠️ Mislead could not create its double.")
+        return()
+      }
+      illusion_id <- as.character(illusion$summon_uuid[1])
+      upsert_encounter_actor_position(current_encounter_id(), "summon", illusion_id,
+                                      as.integer(caster$x[1]), as.integer(caster$y[1]))
+      set_actor_turn_order(current_encounter_id(), illusion_id, "summon",
+                           as.integer(caster$initiative[1] %||% 0L), as.integer(caster$turn_order[1] %||% 1L))
       created <- create_encounter_effect(
-        current_encounter_id(), "player", caster_id, "mislead", "condition",
-        payload = list(condition = "invisible", illusory_double = TRUE),
-        target_actor_type = "player", target_actor_id = caster_id,
+        current_encounter_id(), "player", caster_id, "mislead", "summon",
+        payload = list(illusory_double = TRUE, double_id = illusion_id),
+        target_actor_type = "summon", target_actor_id = illusion_id,
         starts_round = round_number, ends_round = round_number + 10L, concentration = TRUE
       )
       if (is.null(created)) {
@@ -812,7 +876,9 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       }
       char$resources$sindre$cur <- sindre - 25L
       core$state$char <- char
-      log_safe("🪞 Mislead creates an illusory double; you become invisible while concentrating.")
+      apply_combat_condition("invisible", caster_id, "player", "mislead_invisibility",
+                             ends_round = round_number + 10L)
+      log_safe("🪞 Mislead creates a controllable double on your initiative; you become invisible while concentrating.")
       bump_refresh()
     }, ignoreInit = TRUE)
 
@@ -1219,7 +1285,13 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       active_id <- as.character(combat$active_actor_id[1] %||% "")
       active_type <- as.character(combat$active_actor_type[1] %||% "")
       
-      identical(active_type, "player") && identical(active_id, cid)
+      if (identical(active_type, "player") && identical(active_id, cid)) return(TRUE)
+      if (identical(active_type, "summon")) {
+        actors <- encounter_actors_tbl()
+        owned <- actors[as.character(actors$actor_id) == active_id, , drop = FALSE]
+        return(nrow(owned) > 0L && identical(as.character(owned$owner_actor_id[1] %||% ""), cid))
+      }
+      FALSE
     })
     
     output$combat_3d_static <- renderUI({
@@ -2386,6 +2458,8 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       render_df$is_reachable <- FALSE
       render_df$is_pending_move <- FALSE
       render_df$is_active_actor <- FALSE
+      render_df$is_self_actor <- !is.na(render_df$occupant_id) &
+        as.character(render_df$occupant_id) == as.character(core$state$char_id %||% "")
       
       combat <- tryCatch(combat_tbl(), error = function(e) data.frame())
       
@@ -2795,8 +2869,14 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       actor_type <- as.character(combat$active_actor_type[1] %||% "player")
       
       if (!identical(actor_id, cid)) {
-        log_safe("⚠️ You can only move your own character.")
-        return(FALSE)
+        actor_row <- encounter_actors_tbl()
+        actor_row <- actor_row[as.character(actor_row$actor_id) == actor_id, , drop = FALSE]
+        owns_summon <- identical(actor_type, "summon") && nrow(actor_row) > 0L &&
+          identical(as.character(actor_row$owner_actor_id[1] %||% ""), cid)
+        if (!isTRUE(owns_summon)) {
+          log_safe("⚠️ You can only move your character or a summon you control.")
+          return(FALSE)
+        }
       }
       
       pos <- active_position_row()
@@ -3471,6 +3551,13 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     
     
     output$combat_layout_ui <- renderUI({
+      combat <- combat_tbl()
+      in_combat <- is.data.frame(combat) && nrow(combat) > 0L && identical(as.character(combat$phase[1] %||% ""), "combat")
+      if (!isTRUE(in_combat)) {
+        return(div(class = "combat-card", style = "padding:32px;text-align:center;",
+                   tags$h3("No active combat"),
+                   tags$p("The DM will start an encounter when combat begins.")))
+      }
       div(
         class = "combat-play-layout",
         

@@ -1065,6 +1065,29 @@ advance_turn <- function(encounter_id) {
   isTRUE(ok1) && isTRUE(ok2)
 }
 
+end_encounter_combat <- function(encounter_id) {
+  encounter_id <- suppressWarnings(as.integer(encounter_id))
+  enc <- tryCatch(get_encounter(encounter_id), error = function(e) data.frame())
+  if (is.na(encounter_id) || !is.data.frame(enc) || !nrow(enc)) return(FALSE)
+  session_id <- suppressWarnings(as.integer(enc$session_id[1] %||% NA_integer_))
+  if (is.na(session_id)) return(FALSE)
+  con <- get_db_connection()
+  if (is.null(con)) return(FALSE)
+  on.exit(release_db_connection(con), add = TRUE)
+  tryCatch({
+    DBI::dbWithTransaction(con, {
+      DBI::dbExecute(con, "UPDATE encounters SET status = 'completed', updated_at = NOW() WHERE id = $1", list(encounter_id))
+      DBI::dbExecute(con, "UPDATE combat_state SET phase = 'ended', active_actor_type = NULL, active_actor_id = NULL, updated_at = NOW() WHERE encounter_id = $1", list(encounter_id))
+      DBI::dbExecute(con, "UPDATE game_sessions SET mode = 'exploration', active_encounter_id = NULL, active_actor_type = NULL, active_actor_id = NULL, updated_at = NOW() WHERE id = $1", list(session_id))
+      log_game_event(encounter_id, "end_combat", "control", payload = list(round_number = NA_integer_))
+    })
+    TRUE
+  }, error = function(e) {
+    message("end_encounter_combat failed: ", e$message)
+    FALSE
+  })
+}
+
 
 heal_encounter_enemy <- function(encounter_id, enemy_uuid, amount) {
   con <- get_db_connection()
@@ -1498,6 +1521,7 @@ create_encounter_summon <- function(encounter_id, owner_actor_id, name,
   con <- get_db_connection()
   if (is.null(con)) return(NULL)
   on.exit(release_db_connection(con), add = TRUE)
+  expires_round <- suppressWarnings(as.integer(expires_round %||% NA_integer_))
   tryCatch(DBI::dbGetQuery(con, paste(
     "INSERT INTO encounter_summons (encounter_id, owner_actor_id, name, max_cr,",
     "hp_max, hp_current, ac, movement_speed, expires_round)",
@@ -1896,6 +1920,12 @@ set_actor_turn_order <- function(encounter_id, actor_id, actor_type = NULL, init
         ",
         params = list(initiative, turn_order, encounter_id, actor_id)
       )
+    } else if (identical(actor_type, "summon")) {
+      DBI::dbExecute(
+        con,
+        "UPDATE encounter_summons SET initiative = $1, turn_order = $2, updated_at = NOW() WHERE encounter_id = $3 AND summon_uuid = $4",
+        params = list(initiative, turn_order, encounter_id, actor_id)
+      )
     } else {
       return(FALSE)
     }
@@ -1989,6 +2019,7 @@ get_encounter_actors <- function(encounter_id) {
     is_active = as.logical(summons$is_active %||% TRUE),
     ac = suppressWarnings(as.integer(summons$ac %||% NA)),
     movement_speed = suppressWarnings(as.integer(summons$movement_speed %||% NA)),
+    owner_actor_id = as.character(summons$owner_actor_id %||% ""),
     stringsAsFactors = FALSE
   )
   

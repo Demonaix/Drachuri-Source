@@ -17,7 +17,7 @@ controlLiveCombatUI <- function(id) {
 
   .live-combat-grid{
     display:grid;
-    grid-template-columns:minmax(0, 1.05fr) minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns:minmax(260px, .7fr) minmax(0, 2fr);
     gap:12px;
     width:100%;
     max-width:100%;
@@ -33,9 +33,13 @@ controlLiveCombatUI <- function(id) {
     box-shadow:0 8px 22px rgba(0,0,0,0.10);
     min-width:0;
     max-width:100%;
-    overflow:hidden;
+    overflow:visible;
     box-sizing:border-box;
   }
+
+  .live-combat-log-wide{ grid-column:1 / -1; min-height:320px; }
+  .live-combat-log-wide .combat-log{ max-height:420px; overflow-y:auto; }
+  .live-combat-card .selectize-dropdown{ z-index:10050 !important; }
 
   .combat-3d-shell{
     width:100%;
@@ -336,50 +340,21 @@ controlLiveCombatUI <- function(id) {
       
       div(
         class = "live-combat-wrap",
-        
+
         div(
           class = "live-combat-card",
           uiOutput(ns("header_ui")),
           
           div(
             class = "live-combat-actions",
-            actionButton(ns("refresh"), "Refresh", class = "btn btn-default"),
             actionButton(ns("bind_encounter"), "Set Active Encounter", class = "btn btn-default"),
             actionButton(ns("start_combat"), "Start Combat", class = "btn btn-primary"),
             actionButton(ns("end_turn"), "End Turn", class = "btn btn-warning"),
-            div(
-              style = "display:flex; flex-direction:column; gap:6px;",
-              div(class = "live-combat-sub", tags$strong("Movement")),
-              radioButtons(
-                ns("move_steps"),
-                NULL,
-                choices = c("1x" = 1, "2x" = 2, "3x" = 3),
-                selected = 1,
-                inline = TRUE
-              ),
-              
-              tags$div(
-                style = "display:grid; grid-template-columns:repeat(3, 44px); gap:6px; width:max-content;",
-                
-                actionButton(ns("move_nw"), "↖", class = "btn btn-info"),
-                actionButton(ns("move_n"),  "↑", class = "btn btn-info"),
-                actionButton(ns("move_ne"), "↗", class = "btn btn-info"),
-                
-                actionButton(ns("move_w"),  "←", class = "btn btn-info"),
-                tags$div(style = "width:44px; height:38px;"),
-                actionButton(ns("move_e"),  "→", class = "btn btn-info"),
-                
-                actionButton(ns("move_sw"), "↙", class = "btn btn-info"),
-                actionButton(ns("move_s"),  "↓", class = "btn btn-info"),
-                actionButton(ns("move_se"), "↘", class = "btn btn-info")
-              )
-            ),
+            actionButton(ns("end_combat"), "End Combat", class = "btn btn-danger"),
             selectInput(ns("target_id"), "Target", choices = c(), width = "220px"),
-            actionButton(ns("attack_btn"), "Attack", class = "btn btn-danger"),
-            actionButton(ns("damage_test"), "Damage Active -2 HP", class = "btn btn-danger")
+            actionButton(ns("attack_btn"), "Attack", class = "btn btn-danger")
           )
         ),
-        
         div(
           class = "live-combat-card",
           div(class = "live-combat-section", "Enemy Reinforcements"),
@@ -390,7 +365,6 @@ controlLiveCombatUI <- function(id) {
             numericInput(ns("reinforce_count"), "Count", value = 1, min = 1, max = 20, width = "90px"),
             numericInput(ns("reinforce_x"), "X", value = 5, min = 1, width = "80px"),
             numericInput(ns("reinforce_y"), "Y", value = 5, min = 1, width = "80px"),
-            actionButton(ns("refresh_reinforce_templates"), "Refresh", class = "btn btn-default"),
             actionButton(ns("add_reinforcement"), "Add Enemy", class = "btn btn-danger")
           ),
           tags$hr(),
@@ -428,9 +402,8 @@ controlLiveCombatUI <- function(id) {
             uiOutput(ns("battlefield_ui")),
             uiOutput(ns("map_ui"))
           ),
-          div(class = "live-combat-card", uiOutput(ns("log_ui")))
-        ),
-        verbatimTextOutput(ns("live_debug"))
+          div(class = "live-combat-card live-combat-log-wide", uiOutput(ns("log_ui")))
+        )
       ),
       
       
@@ -1631,11 +1604,9 @@ limit 1
           hp_max = hp_max,
           ac = ac,
           movement_speed = movement_speed,
-          attack_name = attack_name,
           attack_bonus = attack_bonus,
           damage_expr = damage_expr,
-          damage_type = damage_type,
-          attacks_json = attacks_json
+          damage_type = damage_type
         ),
         error = function(e) {
           message("add_encounter_enemy failed: ", e$message)
@@ -2576,6 +2547,25 @@ limit 1
         log_safe("Could not advance turn.", type = "error")
       }
       
+      bump_live()
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$end_combat, {
+      showModal(modalDialog(
+        title = "End combat?",
+        p("This closes the active encounter for every player and returns the session to exploration."),
+        footer = tagList(modalButton("Cancel"), actionButton(session$ns("confirm_end_combat"), "End Combat", class = "btn btn-danger"))
+      ))
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$confirm_end_combat, {
+      eid <- current_encounter_id()
+      removeModal()
+      if (is.na(eid) || !isTRUE(end_encounter_combat(eid))) {
+        log_safe("Could not end combat.", type = "error")
+        return()
+      }
+      log_safe("Combat ended. Players returned to exploration.")
       bump_live()
     }, ignoreInit = TRUE)
     
