@@ -95,9 +95,33 @@ controlNpcCreatorServer <- function(id, ctrl=NULL, bump_refresh=NULL) {
       updateNumericInput(session,"gold_min",value=as.integer((b$gold%||%c(0,0))[1])); updateNumericInput(session,"gold_max",value=as.integer((b$gold%||%c(0,0))[2]))
       for (f in c("resistances","immunities","vulnerabilities","condition_immunities")) updateSelectizeInput(session,f,selected=b[[f]] %||% character())
     }
+    roll_pool_inventory <- function(rules) {
+      rules <- rules %||% list()
+      independent <- Filter(function(r) !nzchar(as.character(r$group %||% "")), rules)
+      out <- vapply(Filter(function(r) runif(1) * 100 <= as.numeric(r$chance %||% 0), independent), `[[`, "", "item_id")
+      grouped <- Filter(function(r) nzchar(as.character(r$group %||% "")), rules)
+      if (length(grouped)) for (group in split(grouped, vapply(grouped, function(r) as.character(r$group), character(1)))) {
+        weights <- vapply(group, function(r) as.numeric(r$chance %||% 0), numeric(1))
+        required <- any(vapply(group, function(r) isTRUE(r$required), logical(1)))
+        if (sum(weights) > 0 && (required || runif(1) * 100 <= min(100, sum(weights)))) {
+          out <- c(out, sample(vapply(group, `[[`, "", "item_id"), 1, prob=weights))
+        }
+      }
+      unique(out)
+    }
+    apply_pool_loadout <- function(blueprint, pool) {
+      rolled <- roll_pool_inventory(pool$rules)
+      armour_ids <- names(Filter(function(a) as.character(a$loot_id %||% "") %in% rolled, enemy_armor_catalog()))
+      if (length(armour_ids)) blueprint$armor_id <- armour_ids[1]
+      attacks <- all_attacks()
+      carried_attacks <- names(Filter(function(a) as.character(a$loot_id %||% "") %in% rolled, attacks))
+      blueprint$attack_ids <- unique(c(blueprint$attack_ids %||% character(), carried_attacks))
+      blueprint$loot_ids <- unique(c(blueprint$loot_ids %||% character(), rolled))
+      blueprint
+    }
     observeEvent(TRUE, load_templates(), once=TRUE)
     observeEvent(input$refresh_npcs, load_templates(), ignoreInit=TRUE)
-    observeEvent(input$apply_defaults, { selected_id("");pool<-Filter(function(p)identical(p$id,input$enemy_type),npc_pools());if(length(pool)){p<-pool[[1]];features<-unique(c(p$features%||%character(),input$characteristics%||%character()));apply_blueprint(resolve_enemy_blueprint(p$base_type%||%"Custom",intersect(features,names(enemy_generator_characteristics()))));updateCheckboxGroupInput(session,"characteristics",selected=features)}else apply_blueprint(resolve_enemy_blueprint(input$enemy_type,input$characteristics)) }, ignoreInit=TRUE)
+    observeEvent(input$apply_defaults, { selected_id("");pool<-Filter(function(p)identical(p$id,input$enemy_type),npc_pools());if(length(pool)){p<-pool[[1]];features<-unique(c(p$features%||%character(),input$characteristics%||%character()));blueprint<-resolve_enemy_blueprint(p$base_type%||%"Custom",intersect(features,names(enemy_generator_characteristics())));blueprint<-apply_pool_loadout(blueprint,p);blueprint$enemy_type<-p$name%||%blueprint$enemy_type;apply_blueprint(blueprint);updateCheckboxGroupInput(session,"characteristics",selected=features)}else apply_blueprint(resolve_enemy_blueprint(input$enemy_type,input$characteristics)) }, ignoreInit=TRUE)
     observeEvent(input$armor_id, {
       armor<-enemy_armor_catalog()[[input$armor_id%||%"unarmoured"]]; dex<-as.integer(input$ability_dex%||%10L); dex_mod<-floor((dex-10L)/2L)
       ac<-if(identical(input$armor_id,"unarmoured"))10L+dex_mod else as.integer(armor$ac_base+min(dex_mod,armor$dex_cap)); updateNumericInput(session,"npc_ac",value=max(1L,ac))
