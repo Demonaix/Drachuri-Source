@@ -11,6 +11,7 @@ source("control_app/modules/control_encounter_setup_module.R", local = FALSE)
 source("control_app/modules/control_live_combat_module.R", local = FALSE)
 source("control_app/modules/control_npc_creator_module.R", local = FALSE)
 source("control_app/modules/control_inventory_module.R", local = FALSE)
+source("control_app/modules/control_npc_pools_module.R", local = FALSE)
 
 ui_control <- fluidPage(
   useShinyjs(),
@@ -200,6 +201,10 @@ ui_control <- fluidPage(
       tabPanel(
         title = "Inventory",
         controlInventoryUI("control_inventory")
+      ),
+      tabPanel(
+        title = "NPC Pools",
+        controlNpcPoolsUI("npc_pools")
       ),
       
       tabPanel(

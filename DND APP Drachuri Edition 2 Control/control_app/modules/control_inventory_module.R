@@ -7,7 +7,7 @@ controlInventoryUI <- function(id) {
         div(class = "control-section-title", "Control Inventory"),
         p(class = "control-mini", "Reusable master catalogue. Giving an item sends a copy; the control item remains."),
         fluidRow(
-          column(5, selectInput(ns("pool"), "Pool", choices = "All"),
+          column(5, fluidRow(column(6, selectInput(ns("pool"), "Pool", choices = "All")), column(6, selectInput(ns("type_filter"), "Type", choices = "All"))),
                  selectInput(ns("item_id"), "Catalogue item", choices = character()),
                  uiOutput(ns("item_preview"))),
           column(7,
@@ -17,7 +17,8 @@ controlInventoryUI <- function(id) {
                  textInput(ns("desc"), "Description"),
                  fluidRow(column(4, numericInput(ns("value"), "Gold value", 0, min=0)), column(4, numericInput(ns("weight"), "Weight", 0, min=0)), column(4, textInput(ns("damage"), "Damage / Base AC"))),
                  selectInput(ns("stat"), "Weapon stat / armour class", c("STR"="str", "DEX"="dex", "Light"="Light", "Medium"="Medium", "Heavy"="Heavy", "Shield"="Shield")),
-                 actionButton(ns("save_item"), "Add to Catalogue", class="btn btn-primary")))
+                 actionButton(ns("save_item"), "Add to Catalogue", class="btn btn-primary"),
+                 actionButton(ns("update_item"), "Update Selected", class="btn btn-default")))
     ),
     div(class = "control-card",
         div(class = "control-section-title", "Give Copy to Player"),
@@ -44,13 +45,15 @@ controlInventoryServer <- function(id, ctrl, players_tbl = NULL, bump_refresh = 
     })
     save_store <- function(x) tryCatch({ saveRDS(x, store_path); TRUE }, error=function(e) FALSE)
     observe({
-      items <- catalogue(); pools <- sort(unique(unlist(lapply(items, function(x) x$pools %||% character()))))
+      items <- catalogue(); pools <- sort(unique(unlist(lapply(items, function(x) x$pools %||% character())))); types<-sort(unique(vapply(items,function(x)x$type,character(1))))
       updateSelectInput(session, "pool", choices=c("All", pools))
-      chosen <- input$pool %||% "All"; shown <- Filter(function(x) identical(chosen,"All") || chosen %in% (x$pools %||% character()), items)
+      updateSelectInput(session, "type_filter", choices=c("All",types))
+      chosen <- input$pool %||% "All"; chosen_type<-input$type_filter%||%"All"; shown <- Filter(function(x) (identical(chosen,"All") || chosen %in% (x$pools %||% character())) && (identical(chosen_type,"All")||identical(x$type,chosen_type)), items)
       updateSelectInput(session, "item_id", choices=setNames(vapply(shown, `[[`, "", "id"), vapply(shown, `[[`, "", "name")))
     })
     selected <- reactive({ found<-Filter(function(x) identical(x$id, input$item_id %||% ""), catalogue()); if(length(found)) found[[1]] else NULL })
     output$item_preview <- renderUI({ x<-selected(); if(is.null(x)) return(NULL); tagList(h4(x$name), p(x$desc), tags$strong(paste(x$type,"•",x$value,"gold •",x$weight,"lb")), p(paste("Pools:",paste(x$pools%||%"none",collapse=", ")))) })
+    observeEvent(input$item_id, { x<-selected(); if(is.null(x))return(); updateTextInput(session,"name",value=x$name);updateSelectInput(session,"type",selected=x$type);updateTextInput(session,"pools",value=paste(x$pools%||%character(),collapse=", "));updateTextInput(session,"desc",value=x$desc);updateNumericInput(session,"value",value=x$value);updateNumericInput(session,"weight",value=x$weight); updateTextInput(session,"damage",value=as.character(x$meta$damage1%||%x$meta$base_ac%||%"")); updateSelectInput(session,"stat",selected=as.character(x$meta$stat%||%x$meta$type%||%"str")) },ignoreInit=TRUE)
     observe({
       p <- if (is.reactive(players_tbl)) players_tbl() else data.frame()
       if(!is.data.frame(p)||!nrow(p)) return(updateSelectInput(session,"player_id",choices=character()))
@@ -64,6 +67,13 @@ controlInventoryServer <- function(id, ctrl, players_tbl = NULL, bump_refresh = 
       if(typ=="armor") { ac<-suppressWarnings(as.numeric(raw)); if(is.na(ac)) ac<-11; meta<-list(base_ac=ac,type=input$stat%||%"Light",custom_max_dex=if((input$stat%||%"")=="Medium")2 else 0,proficient=TRUE) }
       x<-list(id=paste0("custom_",format(Sys.time(),"%Y%m%d%H%M%S")),name=nm,type=typ,desc=input$desc%||%"",value=as.numeric(input$value%||%0),weight=as.numeric(input$weight%||%0),qty=1,meta=meta,pools=trimws(strsplit(input$pools%||%"",",",fixed=TRUE)[[1]])); x$pools<-x$pools[nzchar(x$pools)]
       items<-c(catalogue(),list(x)); catalogue(items); save_store(items); showNotification("Added to control catalogue.")
+    })
+    observeEvent(input$update_item, {
+      old<-selected(); if(is.null(old))return(); typ<-input$type%||%old$type; raw<-trimws(input$damage%||%""); meta<-old$meta%||%list()
+      if(typ=="weapon"){meta$stat<-input$stat%||%"str";meta$damage1<-if(nzchar(raw))raw else "1d4"}
+      if(typ=="armor"){ac<-suppressWarnings(as.numeric(raw));if(!is.na(ac))meta$base_ac<-ac;meta$type<-input$stat%||%"Light"}
+      old$name<-trimws(input$name%||%old$name);old$type<-typ;old$pools<-trimws(strsplit(input$pools%||%"",",",fixed=TRUE)[[1]]);old$pools<-old$pools[nzchar(old$pools)];old$desc<-input$desc%||%"";old$value<-as.numeric(input$value%||%0);old$weight<-as.numeric(input$weight%||%0);old$meta<-meta
+      items<-catalogue();idx<-which(vapply(items,function(x)identical(x$id,old$id),logical(1)))[1];items[[idx]]<-old;catalogue(items);save_store(items);showNotification("Catalogue item updated.")
     })
     observeEvent(input$give_item, {
       x<-selected(); cid<-as.character(input$player_id%||%""); if(is.null(x)||!nzchar(cid)) return(showNotification("Choose an item and player.",type="error"))
