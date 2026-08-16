@@ -13,6 +13,7 @@ source("control_app/modules/control_npc_creator_module.R", local = FALSE)
 source("control_app/modules/control_inventory_module.R", local = FALSE)
 source("control_app/modules/control_npc_pools_module.R", local = FALSE)
 source("control_app/modules/control_npc_features_module.R", local = FALSE)
+source("control_app/modules/control_npc_attacks_module.R", local = FALSE)
 
 ui_control <- fluidPage(
   useShinyjs(),
@@ -210,6 +211,10 @@ ui_control <- fluidPage(
       tabPanel(
         title = "NPC Features",
         controlNpcFeaturesUI("npc_features")
+      ),
+      tabPanel(
+        title = "NPC Attacks",
+        controlNpcAttacksUI("npc_attacks")
       ),
       
       tabPanel(

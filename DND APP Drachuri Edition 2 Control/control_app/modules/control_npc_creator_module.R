@@ -73,10 +73,13 @@ controlNpcCreatorServer <- function(id, ctrl=NULL, bump_refresh=NULL) {
       if (is.list(x) && !is.data.frame(x)) return(x)
       tryCatch(jsonlite::fromJSON(as.character(x %||% ""), simplifyVector=FALSE), error=function(e) default)
     }
-    attack_choices <- setNames(names(enemy_attack_catalog()),vapply(enemy_attack_catalog(),function(a)paste0(a$name," — +",a$hit," / ",a$dmg," ",a$type," (",a$material,")"),character(1)))
     loot_choices <- setNames(names(enemy_loot_catalog()),vapply(enemy_loot_catalog(),function(a)paste0(a$name," — ",a$type," · ",a$weight," lb · ",a$value,"g"),character(1)))
-    updateSelectizeInput(session,"attack_ids",choices=attack_choices,server=TRUE)
     updateSelectizeInput(session,"loot_ids",choices=loot_choices,server=TRUE)
+    attack_sig<-reactiveVal(""); pool_sig<-reactiveVal("")
+    all_attacks<-reactive({invalidateLater(1500,session);base<-enemy_attack_catalog();saved<-tryCatch(readRDS(file.path("control_app","data","npc_attacks.rds")),error=function(e)list());for(a in saved)base[[a$id]]<-a;base})
+    npc_pools<-reactive({invalidateLater(1500,session);tryCatch(readRDS(file.path("control_app","data","npc_pools.rds")),error=function(e)list())})
+    observe({a<-all_attacks();choices<-setNames(names(a),vapply(a,function(x)paste0(x$name," — +",x$hit," / ",x$dmg," ",x$type),character(1)));sig<-paste(names(choices),choices,collapse="|");if(!identical(sig,attack_sig())){attack_sig(sig);updateSelectizeInput(session,"attack_ids",choices=choices,selected=isolate(input$attack_ids%||%character()),server=TRUE)}})
+    observe({p<-npc_pools();choices<-if(length(p))setNames(vapply(p,`[[`,"","id"),vapply(p,`[[`,"","name"))else setNames(names(enemy_generator_types()),names(enemy_generator_types()));sig<-paste(names(choices),choices,collapse="|");if(!identical(sig,pool_sig())){pool_sig(sig);updateSelectInput(session,"enemy_type",choices=choices,selected=if((isolate(input$enemy_type)%||%"")%in%unname(choices))isolate(input$enemy_type)else unname(choices)[1])}})
     output$characteristic_guide <- renderUI({ mods<-enemy_generator_characteristics(); tagList(div(class="trait-guide",lapply(names(mods),function(id)div(class="trait-note",strong(enemy_characteristic_labels()[[id]]),span(mods[[id]]$desc))))) })
     output$armor_help <- renderUI({ a<-enemy_armor_catalog()[[input$armor_id%||%"unarmoured"]]; div(class="trait-note",strong(a$name),span(a$desc," Equipped armour is automatically guaranteed as loot.")) })
     load_templates <- function() {
@@ -94,13 +97,13 @@ controlNpcCreatorServer <- function(id, ctrl=NULL, bump_refresh=NULL) {
     }
     observeEvent(TRUE, load_templates(), once=TRUE)
     observeEvent(input$refresh_npcs, load_templates(), ignoreInit=TRUE)
-    observeEvent(input$apply_defaults, { selected_id(""); apply_blueprint(resolve_enemy_blueprint(input$enemy_type,input$characteristics)) }, ignoreInit=TRUE)
+    observeEvent(input$apply_defaults, { selected_id("");pool<-Filter(function(p)identical(p$id,input$enemy_type),npc_pools());if(length(pool)){p<-pool[[1]];features<-unique(c(p$features%||%character(),input$characteristics%||%character()));apply_blueprint(resolve_enemy_blueprint(p$base_type%||%"Custom",intersect(features,names(enemy_generator_characteristics()))));updateCheckboxGroupInput(session,"characteristics",selected=features)}else apply_blueprint(resolve_enemy_blueprint(input$enemy_type,input$characteristics)) }, ignoreInit=TRUE)
     observeEvent(input$armor_id, {
       armor<-enemy_armor_catalog()[[input$armor_id%||%"unarmoured"]]; dex<-as.integer(input$ability_dex%||%10L); dex_mod<-floor((dex-10L)/2L)
       ac<-if(identical(input$armor_id,"unarmoured"))10L+dex_mod else as.integer(armor$ac_base+min(dex_mod,armor$dex_cap)); updateNumericInput(session,"npc_ac",value=max(1L,ac))
     },ignoreInit=TRUE)
     current_record <- function(npc_id=NULL) {
-      attack_ids<-intersect(input$attack_ids%||%character(),names(enemy_attack_catalog())); attacks<-unname(enemy_attack_catalog()[attack_ids]); if(!length(attacks)) stop("Choose at least one validated attack.")
+      catalog<-all_attacks();attack_ids<-intersect(input$attack_ids%||%character(),names(catalog)); attacks<-unname(catalog[attack_ids]); if(!length(attacks)) stop("Choose at least one validated attack.")
       armor_id<-if(input$armor_id%in%names(enemy_armor_catalog()))input$armor_id else "unarmoured"; armor_loot<-enemy_armor_catalog()[[armor_id]]$loot_id%||%""
       loot_ids<-intersect(input$loot_ids%||%character(),names(enemy_loot_catalog())); carried<-Filter(nzchar,vapply(attacks,function(a)as.character(a$loot_id%||%""),character(1))); loot_ids<-unique(c(loot_ids,carried,Filter(nzchar,armor_loot)))
       abilities <- setNames(lapply(c("str","dex","con","int","cha","bld_str"), function(s) as.integer(input[[paste0("ability_",s)]] %||% 10L)),c("str","dex","con","int","cha","bld_str"))
@@ -122,7 +125,7 @@ controlNpcCreatorServer <- function(id, ctrl=NULL, bump_refresh=NULL) {
     output$npc_tbl<-renderDT({ df<-filtered(); if(!nrow(df)) return(NULL); chars<-vapply(df$characteristics,function(x)paste(unlist(parse_json(x)),collapse=", "),character(1)); view<-data.frame(name=df$name,type=df$enemy_type,characteristics=chars,hp=df$hp_max,ac=df$ac,speed=df$movement_speed,attack=df$attack_name,tags=df$tags); datatable(view,selection="single",rownames=FALSE,options=list(pageLength=10,scrollX=TRUE)) })
     selected_row <- function() { i<-input$npc_tbl_rows_selected; df<-filtered(); if(!length(i)||!nrow(df)) return(NULL); df[i[1],,drop=FALSE] }
     observeEvent(input$load_npc,{ r<-selected_row(); if(is.null(r)){showNotification("Select a template.",type="warning");return()}; selected_id(as.character(r$npc_id[1])); chars<-unlist(parse_json(r$characteristics[[1]])); updateSelectInput(session,"enemy_type",selected=r$enemy_type[1]); updateCheckboxGroupInput(session,"characteristics",selected=chars)
-      stored_attacks<-parse_json(r$attacks[[1]]); attack_ids<-names(Filter(function(def)any(vapply(stored_attacks,function(a)identical(a$name,def$name),logical(1))),enemy_attack_catalog())); stored_loot<-parse_json(r$loot[[1]]); loot_ids<-names(Filter(function(def)any(vapply(stored_loot,function(a)identical(a$name,def$name),logical(1))),enemy_loot_catalog()))
+      stored_attacks<-parse_json(r$attacks[[1]]); attack_ids<-names(Filter(function(def)any(vapply(stored_attacks,function(a)identical(a$name,def$name),logical(1))),all_attacks())); stored_loot<-parse_json(r$loot[[1]]); loot_ids<-names(Filter(function(def)any(vapply(stored_loot,function(a)identical(a$name,def$name),logical(1))),enemy_loot_catalog()))
       b<-list(enemy_type=r$enemy_type[1],characteristics=chars,hp_max=r$hp_max[1],ac=r$ac[1],armor_id=r$armor_id[1],movement_speed=r$movement_speed[1],abilities=parse_json(r$abilities[[1]]),attack_ids=attack_ids,loot_ids=loot_ids,gold=c(r$gold_min[1],r$gold_max[1]),resistances=enemy_db_values(r$resistances[[1]]),immunities=enemy_db_values(r$immunities[[1]]),vulnerabilities=enemy_db_values(r$vulnerabilities[[1]]),condition_immunities=enemy_db_values(r$condition_immunities[[1]])); apply_blueprint(b,r$name[1]); updateTextInput(session,"npc_tags",value=r$tags[1]) },ignoreInit=TRUE)
     observeEvent(input$delete_npc,{ r<-selected_row(); if(is.null(r)){showNotification("Select a template.",type="warning");return()}; con<-get_db_connection(); if(is.null(con))return(); on.exit(release_db_connection(con),add=TRUE); DBI::dbExecute(con,"delete from npc_templates where npc_id=$1",params=list(as.character(r$npc_id[1]))); selected_id(""); load_templates(); if(is.function(bump_refresh))bump_refresh() },ignoreInit=TRUE)
   })
