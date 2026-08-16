@@ -129,6 +129,7 @@ server_control <- function(input, output, session) {
   source("control_app/modules/control_encounter_setup_module.R", local = FALSE)
   source("control_app/modules/control_live_combat_module.R", local = FALSE)
   source("control_app/modules/control_npc_creator_module.R", local = FALSE)
+  source("control_app/modules/control_inventory_module.R", local = FALSE)
   
  
   # ------------------------------------------------------------
@@ -185,6 +186,13 @@ server_control <- function(input, output, session) {
   controlNpcCreatorServer(
     id = "npc_creator",
     ctrl = ctrl,
+    bump_refresh = bump_refresh
+  )
+
+  controlInventoryServer(
+    id = "control_inventory",
+    ctrl = ctrl,
+    players_tbl = players_tbl,
     bump_refresh = bump_refresh
   )
   
