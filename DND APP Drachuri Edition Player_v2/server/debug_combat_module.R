@@ -74,10 +74,14 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     selected_target_id <- reactiveVal("")
     current_attack_is_opp <- reactiveVal(FALSE)
     current_attack_is_ready <- reactiveVal(FALSE)
+    prompted_opportunity_events <- reactiveVal(character())
     
     bump_map_visual <- function() {
       map_visual_key(isolate(map_visual_key()) + 1L)
     }
+    observeEvent(core$char_rev(),{bump_map_visual();if(is.function(refresh_live_snapshot))refresh_live_snapshot()},ignoreInit=TRUE)
+    observeEvent(core$state$char,{bump_map_visual()},ignoreInit=TRUE)
+    observeEvent(session$rootScope()$input$main_tabs,{if(identical(session$rootScope()$input$main_tabs,"debug_combat"))bump_map_visual()},ignoreInit=TRUE)
 
     
     bump_positions <- function() positions_key(isolate(positions_key()) + 1L)
@@ -1436,6 +1440,16 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       df <- snapshot_data()$events %||% data.frame()
       if (!is.data.frame(df)) data.frame() else df
     })
+
+    observe({
+      ev<-events_tbl();cid<-as.character(core$state$char_id%||%"");if(!is.null(session$userData$pending_trade_id)||!is.null(session$userData$pending_note_id)||!is.null(session$userData$pending_opportunity)||!nrow(ev)||!nzchar(cid)||!"event_type"%in%names(ev))return();rows<-ev[as.character(ev$event_type)=="opportunity_available",,drop=FALSE];if(!nrow(rows))return()
+      for(i in seq_len(nrow(rows))){event_id<-as.character(rows$id[i]%||%paste0(rows$created_at[i],rows$actor_id[i]));if(event_id%in%prompted_opportunity_events())next;payload<-decode_effect_payload(rows$payload[[i]]);if(!cid%in%as.character(unlist(payload$attacker_ids%||%list())))next
+        prompted_opportunity_events(unique(c(prompted_opportunity_events(),event_id)));enemy_id<-as.character(rows$actor_id[i]);session$userData$opportunity_target<-enemy_id;session$userData$pending_opportunity<-TRUE
+        showModal(modalDialog(title="Opportunity attack",p(paste0(get_actor_display_name(enemy_id)," moved out of your reach without Disengaging.")),p("Use your reaction to make an opportunity attack?"),footer=tagList(actionButton(session$ns("decline_opportunity"),"Let them go"),actionButton(session$ns("take_opportunity"),"Use reaction",class="btn btn-danger")))) ;break
+      }
+    })
+    observeEvent(input$decline_opportunity,{session$userData$opportunity_target<-NULL;session$userData$pending_opportunity<-NULL;removeModal()},ignoreInit=TRUE)
+    observeEvent(input$take_opportunity,{target<-as.character(session$userData$opportunity_target%||%"");session$userData$pending_opportunity<-NULL;removeModal();if(!nzchar(target))return();updateSelectInput(session,"target_id",selected=target);current_attack_is_opp(TRUE);shinyjs::click("attack_btn")},ignoreInit=TRUE)
     
     encounter_actors_tbl <- reactive({
       initiative_key()

@@ -139,6 +139,8 @@ server_player <- function(input, output, session) {
   live_snapshot <- reactiveVal(empty_player_live_snapshot())
   live_snapshot_signature <- reactiveVal(NULL)
   live_snapshot_trigger <- reactiveVal(0L)
+  last_notified_hp <- reactiveVal(NA_integer_)
+  last_notified_character <- reactiveVal("")
 
   refresh_live_snapshot <- function() {
     live_snapshot_trigger(isolate(live_snapshot_trigger()) + 1L)
@@ -192,6 +194,12 @@ server_player <- function(input, output, session) {
         core$state$active_encounter_id <- if (is.na(active_eid)) NULL else active_eid
       }
     }
+  })
+
+  observe({
+    self<-live_snapshot()$self_player%||%data.frame();if(!is.data.frame(self)||!nrow(self))return();current_cid<-as.character(core$state$char_id%||%"");if(!identical(current_cid,isolate(last_notified_character()))){last_notified_character(current_cid);last_notified_hp(NA_integer_)};hp<-suppressWarnings(as.integer(self$current_hp[1]%||%NA));old<-isolate(last_notified_hp())
+    if(!is.na(old)&&!is.na(hp)&&hp<old)showNotification(paste0("You took ",old-hp," damage. HP: ",hp," / ",as.integer(self$max_hp[1]%||%hp)),type="error",duration=7)
+    if(!is.na(hp))last_notified_hp(hp)
   })
 
   hudServer("hud", core$state, live_snapshot = live_snapshot)

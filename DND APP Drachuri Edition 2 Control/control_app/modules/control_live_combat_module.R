@@ -353,6 +353,7 @@ controlLiveCombatUI <- function(id) {
             actionButton(ns("end_combat"), "End Combat", class = "btn btn-danger"),
             selectInput(ns("target_id"), "Target", choices = c(), width = "220px"),
             actionButton(ns("attack_btn"), "Attack", class = "btn btn-danger")
+            ,checkboxInput(ns("movement_disengage"), "Disengage before moving", value = FALSE)
           )
         ),
         div(
@@ -2811,6 +2812,11 @@ limit 1
         log_safe("Could not move active actor.", type = "error")
         return(invisible(FALSE))
       }
+
+      if (identical(actor_type,"enemy") && !isTRUE(input$movement_disengage)) {
+        attackers<-tryCatch(get_opportunity_attackers(eid,actor_id,actor_type,old_x,old_y,cur_x,cur_y),error=function(e)data.frame())
+        if(is.data.frame(attackers)&&nrow(attackers)) log_game_event(eid,"opportunity_available",actor_type,actor_id,payload=list(attacker_ids=as.list(as.character(attackers$actor_id)),attacker_names=as.list(as.character(attackers$display_name%||%attackers$name%||%"Player"))))
+      }
       
       try(
         log_game_event(
@@ -2829,6 +2835,7 @@ limit 1
       )
       
       turn_move_ft(as.integer(turn_move_ft() + total_ft))
+      if(isTRUE(input$movement_disengage))updateCheckboxInput(session,"movement_disengage",value=FALSE)
       
       log_safe(paste0("Moved to (", cur_x, ", ", cur_y, "). Cost: ", total_ft, " ft."))
       
