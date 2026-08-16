@@ -1573,6 +1573,26 @@ end_encounter_condition <- function(encounter_id, target_actor_id, condition) {
   })
 }
 
+get_active_encounter_conditions <- function(encounter_id, target_actor_id = NULL) {
+  con <- get_db_connection()
+  if (is.null(con)) return(data.frame())
+  on.exit(release_db_connection(con), add = TRUE)
+  target_actor_id <- as.character(target_actor_id %||% "")
+  sql <- paste(
+    "SELECT *, payload->>'condition' AS condition FROM encounter_effects",
+    "WHERE encounter_id = $1 AND effect_type = 'condition' AND is_active = TRUE"
+  )
+  params <- list(as.integer(encounter_id))
+  if (nzchar(target_actor_id)) {
+    sql <- paste(sql, "AND target_actor_id = $2")
+    params <- c(params, list(target_actor_id))
+  }
+  tryCatch(DBI::dbGetQuery(con, sql, params = params), error = function(e) {
+    message("get_active_encounter_conditions failed: ", e$message)
+    data.frame()
+  })
+}
+
 end_actor_concentration <- function(encounter_id, source_actor_id) {
   con <- get_db_connection()
   if (is.null(con)) return(FALSE)

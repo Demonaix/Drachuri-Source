@@ -101,6 +101,12 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     }
 
     observeEvent(input$open_loot, {
+      combat <- combat_tbl()
+      if (!is.data.frame(combat) || !nrow(combat) ||
+          !identical(as.character(combat$phase[1] %||% ""), "combat")) {
+        showNotification("The DM must start combat first.", type = "warning")
+        return()
+      }
       enemies <- tryCatch(get_encounter_enemies(current_encounter_id()),error=function(e)data.frame())
       if(!nrow(enemies)){showNotification("There are no enemies to loot.",type="warning");return()}
       unlooted <- is.na(enemies$looted_by) | !nzchar(as.character(enemies$looted_by))
@@ -256,6 +262,12 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     })
 
     spend_action_safe <- function(action_type, label) {
+      combat <- combat_tbl()
+      if (!is.data.frame(combat) || !nrow(combat) ||
+          !identical(as.character(combat$phase[1] %||% ""), "combat")) {
+        log_safe("⚠️ The DM must start combat before combat actions can be used.")
+        return(FALSE)
+      }
       updated <- spend_turn_action(turn_budget(), action_type)
       if (is.null(updated)) {
         log_safe(paste0("⚠️ No ", gsub("_", " ", action_type), " remains for ", label, "."))
@@ -266,6 +278,12 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     }
 
     spend_attack_safe <- function(char, label = "Attack") {
+      combat <- combat_tbl()
+      if (!is.data.frame(combat) || !nrow(combat) ||
+          !identical(as.character(combat$phase[1] %||% ""), "combat")) {
+        log_safe("⚠️ The DM must start combat before attacks can be used.")
+        return(FALSE)
+      }
       updated <- spend_attack_from_budget(turn_budget(), attacks_per_attack_action(char))
       if (is.null(updated)) {
         log_safe(paste0("⚠️ No attack remains for ", label, "."))
@@ -311,6 +329,12 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     })
 
     observeEvent(input$arm_dash, {
+      combat <- combat_tbl()
+      if (!is.data.frame(combat) || !nrow(combat) ||
+          !identical(as.character(combat$phase[1] %||% ""), "combat")) {
+        log_safe("⚠️ The DM must start combat before Dash can be used.")
+        return()
+      }
       if (isTRUE(movement_dash()) && !isTRUE(dash_action_spent())) {
         movement_dash(FALSE)
         return()
@@ -1283,6 +1307,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       
       combat <- combat_tbl()
       if (!is.data.frame(combat) || nrow(combat) == 0) return(FALSE)
+      if (!identical(as.character(combat$phase[1] %||% ""), "combat")) return(FALSE)
       
       active_id <- as.character(combat$active_actor_id[1] %||% "")
       active_type <- as.character(combat$active_actor_type[1] %||% "")
@@ -1454,7 +1479,14 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       }
     })
     observeEvent(input$decline_opportunity,{session$userData$opportunity_target<-NULL;session$userData$pending_opportunity<-NULL;removeModal()},ignoreInit=TRUE)
-    observeEvent(input$take_opportunity,{target<-as.character(session$userData$opportunity_target%||%"");session$userData$pending_opportunity<-NULL;removeModal();if(!nzchar(target))return();updateSelectInput(session,"target_id",selected=target);current_attack_is_opp(TRUE);shinyjs::click("attack_btn")},ignoreInit=TRUE)
+    observeEvent(input$take_opportunity, {
+      target <- as.character(session$userData$opportunity_target %||% "")
+      session$userData$pending_opportunity <- NULL
+      removeModal()
+      if (!nzchar(target)) return()
+      log_safe(paste0("⚔️ Opportunity attack accepted against ", get_actor_display_name(target), "."))
+      open_attack_flow(target, verified_opportunity = TRUE)
+    }, ignoreInit = TRUE)
     
     encounter_actors_tbl <- reactive({
       initiative_key()
@@ -3819,6 +3851,12 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       if (typ == "defeated") {
         return(paste0(target_name, " is defeated."))
       }
+
+      if (typ == "opportunity_available") {
+        names <- as.character(unlist(payload$attacker_names %||% list()))
+        who <- if (length(names) && any(nzchar(names))) paste(names[nzchar(names)], collapse = ", ") else "an adjacent player"
+        return(paste0(actor_name, " leaves melee reach without Disengaging — opportunity attack available to ", who, "."))
+      }
       
       if (typ == "attack") {
         if (is.list(payload)) {
@@ -3925,7 +3963,13 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       "Normal"
     }
     
-    open_attack_flow <- function(target_id, attack_mode = "action") {
+    open_attack_flow <- function(target_id, attack_mode = "action", verified_opportunity = FALSE) {
+      combat_now <- combat_tbl()
+      if (!is.data.frame(combat_now) || !nrow(combat_now) ||
+          !identical(as.character(combat_now$phase[1] %||% ""), "combat")) {
+        log_safe("⚠️ The DM must start combat before attacks can be made.")
+        return()
+      }
       attack_mode <- if (identical(as.character(attack_mode), "offhand")) "offhand" else "action"
       current_attack_mode(attack_mode)
       
@@ -3945,7 +3989,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         self <- actors[as.character(actors$actor_id) == self_id, , drop = FALSE]
         target <- actors[as.character(actors$actor_id) == as.character(target_id), , drop = FALSE]
         adjacent <- nrow(self) && nrow(target) && is_adjacent_5ft(self$x[1], self$y[1], target$x[1], target$y[1])
-        if (isTRUE(is_opp) && !isTRUE(adjacent)) {
+        if (isTRUE(is_opp) && !isTRUE(verified_opportunity) && !isTRUE(adjacent)) {
           log_safe("⚠️ An opportunity attack requires the target to be within your reach.")
           return()
         }
@@ -4215,18 +4259,6 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         return()
       }
       attack_mode <- as.character(current_attack_mode() %||% "action")
-      if (!isTRUE(reaction_attack)) {
-        spent <- if (identical(attack_mode, "offhand")) {
-          spend_action_safe("bonus_action", "Off-hand attack")
-        } else {
-          spend_attack_safe(attacker_char, "Attack")
-        }
-        if (!isTRUE(spent)) {
-          pending_attack(NULL)
-          return()
-        }
-      }
-      if (isTRUE(reaction_attack)) player_reaction_available(FALSE)
       
       weapons <- get_equipped_weapons_for_combat(attacker_char)
       weapon_row <- weapons[as.character(weapons$id) == weapon_id, , drop = FALSE]
@@ -4283,14 +4315,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
             vapply(seq_len(nrow(weapons)), function(i) weapon_is_light_melee(weapons[i, , drop = FALSE]), logical(1)),
           , drop = FALSE
         ]
-        if (nrow(other_light)) {
-          offhand_ready(list(target_id = target_id, weapon_ids = as.character(other_light$id)))
-          log_safe("🗡️ Off-hand attack available: spend your bonus action with another light weapon.")
-        } else {
-          offhand_ready(NULL)
-        }
-      } else if (identical(attack_mode, "offhand")) {
-        offhand_ready(NULL)
+        preview$offhand_weapon_ids <- as.character(other_light$id %||% character())
       }
       
       preview$is_opportunity_attack <- isTRUE(current_attack_is_opp())
@@ -4330,7 +4355,33 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         removeModal()
         return()
       }
-      
+
+      reaction_attack <- isTRUE(preview$is_opportunity_attack) || isTRUE(preview$is_readied_attack)
+      if (isTRUE(reaction_attack)) {
+        if (!isTRUE(player_reaction_available())) {
+          log_safe("⚠️ Your reaction is no longer available; the attack was not applied.")
+          return()
+        }
+        player_reaction_available(FALSE)
+      } else {
+        attacker_char <- load_actor_for_combat(preview$attacker_id, "player")
+        spent <- if (identical(as.character(preview$attack_mode %||% "action"), "offhand")) {
+          spend_action_safe("bonus_action", "Off-hand attack")
+        } else {
+          spend_attack_safe(attacker_char, "Attack")
+        }
+        if (!isTRUE(spent)) return()
+      }
+
+      if (identical(as.character(preview$attack_mode %||% "action"), "offhand")) {
+        offhand_ready(NULL)
+      } else if (length(preview$offhand_weapon_ids %||% character())) {
+        offhand_ready(list(target_id = preview$target_id, weapon_ids = preview$offhand_weapon_ids))
+        log_safe("🗡️ Off-hand attack available: spend your bonus action with another light weapon.")
+      } else {
+        offhand_ready(NULL)
+      }
+
       removeModal()
       
       apply_sneak <- isTRUE(input$final_apply_sneak %||% FALSE)
@@ -4552,6 +4603,12 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       eid <- current_encounter_id()
       if (is.na(eid)) {
         log_safe("⚠️ Choose an encounter first.")
+        return(FALSE)
+      }
+      combat <- combat_tbl()
+      if (!is.data.frame(combat) || !nrow(combat) ||
+          !identical(as.character(combat$phase[1] %||% ""), "combat")) {
+        log_safe("⚠️ The DM must start combat and roll initiative first.")
         return(FALSE)
       }
       ok <- advance_turn(eid)

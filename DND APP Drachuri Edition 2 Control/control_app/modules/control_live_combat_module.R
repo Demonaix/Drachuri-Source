@@ -393,6 +393,19 @@ controlLiveCombatUI <- function(id) {
               width = "120px"
             ),
             actionButton(ns("apply_admin"), "Apply Override", class = "btn btn-danger")
+          ),
+          tags$hr(),
+          div(
+            class = "live-combat-actions",
+            selectInput(ns("admin_condition"), "Condition", choices = c(
+              "Blinded" = "blinded", "Charmed" = "charmed", "Deafened" = "deafened",
+              "Frightened" = "frightened", "Grappled" = "grappled", "Incapacitated" = "incapacitated",
+              "Invisible" = "invisible", "Paralysed" = "paralysed", "Petrified" = "petrified",
+              "Poisoned" = "poisoned", "Prone" = "prone", "Restrained" = "restrained",
+              "Stunned" = "stunned", "Unconscious" = "unconscious"
+            ), width = "180px"),
+            actionButton(ns("admin_add_condition"), "Add Condition", class = "btn btn-warning"),
+            actionButton(ns("admin_remove_condition"), "Remove Condition", class = "btn btn-default")
           )
         ),
         div(
@@ -880,6 +893,52 @@ limit 1
       
       bump_live()
     }, ignoreInit = TRUE)
+
+    observeEvent(input$admin_add_condition, {
+      eid <- current_encounter_id()
+      target_id <- as.character(input$admin_target_id %||% "")
+      condition <- as.character(input$admin_condition %||% "")
+      target_type <- get_actor_type_by_id(target_id)
+      if (is.na(eid) || !nzchar(target_id) || !nzchar(target_type) || !nzchar(condition)) {
+        log_safe("Choose a combatant and condition first.", type = "error")
+        return()
+      }
+      combat <- combat_state_r()
+      round_number <- if (is.data.frame(combat) && nrow(combat)) as.integer(combat$round_number[1] %||% 1L) else 1L
+      result <- create_encounter_effect(
+        encounter_id = eid, source_actor_type = "control", source_actor_id = "dm",
+        spell_id = "dm_condition", effect_type = "condition",
+        payload = list(condition = condition, source = "DM override"),
+        target_actor_type = target_type, target_actor_id = target_id,
+        starts_round = round_number, ends_round = NULL
+      )
+      if (is.null(result) || !is.data.frame(result) || !nrow(result)) {
+        log_safe("Could not add condition.", type = "error")
+        return()
+      }
+      log_game_event(eid, "condition_added", "control", "dm", target_id,
+                     payload = list(condition = condition, override = TRUE))
+      log_safe(paste0("Added ", condition, " to ", get_actor_display_name(target_id), "."))
+      bump_live()
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$admin_remove_condition, {
+      eid <- current_encounter_id()
+      target_id <- as.character(input$admin_target_id %||% "")
+      condition <- as.character(input$admin_condition %||% "")
+      if (is.na(eid) || !nzchar(target_id) || !nzchar(condition)) {
+        log_safe("Choose a combatant and condition first.", type = "error")
+        return()
+      }
+      if (!isTRUE(end_encounter_condition(eid, target_id, condition))) {
+        log_safe("That combatant does not currently have this condition.", type = "warning")
+        return()
+      }
+      log_game_event(eid, "condition_removed", "control", "dm", target_id,
+                     payload = list(condition = condition, override = TRUE))
+      log_safe(paste0("Removed ", condition, " from ", get_actor_display_name(target_id), "."))
+      bump_live()
+    }, ignoreInit = TRUE)
     
     # --------------------------------------------------
     # Data readers
@@ -936,6 +995,21 @@ limit 1
       
       df <- tryCatch(get_combat_state(eid), error = function(e) data.frame())
       if (!is.data.frame(df)) data.frame() else df
+    })
+
+    combat_started <- reactive({
+      combat <- combat_state_r()
+      is.data.frame(combat) && nrow(combat) > 0L &&
+        identical(as.character(combat$phase[1] %||% ""), "combat") &&
+        nzchar(as.character(combat$active_actor_id[1] %||% ""))
+    })
+
+    observe({
+      started <- isTRUE(combat_started())
+      lapply(c("end_turn", "end_combat", "attack_btn", "move_w", "move_e", "move_n", "move_s",
+               "move_nw", "move_ne", "move_sw", "move_se"), function(id) {
+        shinyjs::toggleState(id = id, condition = started)
+      })
     })
     
     encounter_events_r <- reactive({
@@ -1183,6 +1257,14 @@ limit 1
     
     get_actor_speed_ft <- function(actor_id, actor_type = NULL) {
       actor_type <- as.character(actor_type %||% get_actor_type_by_id(actor_id) %||% "")
+      conditions <- tryCatch(
+        get_active_encounter_conditions(current_encounter_id(), actor_id),
+        error = function(e) data.frame()
+      )
+      if (is.data.frame(conditions) && nrow(conditions) &&
+          any(tolower(as.character(conditions$condition %||% "")) %in% c("grappled", "restrained"))) {
+        return(0L)
+      }
       obj <- load_actor_for_combat(actor_id, actor_type)
       
       if (is.null(obj)) return(30L)
@@ -1608,7 +1690,7 @@ limit 1
           movement_speed = movement_speed,
           attack_bonus = attack_bonus,
           damage_expr = damage_expr,
-          damage_type = damage_type, attacks_json = attacks_json, template_key = template_key,
+          damage_type = damage_type, template_key = template_key,
           enemy_type = enemy_type, characteristics = characteristics, abilities = abilities, attacks = attacks, loot = loot,
           resistances = resistances, immunities = immunities, vulnerabilities = vulnerabilities,
           condition_immunities = condition_immunities, gold_min = gold_min, gold_max = gold_max
@@ -1884,6 +1966,12 @@ limit 1
           return(paste0(target_name, " takes ", amt, " damage (HP ", before, " → ", after, ")."))
         }
         return("Damage was dealt.")
+      }
+
+      if (typ == "opportunity_available") {
+        names <- as.character(unlist(payload$attacker_names %||% list()))
+        who <- if (length(names) && any(nzchar(names))) paste(names[nzchar(names)], collapse = ", ") else "an adjacent player"
+        return(paste0(actor_name, " leaves melee reach without Disengaging — opportunity attack available to ", who, "."))
       }
       
       if (typ == "attack") {
@@ -2537,6 +2625,10 @@ limit 1
     
     observeEvent(input$end_turn, {
       eid <- current_encounter_id()
+      if (!isTRUE(combat_started())) {
+        log_safe("Start combat and roll initiative before ending turns.", type = "error")
+        return()
+      }
       
       if (is.na(eid)) {
         log_safe("Choose an encounter first.", type = "error")
@@ -2729,6 +2821,10 @@ limit 1
     # Movement
     # --------------------------------------------------
     move_active_actor <- function(dx = 0L, dy = 0L) {
+      if (!isTRUE(combat_started())) {
+        log_safe("Start combat and roll initiative before moving combatants.", type = "error")
+        return(invisible(FALSE))
+      }
       steps <- suppressWarnings(as.integer(input$move_steps %||% 1L))
       if (is.na(steps) || steps < 1L) steps <- 1L
       steps <- min(3L, steps)
@@ -2864,6 +2960,10 @@ limit 1
     }, ignoreInit = TRUE)
     
     observeEvent(input$move_to_tile, {
+      if (!isTRUE(combat_started())) {
+        log_safe("Start combat and roll initiative before moving combatants.", type = "error")
+        return()
+      }
       target_x <- suppressWarnings(as.integer(input$move_to_tile$x %||% NA))
       target_y <- suppressWarnings(as.integer(input$move_to_tile$y %||% NA))
       if (is.na(target_x) || is.na(target_y)) return()
@@ -2911,6 +3011,10 @@ limit 1
     })
     
     observeEvent(input$attack_btn, {
+      if (!isTRUE(combat_started())) {
+        log_safe("Start combat and roll initiative before attacking.", type = "error")
+        return()
+      }
       attacker_id <- active_actor_id()
       attacker_type <- active_actor_type()
       target_id <- as.character(input$target_id %||% "")
