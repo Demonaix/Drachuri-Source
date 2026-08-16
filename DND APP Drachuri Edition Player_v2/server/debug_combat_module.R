@@ -33,6 +33,7 @@ debugCombatUI <- function(id) {
               uiOutput(ns("level_two_actions_ui")),
               uiOutput(ns("level_three_actions_ui")),
               uiOutput(ns("class_actions_ui")),
+              uiOutput(ns("rogue_combat_ui")),
               actionButton(ns("end_turn"), "End Turn", class = "btn btn-warning"),
               uiOutput(ns("dash_button_ui")),
               uiOutput(ns("phase_move_ui")),
@@ -208,6 +209,8 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     manoeuvre_active <- reactiveVal("")
     player_reaction_available <- reactiveVal(TRUE)
     sneak_attack_used <- reactiveVal(FALSE)
+    current_attack_mode <- reactiveVal("action")
+    offhand_ready <- reactiveVal(NULL)
 
     player_has_feature <- function(feature_id) {
       char <- core$state$char
@@ -241,6 +244,8 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         reckless_active(FALSE)
         manoeuvre_active("")
         sneak_attack_used(FALSE)
+        current_attack_mode("action")
+        offhand_ready(NULL)
         movement_dash(FALSE)
         dash_action_spent(FALSE)
         updateCheckboxInput(session, "dash_move", value = FALSE)
@@ -1903,6 +1908,62 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       if (dice_n < 1) return("")
       paste0(dice_n, "d6")
     }
+
+    weapon_name_key <- function(weapon_row) {
+      tolower(trimws(as.character(weapon_row$name[1] %||% "")))
+    }
+
+    weapon_is_ranged <- function(weapon_row) {
+      grepl("bow|crossbow|sling|dart|firearm|pistol|rifle", weapon_name_key(weapon_row))
+    }
+
+    weapon_is_finesse <- function(weapon_row) {
+      grepl("dagger|rapier|shortsword|scimitar|whip", weapon_name_key(weapon_row)) ||
+        identical(tolower(as.character(weapon_row$stat[1] %||% "")), "dex")
+    }
+
+    weapon_is_light_melee <- function(weapon_row) {
+      !weapon_is_ranged(weapon_row) &&
+        grepl("dagger|shortsword|scimitar|club|handaxe|hand axe|light hammer|sickle", weapon_name_key(weapon_row))
+    }
+
+    sneak_attack_eligibility <- function(attacker_char, weapon_row, attacker_id, target_id, adv_mode, is_hit) {
+      expr <- get_sneak_attack_expr(attacker_char)
+      if (!nzchar(expr)) return(list(eligible = FALSE, reason = "", expr = ""))
+      if (isTRUE(sneak_attack_used())) {
+        return(list(eligible = FALSE, reason = "Sneak Attack has already been used this turn.", expr = expr))
+      }
+      if (!weapon_is_finesse(weapon_row) && !weapon_is_ranged(weapon_row)) {
+        return(list(eligible = FALSE, reason = "Sneak Attack requires a finesse or ranged weapon.", expr = expr))
+      }
+      if (identical(tolower(as.character(adv_mode %||% "normal")), "disadvantage")) {
+        return(list(eligible = FALSE, reason = "Sneak Attack cannot be used while attacking with disadvantage.", expr = expr))
+      }
+
+      actors <- encounter_actors_tbl()
+      target <- actors[as.character(actors$actor_id) == as.character(target_id), , drop = FALSE]
+      allies <- actors[
+        as.character(actors$actor_id) != as.character(attacker_id) &
+          as.character(actors$actor_type %||% "") != "enemy",
+        , drop = FALSE
+      ]
+      ally_near_target <- FALSE
+      if (nrow(target) && nrow(allies)) {
+        ally_near_target <- any(vapply(seq_len(nrow(allies)), function(i) {
+          conditions <- actor_conditions(as.character(allies$actor_id[i]))
+          active <- !any(c("unconscious", "incapacitated", "dead") %in% conditions)
+          active && is_adjacent_5ft(allies$x[i], allies$y[i], target$x[1], target$y[1])
+        }, logical(1)))
+      }
+      has_advantage <- identical(tolower(as.character(adv_mode %||% "normal")), "advantage")
+      if (!has_advantage && !ally_near_target) {
+        return(list(eligible = FALSE, reason = "Sneak Attack needs advantage or an active ally within 5 ft of the target.", expr = expr))
+      }
+      if (!isTRUE(is_hit)) {
+        return(list(eligible = FALSE, reason = "Sneak Attack is ready, but this attack missed.", expr = expr))
+      }
+      list(eligible = TRUE, reason = "Eligible: finesse/ranged hit with advantage or an ally threatening the target.", expr = expr)
+    }
     
     apply_damage_traits_to_parts <- function(parts, traits) {
       if (length(parts) == 0) return(list(parts = list(), total = 0L))
@@ -2028,9 +2089,12 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         }
       }
       
-      sneak_expr <- get_sneak_attack_expr(attacker_char)
+      sneak_check <- sneak_attack_eligibility(
+        attacker_char, weapon_row, attacker_id, target_id, adv, is_hit
+      )
+      sneak_expr <- sneak_check$expr
       sneak_part <- NULL
-      if (nzchar(sneak_expr) && isTRUE(is_hit)) {
+      if (isTRUE(sneak_check$eligible)) {
         sa <- roll_attack_damage(sneak_expr)
         sneak_part <- list(
           source = "Sneak Attack",
@@ -2083,6 +2147,8 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         is_crit = isTRUE(is_crit),
         base_parts = damage_parts,
         sneak_available = !is.null(sneak_part),
+        sneak_reason = as.character(sneak_check$reason %||% ""),
+        sneak_expr = as.character(sneak_expr %||% ""),
         sneak_part = sneak_part,
         target_traits = get_character_damage_traits(target_char),
         primary_damage_type = as.character(weapon_row$dmg_type1[1] %||% "")
@@ -2238,11 +2304,19 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
             div(
               class = "confirm-box",
               div(class = "combat-section-title", "Modify Damage"),
-              if (isTRUE(preview$sneak_available) && !isTRUE(sneak_attack_used())) {
-                checkboxInput(
-                  session$ns("final_apply_sneak"),
-                  paste0("Apply Sneak Attack (", preview$sneak_part$expr %||% "", ")"),
-                  value = FALSE
+              if (nzchar(as.character(preview$sneak_expr %||% ""))) {
+                tagList(
+                  tags$p(
+                    class = if (isTRUE(preview$sneak_available)) "text-success" else "text-muted",
+                    paste0("Sneak Attack ", preview$sneak_expr, ": ", preview$sneak_reason %||% "")
+                  ),
+                  if (isTRUE(preview$sneak_available) && !isTRUE(sneak_attack_used())) {
+                    checkboxInput(
+                      session$ns("final_apply_sneak"),
+                      paste0("Apply Sneak Attack (", preview$sneak_part$expr %||% "", ")"),
+                      value = TRUE
+                    )
+                  }
                 )
               },
               fluidRow(
@@ -2310,6 +2384,23 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         }
       )
     })
+
+    observeEvent(
+      list(input$final_apply_sneak, input$final_bonus_damage, input$final_bonus_type),
+      {
+        preview <- pending_attack()
+        if (is.null(preview) || !isTRUE(preview$is_hit)) return()
+        apply_sneak <- isTRUE(input$final_apply_sneak %||% FALSE) && !isTRUE(sneak_attack_used())
+        calc <- compute_final_attack(
+          preview,
+          apply_sneak = apply_sneak,
+          manual_bonus = input$final_bonus_damage %||% 0L,
+          manual_type = input$final_bonus_type %||% "same_as_primary"
+        )
+        updateNumericInput(session, "final_damage_override", value = calc$adjusted$total)
+      },
+      ignoreInit = TRUE
+    )
     
     # --------------------------------------------------
     # Event formatting
@@ -3200,6 +3291,34 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       )
     })
 
+    output$rogue_combat_ui <- renderUI({
+      expr <- get_sneak_attack_expr(core$state$char)
+      if (!nzchar(expr)) return(NULL)
+      ready <- offhand_ready()
+      tagList(
+        div(
+          class = "combat-pill",
+          paste0("Sneak Attack ", expr, " • ", if (isTRUE(sneak_attack_used())) "Used" else "Ready")
+        ),
+        if (!is.null(ready) && isTRUE(is_players_turn())) {
+          actionButton(session$ns("use_offhand_attack"), "Off-hand Attack (Bonus)", class = "btn btn-primary")
+        }
+      )
+    })
+
+    observeEvent(input$use_offhand_attack, {
+      ready <- offhand_ready()
+      if (is.null(ready) || !isTRUE(is_players_turn())) {
+        log_safe("⚠️ Make a light-weapon attack first before using an off-hand attack.")
+        return()
+      }
+      if (as.integer(turn_budget()$bonus_actions %||% 0L) < 1L) {
+        log_safe("⚠️ No bonus action remains for an off-hand attack.")
+        return()
+      }
+      open_attack_flow(as.character(ready$target_id), attack_mode = "offhand")
+    }, ignoreInit = TRUE)
+
     observeEvent(input$open_class_action, {
       if (!isTRUE(is_players_turn())) {
         log_safe("⚠️ Combat abilities can only be used on your turn.")
@@ -3806,7 +3925,9 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       "Normal"
     }
     
-    open_attack_flow <- function(target_id) {
+    open_attack_flow <- function(target_id, attack_mode = "action") {
+      attack_mode <- if (identical(as.character(attack_mode), "offhand")) "offhand" else "action"
+      current_attack_mode(attack_mode)
       
       self_id <- as.character(core$state$char_id %||% "")
       is_reaction_attack <- !isTRUE(is_players_turn())
@@ -3858,8 +3979,14 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         }
         
         weapons <- get_equipped_weapons_for_combat(attacker_char)
+        if (identical(attack_mode, "offhand")) {
+          ready <- offhand_ready()
+          allowed <- as.character(ready$weapon_ids %||% character())
+          weapons <- weapons[as.character(weapons$id) %in% allowed, , drop = FALSE]
+        }
         if (!is.data.frame(weapons) || nrow(weapons) == 0) {
-          log_safe("⚠️ No equipped weapons available.")
+          log_safe(if (identical(attack_mode, "offhand")) "⚠️ No eligible light off-hand weapon is equipped."
+                   else "⚠️ No equipped weapons available.")
           return()
         }
         
@@ -3881,7 +4008,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         weapon_choices <- stats::setNames(as.character(weapons$id), labels)
         
         showModal(modalDialog(
-          title = paste0("Choose weapon — ", attacker_name),
+          title = paste0(if (identical(attack_mode, "offhand")) "Choose off-hand weapon — " else "Choose weapon — ", attacker_name),
           radioButtons(session$ns("attack_weapon_id"), "Equipped weapons", choices = weapon_choices),
           radioButtons(
             session$ns("attack_adv_mode"),
@@ -3897,7 +4024,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
           ),
           footer = tagList(
             modalButton("Cancel"),
-            actionButton(session$ns("confirm_attack"), "Roll Attack", class = "btn btn-danger")
+            actionButton(session$ns("confirm_attack"), if (identical(attack_mode, "offhand")) "Roll Bonus Attack" else "Roll Attack", class = "btn btn-danger")
           ),
           easyClose = TRUE
         ))
@@ -4087,9 +4214,17 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         log_safe("⚠️ Could not load combatants.")
         return()
       }
-      if (!isTRUE(reaction_attack) && !spend_attack_safe(attacker_char, "Attack")) {
-        pending_attack(NULL)
-        return()
+      attack_mode <- as.character(current_attack_mode() %||% "action")
+      if (!isTRUE(reaction_attack)) {
+        spent <- if (identical(attack_mode, "offhand")) {
+          spend_action_safe("bonus_action", "Off-hand attack")
+        } else {
+          spend_attack_safe(attacker_char, "Attack")
+        }
+        if (!isTRUE(spent)) {
+          pending_attack(NULL)
+          return()
+        }
       }
       if (isTRUE(reaction_attack)) player_reaction_available(FALSE)
       
@@ -4140,6 +4275,23 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         target_id = target_id,
         adv_override = adv_mode
       )
+
+      preview$attack_mode <- attack_mode
+      if (identical(attack_mode, "action") && !isTRUE(reaction_attack) && weapon_is_light_melee(weapon_row)) {
+        other_light <- weapons[
+          as.character(weapons$id) != weapon_id &
+            vapply(seq_len(nrow(weapons)), function(i) weapon_is_light_melee(weapons[i, , drop = FALSE]), logical(1)),
+          , drop = FALSE
+        ]
+        if (nrow(other_light)) {
+          offhand_ready(list(target_id = target_id, weapon_ids = as.character(other_light$id)))
+          log_safe("🗡️ Off-hand attack available: spend your bonus action with another light weapon.")
+        } else {
+          offhand_ready(NULL)
+        }
+      } else if (identical(attack_mode, "offhand")) {
+        offhand_ready(NULL)
+      }
       
       preview$is_opportunity_attack <- isTRUE(current_attack_is_opp())
       preview$is_readied_attack <- isTRUE(current_attack_is_ready())
@@ -4148,7 +4300,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       if (nzchar(as.character(preview$superiority_manoeuvre %||% ""))) manoeuvre_active("")
       
       base_proposed <- if (isTRUE(preview$is_hit)) {
-        compute_final_attack(preview)$adjusted$total
+        compute_final_attack(preview, apply_sneak = isTRUE(preview$sneak_available))$adjusted$total
       } else {
         0L
       }
