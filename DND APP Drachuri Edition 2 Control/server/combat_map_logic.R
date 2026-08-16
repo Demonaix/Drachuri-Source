@@ -923,6 +923,9 @@ add_encounter_enemy <- function(
     attacks_json <- as.character(attacks_json)
     if (!nzchar(trimws(attacks_json))) attacks_json <- NULL
   }
+  if (is.null(attacks_json)) {
+    attacks_json <- enemy_json(attacks %||% list())
+  }
   
   if (is.na(encounter_id) || encounter_id < 1) return(NULL)
   if (!nzchar(name)) name <- "Enemy"
@@ -1004,7 +1007,9 @@ add_encounter_enemy <- function(
       )
     ),
     error = function(e) {
-      message("add_encounter_enemy DB insert failed: ", e$message)
+      detail <- paste0("add_encounter_enemy DB insert failed: ", e$message)
+      options(drachuri.last_db_error = detail)
+      message(detail)
       NULL
     }
   )

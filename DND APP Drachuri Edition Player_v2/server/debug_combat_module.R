@@ -3852,6 +3852,12 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         return(paste0(target_name, " is defeated."))
       }
 
+      if (typ %in% c("condition_added", "condition_removed")) {
+        condition <- as.character(payload$condition %||% "condition")
+        verb <- if (identical(typ, "condition_added")) "gains" else "loses"
+        return(paste(target_name, verb, condition, "."))
+      }
+
       if (typ == "opportunity_available") {
         names <- as.character(unlist(payload$attacker_names %||% list()))
         who <- if (length(names) && any(nzchar(names))) paste(names[nzchar(names)], collapse = ", ") else "an adjacent player"

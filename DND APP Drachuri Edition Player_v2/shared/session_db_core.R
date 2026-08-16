@@ -492,6 +492,10 @@ get_opportunity_attackers <- function(encounter_id, mover_id, mover_type, old_x,
   
   actors$actor_id <- as.character(actors$actor_id)
   actors$actor_type <- as.character(actors$actor_type)
+  # get_encounter_actors may already contain coordinates. Drop them before the
+  # authoritative positions join so merge() does not create x.x/x.y columns.
+  actors$x <- NULL
+  actors$y <- NULL
   
   # normalise position columns
   keep_cols <- intersect(c("actor_id", "actor_type", "x", "y"), names(pos))

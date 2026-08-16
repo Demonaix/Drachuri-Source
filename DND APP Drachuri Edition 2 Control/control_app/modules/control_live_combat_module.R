@@ -417,6 +417,12 @@ controlLiveCombatUI <- function(id) {
             uiOutput(ns("map_ui"))
           ),
           div(class = "live-combat-card live-combat-log-wide", uiOutput(ns("log_ui")))
+        ),
+        tags$details(
+          class = "live-combat-card",
+          tags$summary("Technical audit log"),
+          tags$p(class = "live-combat-sub", "Persistent diagnostic details for database and combat-trigger failures."),
+          verbatimTextOutput(ns("audit_log_ui"))
         )
       ),
       
@@ -442,6 +448,26 @@ controlLiveCombatServer <- function(
     pending_attack <- reactiveVal(NULL)
     turn_move_ft <- reactiveVal(0L)
     reinforce_templates_rv <- reactiveVal(data.frame())
+    audit_key <- reactiveVal(0L)
+    audit_log_path <- file.path("logs", "control-audit.log")
+    if (!dir.exists(dirname(audit_log_path))) dir.create(dirname(audit_log_path), recursive = TRUE, showWarnings = FALSE)
+
+    append_control_audit <- function(category, message, details = list()) {
+      detail_text <- if (length(details)) {
+        paste(names(details), vapply(details, function(x) paste(as.character(x), collapse = ","), character(1)), sep = "=", collapse = " | ")
+      } else ""
+      line <- paste(format(Sys.time(), "%Y-%m-%d %H:%M:%S"), category, as.character(message), detail_text, sep = " | ")
+      try(write(line, file = audit_log_path, append = TRUE), silent = TRUE)
+      audit_key(isolate(audit_key()) + 1L)
+      invisible(line)
+    }
+
+    output$audit_log_ui <- renderText({
+      audit_key()
+      if (!file.exists(audit_log_path)) return("No technical errors recorded.")
+      lines <- tryCatch(readLines(audit_log_path, warn = FALSE), error = function(e) character())
+      if (!length(lines)) "No technical errors recorded." else paste(tail(lines, 80L), collapse = "\n")
+    })
     
     list_npc_templates <- function() {
       con <- get_db_connection()
@@ -533,6 +559,7 @@ limit 1
     ))
     
     log_safe <- function(msg, type = "message") {
+      if (type %in% c("error", "warning")) append_control_audit(toupper(type), msg)
       showNotification(msg, type = type)
     }
     
@@ -1678,6 +1705,7 @@ limit 1
     abilities = list(), attacks = list(), loot = list(), resistances = character(), immunities = character(),
     vulnerabilities = character(), condition_immunities = character(), gold_min = 0L, gold_max = 0L
     ) {
+      options(drachuri.last_db_error = "")
       attack_bonus <- suppressWarnings(as.integer(attack_bonus))
       if (is.na(attack_bonus)) attack_bonus <- 0L
       
@@ -1696,7 +1724,9 @@ limit 1
           condition_immunities = condition_immunities, gold_min = gold_min, gold_max = gold_max
         ),
         error = function(e) {
-          message("add_encounter_enemy failed: ", e$message)
+          detail <- paste0("add_encounter_enemy failed: ", e$message)
+          options(drachuri.last_db_error = detail)
+          message(detail)
           NULL
         }
       )
@@ -1712,7 +1742,9 @@ limit 1
           y = as.integer(y)
         ),
         error = function(e) {
-          message("upsert_encounter_actor_position failed: ", e$message)
+          detail <- paste0("upsert_encounter_actor_position failed: ", e$message)
+          options(drachuri.last_db_error = detail)
+          message(detail)
           FALSE
         }
       )
@@ -1948,6 +1980,12 @@ limit 1
       }
       
       if (typ == "remove_enemy") return("Enemy removed from combat.")
+
+      if (typ %in% c("condition_added", "condition_removed")) {
+        condition <- as.character(payload$condition %||% "condition")
+        verb <- if (identical(typ, "condition_added")) "gains" else "loses"
+        return(paste(target_name, verb, condition, "."))
+      }
       
       if (typ == "move") {
         if (is.list(payload) && !is.null(payload$to)) {
@@ -2172,6 +2210,11 @@ limit 1
       if ("turn_order" %in% names(actors)) {
         actors <- actors[order(actors$turn_order, na.last = TRUE), , drop = FALSE]
       }
+
+      condition_rows <- tryCatch(
+        get_active_encounter_conditions(current_encounter_id()),
+        error = function(e) data.frame()
+      )
       
       rows <- lapply(seq_len(nrow(actors)), function(i) {
         row <- actors[i, , drop = FALSE]
@@ -2193,6 +2236,13 @@ limit 1
         }
         
         is_active <- isTRUE(row$is_active[1] %||% FALSE)
+        conditions <- character()
+        if (is.data.frame(condition_rows) && nrow(condition_rows)) {
+          conditions <- unique(tolower(as.character(
+            condition_rows$condition[as.character(condition_rows$target_actor_id) == cid] %||% character()
+          )))
+          conditions <- conditions[nzchar(conditions) & !is.na(conditions)]
+        }
         
         ac_txt <- if (identical(ctype, "player")) {
           char_obj <- load_actor_for_combat(cid, "player")
@@ -2216,7 +2266,10 @@ limit 1
           div(
             class = "initiative-tags",
             div(class = "initiative-tag", if (is_active) "Active" else "Inactive"),
-            div(class = "initiative-tag", ac_txt)
+            div(class = "initiative-tag", ac_txt),
+            lapply(conditions, function(condition) {
+              div(class = "initiative-tag", style = "background:#6f3030;color:white;", condition)
+            })
           ),
           hp_bar_ui(cur_hp, temp_hp, maxv = max_hp)
         )
@@ -2752,7 +2805,11 @@ limit 1
       }
       
       if (!length(added_ids)) {
-        log_safe("Failed to add reinforcement.", type = "error")
+        detail <- as.character(getOption("drachuri.last_db_error", "Unknown database failure"))
+        if (!nzchar(detail)) detail <- "Enemy insert or map-position insert returned no result."
+        append_control_audit("REINFORCEMENT_ERROR", detail,
+                             list(encounter_id = eid, template_id = npc_id, name = base_name, x = x, y = y))
+        log_safe(paste0("Failed to add reinforcement: ", detail), type = "error")
         return()
       }
       
@@ -2911,7 +2968,24 @@ limit 1
 
       if (identical(actor_type,"enemy") && !isTRUE(input$movement_disengage)) {
         attackers<-tryCatch(get_opportunity_attackers(eid,actor_id,actor_type,old_x,old_y,cur_x,cur_y),error=function(e)data.frame())
-        if(is.data.frame(attackers)&&nrow(attackers)) log_game_event(eid,"opportunity_available",actor_type,actor_id,payload=list(attacker_ids=as.list(as.character(attackers$actor_id)),attacker_names=as.list(as.character(attackers$display_name%||%attackers$name%||%"Player"))))
+        append_control_audit(
+          "OPPORTUNITY_CHECK", get_actor_display_name(actor_id),
+          list(from = paste(old_x, old_y, sep = ","), to = paste(cur_x, cur_y, sep = ","),
+               eligible_ids = if (is.data.frame(attackers) && nrow(attackers)) paste(attackers$actor_id, collapse = ",") else "none")
+        )
+        if (is.data.frame(attackers) && nrow(attackers)) {
+          event_ok <- tryCatch(
+            log_game_event(eid,"opportunity_available",actor_type,actor_id,payload=list(
+              attacker_ids=as.list(as.character(attackers$actor_id)),
+              attacker_names=as.list(as.character(attackers$display_name%||%attackers$name%||%"Player"))
+            )),
+            error = function(e) {
+              append_control_audit("OPPORTUNITY_EVENT_ERROR", conditionMessage(e))
+              FALSE
+            }
+          )
+          if (!isTRUE(event_ok)) append_control_audit("OPPORTUNITY_EVENT_ERROR", "Database event insert returned false")
+        }
       }
       
       try(
