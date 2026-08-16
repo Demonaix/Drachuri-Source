@@ -46,10 +46,10 @@ controlInventoryServer <- function(id, ctrl, players_tbl = NULL, bump_refresh = 
     save_store <- function(x) tryCatch({ saveRDS(x, store_path); TRUE }, error=function(e) FALSE)
     observe({
       items <- catalogue(); pools <- sort(unique(unlist(lapply(items, function(x) x$pools %||% character())))); types<-sort(unique(vapply(items,function(x)x$type,character(1))))
-      updateSelectInput(session, "pool", choices=c("All", pools))
-      updateSelectInput(session, "type_filter", choices=c("All",types))
+      updateSelectInput(session, "pool", choices=c("All", pools), selected=input$pool%||%"All")
+      updateSelectInput(session, "type_filter", choices=c("All",types), selected=input$type_filter%||%"All")
       chosen <- input$pool %||% "All"; chosen_type<-input$type_filter%||%"All"; shown <- Filter(function(x) (identical(chosen,"All") || chosen %in% (x$pools %||% character())) && (identical(chosen_type,"All")||identical(x$type,chosen_type)), items)
-      updateSelectInput(session, "item_id", choices=setNames(vapply(shown, `[[`, "", "id"), vapply(shown, `[[`, "", "name")))
+      vals<-vapply(shown, `[[`, "", "id"); keep<-input$item_id%||%""; updateSelectInput(session, "item_id", choices=setNames(vals, vapply(shown, `[[`, "", "name")), selected=if(keep%in%vals)keep else if(length(vals))vals[1] else character())
     })
     selected <- reactive({ found<-Filter(function(x) identical(x$id, input$item_id %||% ""), catalogue()); if(length(found)) found[[1]] else NULL })
     output$item_preview <- renderUI({ x<-selected(); if(is.null(x)) return(NULL); tagList(h4(x$name), p(x$desc), tags$strong(paste(x$type,"•",x$value,"gold •",x$weight,"lb")), p(paste("Pools:",paste(x$pools%||%"none",collapse=", ")))) })

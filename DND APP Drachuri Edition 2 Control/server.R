@@ -131,6 +131,7 @@ server_control <- function(input, output, session) {
   source("control_app/modules/control_npc_creator_module.R", local = FALSE)
   source("control_app/modules/control_inventory_module.R", local = FALSE)
   source("control_app/modules/control_npc_pools_module.R", local = FALSE)
+  source("control_app/modules/control_npc_features_module.R", local = FALSE)
   
  
   # ------------------------------------------------------------
@@ -198,5 +199,6 @@ server_control <- function(input, output, session) {
   )
 
   controlNpcPoolsServer("npc_pools")
+  controlNpcFeaturesServer("npc_features")
   
 }
