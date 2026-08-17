@@ -39,7 +39,7 @@ controlInventoryServer <- function(id, ctrl, players_tbl = NULL, bump_refresh = 
       x <- enemy_loot_catalog()[[key]]; x$id <- key; x$pools <- default_pools[[key]] %||% character(); x
     })
     catalogue <- reactiveVal({
-      saved <- tryCatch(readRDS(store_path), error=function(e) list())
+      saved <- if (file.exists(store_path)) tryCatch(readRDS(store_path), error=function(e) list()) else list()
       existing <- vapply(saved, function(x) as.character(x$id %||% ""), character(1))
       c(saved, Filter(function(x) !x$id %in% existing, seed))
     })
