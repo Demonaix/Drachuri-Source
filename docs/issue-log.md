@@ -142,36 +142,41 @@ This is the authoritative issue register for the player and control apps. The or
 
 ### MAP-001 — Ravine tile missing from Control map builder
 
-- **Status:** Open
+- **Status:** Fixed — awaiting map-builder retest
 - **Priority:** Low
 - **Area:** Control map builder
 - **Reported:** 2026-08-17
 - **Original report:** Ravine is unavailable as a map tile option.
-- **Test notes:** Define movement blocking, line-of-sight, appearance, and fall behaviour.
-- **Fix/checkpoint:** —
-- **Retest:** Not started.
+- **Rule:** Ravine is an impassable ground gap: it blocks movement but not vision. Falling/jumping into a ravine is not automatic; a future jump/fall action can explicitly override the movement block rather than allowing accidental clicks to drop a creature.
+- **Fix (2026-08-21):** Added Ravine to Control's terrain brush. Selecting it automatically enables movement blocking, disables vision blocking and uses the existing dark ravine treatment in Player 2D/3D maps plus a matching Control-builder colour.
+- **Automated test:** Confirms the brush, blocking defaults and colour are present. All 63 rule tests pass and the three-app startup smoke test passes.
+- **Fix/checkpoint:** `a288ceb`
+- **Retest:** Paint and save a Ravine strip. Confirm it appears dark in Control and Player maps, cannot be entered by click movement, and does not prevent viewing creatures on the opposite side.
 
 ### COMBAT-001 — Bloodlust Risk may not be implemented
 
-- **Status:** Open
+- **Status:** Fixed — awaiting combat retest
 - **Priority:** Medium
 - **Area:** Class tree / combat
 - **Reported:** 2026-08-17
 - **Original report:** Bloodlust Risk exists in the tree but may not be enacted in combat.
-- **Test notes:** Locate the unlock definition, intended trigger, save/check, effect, duration, and recovery rule.
-- **Fix/checkpoint:** —
-- **Retest:** Not started.
+- **Rule implemented:** Bloodlust is the starvation state already set by the daily addiction system at stages 3–4. At stage 3, a natural 1 on an applied attack forces an immediate Bloodthirsty Bite against the nearest adjacent living creature. At stage 4, the first action of every turn is overridden by that bite. Distance resolves first; ties prefer an enemy and then an ally, avoiding arbitrary selection while retaining risk. If nobody is adjacent, the surge is logged but cannot bite. A successful forced bite counts as half a pint.
+- **Fix (2026-08-21):** Added automatic target selection, attack/critical/damage resolution, HP application and a structured combat-log event. The stage-4 trigger is guarded by turn identity so refreshes cannot repeat it.
+- **Automated test:** Covers stage-3 natural-1, non-triggering ordinary rolls, stage-4 turn override and inactive Bloodlust. All 63 rule tests pass.
+- **Fix/checkpoint:** `a288ceb`
+- **Retest:** Use a blood-starved stage-3 character and force/observe a natural 1 with adjacent enemy and ally; confirm one nearest creature is bitten and the event is logged. At stage 4, start two separate turns and confirm exactly one forced bite/action spend per turn. Confirm refresh does not repeat it and no-adjacent-creature turns log without damage.
 
 ### BLOOD-002 — Blood consumption needs a daily history
 
-- **Status:** Open
+- **Status:** Implemented — awaiting Blood-screen retest
 - **Priority:** Low
 - **Area:** Blood inventory / history
 - **Reported:** 2026-08-17
 - **Original report:** Add a record of what blood was consumed each day.
-- **Test notes:** Prefer append-only events over another mutable character blob field.
-- **Fix/checkpoint:** —
-- **Retest:** Not started.
+- **Fix (2026-08-21):** Migration 016 adds append-only `blood_consumption_events`, recording character, optional session, campaign day, blood/heart type, source, quantity, Sindre value and timestamp. Successful blood drinks and heart consumption append an event; the Blood screen shows the 30 most recent entries. Historical rows are not stored in or rewritten with the character blob.
+- **Automated test:** Fresh migration 001–016 and integration coverage confirm blood and heart events persist and can be retrieved together by day. Migration 016 is live on Supabase.
+- **Fix/checkpoint:** `a288ceb`
+- **Retest:** Drink part of two differently named blood stores and consume a heart. Confirm three history entries show the correct day, source, quantities and Sindre values after navigating away, reconnecting, and restarting the app.
 
 ### REST-002 — Long rests can become unsynchronised across the party
 
@@ -188,14 +193,16 @@ This is the authoritative issue register for the player and control apps. The or
 
 ### BLOOD-003 — Tylwyth Teg blood reminder is not appearing
 
-- **Status:** Open
+- **Status:** Fixed — awaiting rest retest
 - **Priority:** Medium
 - **Area:** Rest / blood-drinker rules
 - **Reported:** 2026-08-17
 - **Original report:** Tylwyth Teg blood drinkers should receive a reminder when starting a long rest, but the prompt does not appear.
-- **Test notes:** Record race/subrace, blood requirement state, current starvation state, and rest type.
-- **Fix/checkpoint:** —
-- **Retest:** Not started.
+- **Cause:** The reminder guarded Skip Day but the Long Rest observer bypassed it and advanced the blood day directly.
+- **Fix (2026-08-21):** Both Player and Control now run the same Tylwyth Teg intake check before Long Rest. A deficient character receives the Blood Required modal and may cancel or explicitly choose Rest Anyway; the existing Skip Day confirmation remains separate.
+- **Automated test:** Both Rest modules parse, all 63 rule tests pass, and one Control/two Player apps start successfully.
+- **Fix/checkpoint:** `8d379c4`
+- **Retest:** With a Tylwyth Teg character below required daily intake, click Long Rest and confirm it does not proceed until Rest Anyway is chosen. Cancel once, then consume enough blood and confirm Long Rest proceeds without the warning.
 
 ### REST-003 — Starvation/rest calculation can reduce HP to 0/0 incorrectly
 
@@ -212,14 +219,16 @@ This is the authoritative issue register for the player and control apps. The or
 
 ### MAGIC-002 — Sorcerer magic branches need corrected availability
 
-- **Status:** Open
+- **Status:** Fixed — awaiting Magic-screen retest
 - **Priority:** Medium
 - **Area:** Magic / class progression
 - **Reported:** 2026-08-17
 - **Original report:** Exothermic should link to unlocked fire magic; endothermic to cold; mechanical should be available to all sorcerers; natural should be restricted to Hanianol.
-- **Test notes:** Audit unlock prerequisites, existing characters, and whether correction requires a backfill.
-- **Fix/checkpoint:** —
-- **Retest:** Not started.
+- **Cause:** Magic-school pills were arbitrary saved toggles, and a fallback granted Thermal and Mechanical labels when no data existed. They were not derived from class progression.
+- **Fix (2026-08-21):** Magic schools are now read-only derived state in both apps. Every Hanianol or Na'Haran Sorcerer receives Mechanical; Hanianol receives Natural from level 2; an Exothermic level choice grants Fire and an Endothermic choice grants Cold. Non-sorcerers receive none. Legacy toggled labels are ignored, so no destructive backfill is needed; actual executable spells continue to use authoritative progression.
+- **Automated test:** Covers Hanianol Exothermic, Na'Haran Endothermic and non-sorcerer characters. All 60 then-current rule tests passed; the completed suite now passes 63.
+- **Fix/checkpoint:** `8d379c4`
+- **Retest:** Open Magic with Hanianol Exothermic, Hanianol Endothermic, Na'Haran Exothermic, Na'Haran Endothermic and a non-sorcerer. Confirm the highlighted schools match progression and cannot be manually toggled.
 
 ### DATA-001 — Inventory definitions are still stored primarily inside blobs
 
@@ -316,14 +325,15 @@ This is the authoritative issue register for the player and control apps. The or
 
 ### LOOT-002 — Mundane loot needs an authoritative category
 
-- **Status:** Open
+- **Status:** Implemented — awaiting inventory retest
 - **Priority:** Medium
 - **Area:** Inventory / loot data
 - **Reported:** 2026-08-20
 - **Original report:** Mundane loot needs a table or an `items.type = mundane_loot` category.
-- **Test notes:** Prefer the common items table with a validated category unless mundane loot has genuinely different fields or lifecycle.
-- **Fix/checkpoint:** —
-- **Retest:** Not started.
+- **Fix (2026-08-21):** Migration 015 adds a validated category to the common `items` table rather than creating another loot table. Allowed categories are mundane loot, consumable, crafting material, tool, treasure and quest item. Existing generic rows safely backfill to mundane loot, while recognisable item types retain their semantic category. Control's inventory editor exposes the category and relational saves preserve it.
+- **Automated test:** Unit coverage verifies default mundane, explicit crafting and inferred consumable categories. Fresh migration/integration inserts and retrieves a mundane item under the database constraint. Migration 015 is live on Supabase.
+- **Fix/checkpoint:** `a288ceb`
+- **Retest:** Create one ordinary object and one item in every other category in Control. Save/reload each, give or loot copies to a player, and confirm names/details remain intact and Control retains the selected category.
 
 ## Planned features
 
