@@ -14,7 +14,7 @@ This is the authoritative issue register for the player and control apps. The or
 
 ### CTRL-001 — Control dropdown selections flash or revert
 
-- **Status:** In progress — relational schema and live backfill complete
+- **Status:** In progress — live dual-write compatibility active
 - **Priority:** High
 - **Area:** Control UI / reactive refresh
 - **Reported:** 2026-08-17
@@ -180,40 +180,41 @@ This is the authoritative issue register for the player and control apps. The or
 - **Recommended foundation:** Keep the existing tables untouched until a reviewed migration exists. Standardise the modifier tables to unquoted lowercase names (prefer `item_materials` and `item_conditions`), add explicit nullable material/condition references with foreign keys, validation constraints, and timestamps, then backfill catalogue data before switching application reads away from blobs. Character inventory should ultimately store owned-item instances referencing definitions, while retaining per-instance quantity, equipped state, condition and approved overrides.
 - **Migration safety:** Do not make the new tables authoritative or remove blob fields until definition backfill, dual-read compatibility, and rollback tests pass.
 - **Fix/checkpoint (2026-08-21):** Applied migration `007_relational_inventory`. Added lowercase `item_materials` and `item_conditions`, copied all legacy modifier rows, added default material/condition foreign keys to all three definition tables, and added relational `character_wallets`, `character_inventory_items`, and `inventory_pool_rules`. Owned items use real foreign keys through separate weapon/armour/item columns and retain quantity, equipped state, bag state, per-instance modifiers and approved JSON properties. Live backfill created six wallet rows and 44 owned-item rows (17 weapons, six armour pieces and 21 other items), including party-specific/homebrew definitions. Existing character blobs were not altered. Re-ran the backfill idempotently and confirmed the same totals.
-- **Retest:** Migration ledger confirms 001–007 applied. Backfill dry run and applied verification agree on six characters, 44 owned items and 111 total gold. Existing 50 automated game tests still pass. Remaining before authority switch: add application dual-write/dual-read compatibility, compare both representations during normal play, migrate the control catalogue/pool editors away from local RDS, then test rollback before retiring inventory fields inside character blobs.
+- **Compatibility checkpoint (2026-08-21):** Character loads now hydrate wallet and equipment provenance from relational rows, with the blob as fallback. Character saves update the blob and relational wallet/ownership rows in one database transaction. Control-to-player gifts use that common save path. Player trade creation, acceptance and decline hydrate and mirror both sides so material/build quality travels with the specific item rather than being rerolled. Fresh-database migration support was corrected and verified locally; live migration checksums were reconciled only after the expected tables were checked.
+- **Retest:** Live ledger confirms 001–008 applied and clean. Fresh isolated database builds all eight migrations. Full integration test passes character load/save/sync, HP, movement, turns, enemy generation, reinforcement/loot and reconnection. 52 automated tests pass. Remaining before authority switch: compare blob and relational representations during normal multi-client play, migrate the control catalogue/pool editors themselves away from local RDS, then test rollback before retiring inventory fields inside character blobs.
 
 ### DATA-002 — Control item editor lacks complete damage-type support
 
-- **Status:** Open
+- **Status:** In progress — validated editor and combat modifiers wired
 - **Priority:** High
 - **Area:** Control inventory / NPC attacks / damage traits
 - **Reported:** 2026-08-20
 - **Original report:** Control does not provide a reliable place to specify item damage type(s), so NPC weapon attacks may not trigger vulnerabilities, resistances, or immunities correctly.
 - **Test notes:** Support multiple damage components without accepting arbitrary invalid values.
-- **Fix/checkpoint:** —
-- **Retest:** Not started.
+- **Fix/checkpoint (2026-08-21):** Control item editing now selects primary and optional secondary damage types from the shared validated damage-type list rather than accepting arbitrary text. Migration 008 adds database checks for both weapon damage components. Equipped weapons expose relational material/build-quality attack and damage modifiers to combat, and their material is included in resistance/immunity/vulnerability matching (including Iron).
+- **Retest:** Parsing passes and automated coverage confirms equipment attack bonuses are included. Full UI attack confirmation still needs a manual player/control combat pass.
 
 ### DATA-003 — Materials and conditions need rule integration
 
-- **Status:** Open
+- **Status:** In progress — weapon provenance live
 - **Priority:** High
 - **Area:** Database / equipment rules / loot
 - **Reported:** 2026-08-20
 - **Original report:** Armour and weapons should have an appropriate material or condition. These definitions provide modifiers, and conditions include a drop rate, but the new tables are not integrated.
 - **Test notes:** Clarify whether “condition” means item quality/durability, combat condition, or a separate equipment-condition concept. Avoid naming collision with combat conditions.
-- **Fix/checkpoint:** —
-- **Retest:** Not started.
+- **Fix/checkpoint (2026-08-21):** Added neutral `Wood` (all modifiers zero). Migrated weapons without provenance prompt their owning player once per session to roll permanent material and build quality; bows have forced Wood and only roll build quality. Results are written to the owned-item row and an immutable assignment log, hydrated into inventory metadata, retained through gifts/trades, and applied to attack, damage and armour calculations. Newly saved NPC equipment rolls eligible provenance when the template is saved, so later loot already carries its make and quality.
+- **Retest:** Live pending-assignment read identifies Dewydd's six migrated weapons and correctly fixes Shortbow to Wood. Roll mutation was intentionally left for the player to perform in-app. Isolated schema/integration tests and 52 automated tests pass.
 
 ### LOOT-001 — Loot restrictions need data-driven rules
 
-- **Status:** Open
+- **Status:** Implemented — awaiting manual generator/loot retest
 - **Priority:** Medium
 - **Area:** NPC generation / loot
 - **Reported:** 2026-08-20
 - **Original report:** Iron weapons should not appear on Fae NPCs. Titanium-copper should only be lootable from Boss enemies.
 - **Test notes:** Implement as validated eligibility rules rather than scattered UI checks.
-- **Fix/checkpoint:** —
-- **Retest:** Not started.
+- **Fix/checkpoint (2026-08-21):** Migration 008 stores material eligibility as data: Iron excludes enemy type Fae; Titanium Copper requires characteristic Boss. NPC equipment provenance filters through those rules before material selection, and the chosen weapon material is copied into the NPC attack as well as its loot record.
+- **Retest:** Automated eligibility tests cover Fae/Iron and Boss/Titanium-Copper allow/deny paths. Manually save and loot one Fae weapon-user and one Boss weapon-user before closing.
 
 ### LOOT-002 — Mundane loot needs an authoritative category
 

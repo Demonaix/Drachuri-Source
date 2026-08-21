@@ -78,12 +78,64 @@ inventoryTabServer <- function(id, state, restoring, add_log, char_rev, session_
     
     obs_ids <- reactiveVal(character())
     shown_trade_ids <- reactiveVal(integer())
+    skipped_assignment_ids <- reactiveVal(character())
+    active_assignment <- reactiveVal(NULL)
     
     uid <- function() {
       paste0("i_", as.integer(Sys.time()), "_", sample(1000:9999, 1))
     }
     current_trade_session <- function(){value<-if(is.function(session_id))session_id() else session_id;suppressWarnings(as.integer(value%||%NA))}
     current_trade_character <- function(){value<-if(is.function(character_id))character_id() else character_id;if(is.null(value)||!length(value)||is.na(value[[1]]))"" else as.character(value[[1]])}
+
+    observe({
+      invalidateLater(2500, session)
+      cid <- current_trade_character()
+      if (!nzchar(cid) || isTRUE(state$offline_mode) || !is.null(active_assignment()) ||
+          !is.null(session$userData$pending_trade_id) || !is.null(session$userData$pending_note_id) ||
+          !is.null(session$userData$pending_opportunity)) return()
+      pending <- pending_equipment_assignments(cid)
+      if (!nrow(pending)) return()
+      pending <- pending[!pending$instance_id %in% skipped_assignment_ids(), , drop = FALSE]
+      if (!nrow(pending)) return()
+      weapon <- pending[1L, , drop = FALSE]
+      active_assignment(weapon)
+      material_text <- if (!is.na(weapon$default_material[[1L]]) && nzchar(weapon$default_material[[1L]])) {
+        paste0(weapon$default_material[[1L]], " is fixed by the weapon's construction; only build quality will be rolled.")
+      } else "Roll its material and build quality using the campaign drop weights."
+      showModal(modalDialog(
+        title = paste0("Discover ", weapon$weapon_name[[1L]], "'s make"),
+        p("This weapon was migrated from your original character inventory."),
+        p(material_text),
+        p("The result is permanent, recorded in the equipment history, and travels with the weapon when traded."),
+        footer = tagList(
+          actionButton(ns("assignment_later"), "Later"),
+          actionButton(ns("roll_assignment"), "Roll material & quality", class = "btn btn-primary")
+        )
+      ))
+    })
+
+    observeEvent(input$assignment_later, {
+      weapon <- active_assignment(); if (is.null(weapon)) return()
+      skipped_assignment_ids(unique(c(skipped_assignment_ids(), as.character(weapon$instance_id[[1L]]))))
+      active_assignment(NULL); removeModal()
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$roll_assignment, {
+      weapon <- active_assignment(); if (is.null(weapon)) return()
+      result <- roll_equipment_assignment(current_trade_character(), weapon$instance_id[[1L]])
+      if (is.null(result)) {
+        showNotification("The equipment roll could not be saved. Please try again.", type = "error")
+        return()
+      }
+      refreshed <- load_character_from_db(current_trade_character())
+      if (!is.null(refreshed)) state$char <- validate_character(refreshed)
+      active_assignment(NULL); removeModal()
+      showNotification(paste0(
+        weapon$weapon_name[[1L]], ": ", result$material[[1L]], " — ", result$build_quality[[1L]],
+        " (attack ", sprintf("%+g", result$attack_bonus[[1L]]),
+        ", damage ", sprintf("%+g", result$damage_modifier[[1L]]), ")"
+      ), type = "message", duration = 10)
+    }, ignoreInit = TRUE)
 
     observeEvent(input$trade_item, {
       sid<-current_trade_session();cid<-current_trade_character()

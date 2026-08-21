@@ -18,6 +18,10 @@ feature_file <- file.path(
   project_dir,
   "DND APP Drachuri Edition Player_v2", "shared", "class_feature_core.R"
 )
+relational_inventory_file <- file.path(
+  project_dir,
+  "DND APP Drachuri Edition Player_v2", "shared", "relational_inventory_core.R"
+)
 
 test_env <- new.env(parent = baseenv())
 test_env$`%||%` <- function(a, b) if (!is.null(a)) a else b
@@ -36,8 +40,9 @@ load_functions <- function(path, names) {
 
 load_functions(global_file, c(
   "character_save_payload", "restore_sindre", "reset_class_uses_for_rest",
-  "calc_auto_ac_for_char", "get_effective_max_hp"
+  "calc_auto_ac_for_char", "get_effective_max_hp", "get_weapon_hit_bonus"
 ))
+load_functions(relational_inventory_file, c("equipment_material_is_eligible"))
 load_functions(
   session_file,
   c(
@@ -993,6 +998,26 @@ test("exhaustion halves effective HP without mutating stored maximum", {
   stopifnot(test_env$get_effective_max_hp(character) == 10L)
   character$status$exhaustion <- 3L
   stopifnot(test_env$get_effective_max_hp(character) == 20L)
+})
+
+test("weapon attack bonus includes material and build quality", {
+  test_env$validate_character <- identity
+  test_env$get_character_ability_mod <- function(char, stat) 3L
+  test_env$get_character_prof_bonus <- function(char) 3L
+  weapon <- data.frame(
+    stat = "dex", proficient = TRUE, to_hit_bonus = 1,
+    material_attack_bonus = 1, quality_attack_bonus = 2
+  )
+  stopifnot(test_env$get_weapon_hit_bonus(list(), weapon) == 10L)
+})
+
+test("material eligibility enforces Fae and Boss loot rules", {
+  iron <- data.frame(excluded_enemy_types = I(list("Fae")), required_characteristics = I(list(character())))
+  titanium <- data.frame(excluded_enemy_types = I(list(character())), required_characteristics = I(list("Boss")))
+  stopifnot(!test_env$equipment_material_is_eligible(iron, "Fae", character()))
+  stopifnot(test_env$equipment_material_is_eligible(iron, "Bandit", character()))
+  stopifnot(!test_env$equipment_material_is_eligible(titanium, "Bandit", character()))
+  stopifnot(test_env$equipment_material_is_eligible(titanium, "Bandit", "Boss"))
 })
 
 cat("\n", tests_run, " tests passed.\n", sep = "")

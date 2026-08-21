@@ -2106,6 +2106,20 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
             total = as.integer(d1$total)
           )))
         }
+        equipment_damage_bonus <- suppressWarnings(as.integer(
+          as.numeric(weapon_row$material_damage_modifier[1] %||% 0) +
+            as.numeric(weapon_row$quality_damage_modifier[1] %||% 0)
+        ))
+        if (is.na(equipment_damage_bonus)) equipment_damage_bonus <- 0L
+        if (equipment_damage_bonus != 0L) {
+          damage_parts <- c(damage_parts, list(list(
+            source = "Material & build quality",
+            expr = sprintf("%+d", equipment_damage_bonus),
+            type = as.character(weapon_row$dmg_type1[1] %||% ""),
+            material = as.character(weapon_row$material[1] %||% ""),
+            rolls = integer(), total = equipment_damage_bonus
+          )))
+        }
         
         dmg2_expr <- as.character(weapon_row$damage2[1] %||% "")
         if (nzchar(dmg2_expr)) {

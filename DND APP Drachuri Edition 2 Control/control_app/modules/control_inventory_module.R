@@ -17,6 +17,11 @@ controlInventoryUI <- function(id) {
                  textInput(ns("desc"), "Description"),
                  fluidRow(column(4, numericInput(ns("value"), "Gold value", 0, min=0)), column(4, numericInput(ns("weight"), "Weight", 0, min=0)), column(4, textInput(ns("damage"), "Damage / Base AC"))),
                  selectInput(ns("stat"), "Weapon stat / armour class", c("STR"="str", "DEX"="dex", "Light"="Light", "Medium"="Medium", "Heavy"="Heavy", "Shield"="Shield")),
+                 fluidRow(
+                   column(4, selectInput(ns("damage_type_1"), "Primary damage type", choices = c(enemy_damage_types(), "other"))),
+                   column(4, textInput(ns("damage_2"), "Extra damage", placeholder = "e.g. 1d4")),
+                   column(4, selectInput(ns("damage_type_2"), "Extra damage type", choices = c(enemy_damage_types(), "other")))
+                 ),
                  actionButton(ns("save_item"), "Add to Catalogue", class="btn btn-primary"),
                  actionButton(ns("update_item"), "Update Selected", class="btn btn-default")))
     ),
@@ -53,7 +58,7 @@ controlInventoryServer <- function(id, ctrl, players_tbl = NULL, bump_refresh = 
     })
     selected <- reactive({ found<-Filter(function(x) identical(x$id, input$item_id %||% ""), catalogue()); if(length(found)) found[[1]] else NULL })
     output$item_preview <- renderUI({ x<-selected(); if(is.null(x)) return(NULL); tagList(h4(x$name), p(x$desc), tags$strong(paste(x$type,"•",x$value,"gold •",x$weight,"lb")), p(paste("Pools:",paste(x$pools%||%"none",collapse=", ")))) })
-    observeEvent(input$item_id, { x<-selected(); if(is.null(x))return(); updateTextInput(session,"name",value=x$name);updateSelectInput(session,"type",selected=x$type);updateTextInput(session,"pools",value=paste(x$pools%||%character(),collapse=", "));updateTextInput(session,"desc",value=x$desc);updateNumericInput(session,"value",value=x$value);updateNumericInput(session,"weight",value=x$weight); updateTextInput(session,"damage",value=as.character(x$meta$damage1%||%x$meta$base_ac%||%"")); updateSelectInput(session,"stat",selected=as.character(x$meta$stat%||%x$meta$type%||%"str")) },ignoreInit=TRUE)
+    observeEvent(input$item_id, { x<-selected(); if(is.null(x))return(); updateTextInput(session,"name",value=x$name);updateSelectInput(session,"type",selected=x$type);updateTextInput(session,"pools",value=paste(x$pools%||%character(),collapse=", "));updateTextInput(session,"desc",value=x$desc);updateNumericInput(session,"value",value=x$value);updateNumericInput(session,"weight",value=x$weight); updateTextInput(session,"damage",value=as.character(x$meta$damage1%||%x$meta$base_ac%||%"")); updateSelectInput(session,"stat",selected=as.character(x$meta$stat%||%x$meta$type%||%"str"));updateSelectInput(session,"damage_type_1",selected=tolower(as.character(x$meta$dmg_type1%||%"other")));updateTextInput(session,"damage_2",value=as.character(x$meta$damage2%||%""));updateSelectInput(session,"damage_type_2",selected=tolower(as.character(x$meta$dmg_type2%||%"other"))) },ignoreInit=TRUE)
     observe({
       p <- if (is.reactive(players_tbl)) players_tbl() else data.frame()
       if(!is.data.frame(p)||!nrow(p)) return(updateSelectInput(session,"player_id",choices=character()))
@@ -63,17 +68,17 @@ controlInventoryServer <- function(id, ctrl, players_tbl = NULL, bump_refresh = 
     observeEvent(input$save_item, {
       nm<-trimws(input$name%||%""); if(!nzchar(nm)) return(showNotification("Enter an item name.",type="error"))
       typ<-input$type%||%"item"; raw<-trimws(input$damage%||%""); meta<-list()
-      if(typ=="weapon") meta<-list(stat=input$stat%||%"str",adv="Normal",to_hit_bonus=0,damage1=if(nzchar(raw))raw else "1d4",dmg_type1="Slashing",damage2="",dmg_type2="Other",proficient=TRUE)
+      if(typ=="weapon") meta<-list(stat=input$stat%||%"str",adv="Normal",to_hit_bonus=0,damage1=if(nzchar(raw))raw else "1d4",dmg_type1=input$damage_type_1%||%"other",damage2=trimws(input$damage_2%||%""),dmg_type2=input$damage_type_2%||%"other",proficient=TRUE)
       if(typ=="armor") { ac<-suppressWarnings(as.numeric(raw)); if(is.na(ac)) ac<-11; meta<-list(base_ac=ac,type=input$stat%||%"Light",custom_max_dex=if((input$stat%||%"")=="Medium")2 else 0,proficient=TRUE) }
       x<-list(id=paste0("custom_",format(Sys.time(),"%Y%m%d%H%M%S")),name=nm,type=typ,desc=input$desc%||%"",value=as.numeric(input$value%||%0),weight=as.numeric(input$weight%||%0),qty=1,meta=meta,pools=trimws(strsplit(input$pools%||%"",",",fixed=TRUE)[[1]])); x$pools<-x$pools[nzchar(x$pools)]
-      items<-c(catalogue(),list(x)); catalogue(items); save_store(items); showNotification("Added to control catalogue.")
+      items<-c(catalogue(),list(x)); catalogue(items); local_ok<-save_store(items); db_ok<-save_control_catalogue_definition(x); if(!local_ok||!db_ok)return(showNotification("The catalogue item could not be saved everywhere.",type="error")); showNotification("Added to control catalogue.")
     })
     observeEvent(input$update_item, {
       old<-selected(); if(is.null(old))return(); typ<-input$type%||%old$type; raw<-trimws(input$damage%||%""); meta<-old$meta%||%list()
-      if(typ=="weapon"){meta$stat<-input$stat%||%"str";meta$damage1<-if(nzchar(raw))raw else "1d4"}
+      if(typ=="weapon"){meta$stat<-input$stat%||%"str";meta$damage1<-if(nzchar(raw))raw else "1d4";meta$dmg_type1<-input$damage_type_1%||%"other";meta$damage2<-trimws(input$damage_2%||%"");meta$dmg_type2<-input$damage_type_2%||%"other"}
       if(typ=="armor"){ac<-suppressWarnings(as.numeric(raw));if(!is.na(ac))meta$base_ac<-ac;meta$type<-input$stat%||%"Light"}
       old$name<-trimws(input$name%||%old$name);old$type<-typ;old$pools<-trimws(strsplit(input$pools%||%"",",",fixed=TRUE)[[1]]);old$pools<-old$pools[nzchar(old$pools)];old$desc<-input$desc%||%"";old$value<-as.numeric(input$value%||%0);old$weight<-as.numeric(input$weight%||%0);old$meta<-meta
-      items<-catalogue();idx<-which(vapply(items,function(x)identical(x$id,old$id),logical(1)))[1];items[[idx]]<-old;catalogue(items);save_store(items);showNotification("Catalogue item updated.")
+      items<-catalogue();idx<-which(vapply(items,function(x)identical(x$id,old$id),logical(1)))[1];items[[idx]]<-old;catalogue(items);local_ok<-save_store(items);db_ok<-save_control_catalogue_definition(old);if(!local_ok||!db_ok)return(showNotification("The catalogue item could not be updated everywhere.",type="error"));showNotification("Catalogue item updated.")
     })
     observeEvent(input$give_item, {
       x<-selected(); cid<-as.character(input$player_id%||%""); if(is.null(x)||!nzchar(cid)) return(showNotification("Choose an item and player.",type="error"))

@@ -76,6 +76,13 @@ constraints <- dbGetQuery(
 constraints <- constraints[constraints$table_name %in% tables, , drop = FALSE]
 print(constraints, row.names = FALSE)
 
+for (definition_table in c("item_materials", "item_conditions")) {
+  if (dbExistsTable(con, definition_table)) {
+    cat("\n", toupper(definition_table), "\n", sep = "")
+    print(dbReadTable(con, definition_table), row.names = FALSE)
+  }
+}
+
 cat("\nCHARACTER BLOB SIZES (no blob contents printed)\n")
 if (dbExistsTable(con, Id(schema = "public", table = "character_blobs"))) {
   blob_columns <- columns$column_name[columns$table_name == "character_blobs"]

@@ -131,9 +131,16 @@ controlNpcCreatorServer <- function(id, ctrl=NULL, bump_refresh=NULL) {
       armor_id<-if(input$armor_id%in%names(enemy_armor_catalog()))input$armor_id else "unarmoured"; armor_loot<-enemy_armor_catalog()[[armor_id]]$loot_id%||%""
       loot_ids<-intersect(input$loot_ids%||%character(),names(enemy_loot_catalog())); carried<-Filter(nzchar,vapply(attacks,function(a)as.character(a$loot_id%||%""),character(1))); loot_ids<-unique(c(loot_ids,carried,Filter(nzchar,armor_loot)))
       abilities <- setNames(lapply(c("str","dex","con","int","cha","bld_str"), function(s) as.integer(input[[paste0("ability_",s)]] %||% 10L)),c("str","dex","con","int","cha","bld_str"))
+      rolled_loot <- roll_loot_equipment_provenance(enemy_loot_records(loot_ids), input$enemy_type, input$characteristics %||% character())
+      for (i in seq_along(attacks)) {
+        loot_id <- as.character(attacks[[i]]$loot_id %||% "")
+        loot_name <- if (nzchar(loot_id) && loot_id %in% names(enemy_loot_catalog())) enemy_loot_catalog()[[loot_id]]$name %||% "" else ""
+        matched <- Filter(function(x) identical(as.character(x$name %||% ""), as.character(loot_name)), rolled_loot)
+        if (length(matched)) attacks[[i]]$material <- as.character(matched[[1]]$meta$material %||% attacks[[i]]$material %||% "")
+      }
       list(npc_id=npc_id %||% make_id(input$npc_name), name=trimws(input$npc_name), enemy_type=input$enemy_type,
         characteristics=as.list(input$characteristics %||% character()), hp_max=as.integer(input$npc_hp), ac=as.integer(input$npc_ac), movement_speed=as.integer(input$npc_speed), abilities=abilities,
-        armor_id=armor_id,attack_ids=attack_ids,attacks=attacks,loot_ids=loot_ids,loot=enemy_loot_records(loot_ids),gold=c(as.integer(input$gold_min%||%0),as.integer(input$gold_max%||%0)),
+        armor_id=armor_id,attack_ids=attack_ids,attacks=attacks,loot_ids=loot_ids,loot=rolled_loot,gold=c(as.integer(input$gold_min%||%0),as.integer(input$gold_max%||%0)),
         resistances=intersect(input$resistances%||%character(),enemy_damage_types()), immunities=intersect(input$immunities%||%character(),enemy_damage_types()), vulnerabilities=intersect(input$vulnerabilities%||%character(),enemy_damage_types()), condition_immunities=intersect(input$condition_immunities%||%character(),enemy_conditions()), tags=input$npc_tags)
     }
     persist <- function(rec, update=FALSE) {

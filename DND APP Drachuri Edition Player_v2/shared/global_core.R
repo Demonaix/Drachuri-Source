@@ -1418,11 +1418,19 @@ load_character_from_db <- function(char_id) {
   
   if (is.null(res) || nrow(res) == 0) return(NULL)
   
-  tryCatch(
+  char <- tryCatch(
     unserialize(res$state_blob[[1]]),
     error = function(e) {
       message("unserialize failed: ", e$message)
       NULL
+    }
+  )
+  if (is.null(char)) return(NULL)
+  tryCatch(
+    hydrate_character_inventory_relational(con, char, char_id),
+    error = function(e) {
+      message("relational inventory hydrate failed; using blob fallback: ", e$message)
+      char
     }
   )
 }
@@ -1479,33 +1487,35 @@ save_character_to_db <- function(char, char_id = NULL) {
   raw <- payload$state_blob
   name <- payload$name
   
-  tryCatch({
-    if (is.null(char_id)) {
-      res <- DBI::dbGetQuery(
-        con,
-        "
-        INSERT INTO character_blobs (player_id, char_name, state_blob)
-        VALUES ($1, $2, $3)
-        RETURNING id
-        ",
-        params = list("shared", name, list(raw))
-      )
-      as.character(res$id[[1]])
-    } else {
-      DBI::dbExecute(
-        con,
-        "
-        UPDATE character_blobs
-        SET state_blob = $1,
-            char_name = $2,
-            updated_at = NOW()
-        WHERE id = $3
-        ",
-        params = list(list(raw), name, char_id)
-      )
-      as.character(char_id)
-    }
-  }, error = function(e) {
+  tryCatch(DBI::dbWithTransaction(con, {
+    saved_id <- if (is.null(char_id)) {
+        res <- DBI::dbGetQuery(
+          con,
+          "
+          INSERT INTO character_blobs (player_id, char_name, state_blob)
+          VALUES ($1, $2, $3)
+          RETURNING id
+          ",
+          params = list("shared", name, list(raw))
+        )
+        as.character(res$id[[1]])
+      } else {
+        DBI::dbExecute(
+          con,
+          "
+          UPDATE character_blobs
+          SET state_blob = $1,
+              char_name = $2,
+              updated_at = NOW()
+          WHERE id = $3
+          ",
+          params = list(list(raw), name, char_id)
+        )
+        as.character(char_id)
+      }
+    sync_character_inventory_relational(con, char, saved_id)
+    saved_id
+  }), error = function(e) {
     message("save_character_to_db failed: ", e$message)
     NULL
   })
@@ -1643,6 +1653,11 @@ get_equipped_weapons_for_combat <- function(char) {
       dmg_type1 = as.character(meta$dmg_type1),
       damage2 = as.character(meta$damage2),
       dmg_type2 = as.character(meta$dmg_type2),
+      material = as.character(meta$material %||% ""),
+      material_attack_bonus = as.numeric(meta$material_attack_bonus %||% 0),
+      material_damage_modifier = as.numeric(meta$material_damage_modifier %||% 0),
+      quality_attack_bonus = as.numeric(meta$quality_attack_bonus %||% 0),
+      quality_damage_modifier = as.numeric(meta$quality_damage_modifier %||% 0),
       proficient = isTRUE(meta$proficient),
       stringsAsFactors = FALSE
     )
@@ -1661,8 +1676,12 @@ get_weapon_hit_bonus <- function(char, weapon_row) {
   prof_bonus <- if (isTRUE(weapon_row$proficient[1] %||% FALSE)) get_character_prof_bonus(char) else 0L
   flat_bonus <- suppressWarnings(as.integer(weapon_row$to_hit_bonus[1] %||% 0))
   if (is.na(flat_bonus)) flat_bonus <- 0L
+  equipment_bonus <- suppressWarnings(as.numeric(
+    weapon_row$material_attack_bonus[1] %||% 0
+  ) + as.numeric(weapon_row$quality_attack_bonus[1] %||% 0))
+  if (is.na(equipment_bonus)) equipment_bonus <- 0
   
-  as.integer(stat_mod + prof_bonus + flat_bonus)
+  as.integer(stat_mod + prof_bonus + flat_bonus + equipment_bonus)
 }
 
 armor_meta_defaults_global <- function(meta = NULL) {
@@ -1747,7 +1766,10 @@ calc_auto_ac_for_char <- function(char) {
   
   dex_add <- min(dex_mod, max_dex)
   defence_bonus <- if (identical(fighting_style, "Defence")) 1L else 0L
-  as.integer(base_ac + dex_add + if (prof) pb else 0L) + defence_bonus
+  equipment_bonus <- suppressWarnings(as.numeric(meta$material_armour_modifier %||% 0) +
+    as.numeric(meta$quality_armour_modifier %||% 0))
+  if (is.na(equipment_bonus)) equipment_bonus <- 0
+  as.integer(base_ac + dex_add + if (prof) pb else 0L + equipment_bonus) + defence_bonus
 }
 
 roll_dice_expr <- function(expr) {
