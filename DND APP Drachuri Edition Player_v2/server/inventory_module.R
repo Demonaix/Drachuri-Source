@@ -25,7 +25,8 @@ inventoryTabUI <- function(id) {
     
     div(
       id = ns("root"),
-      
+      tabsetPanel(
+      tabPanel("Items",
       div(
         class = "card",
         
@@ -54,7 +55,14 @@ inventoryTabUI <- function(id) {
           tags$summary("🧳 Item Bag"),
           uiOutput(ns("items_bag_ui"))
         )
-      )
+      )),
+      tabPanel("Stables",
+        div(class="card",
+          div(class="card-titlebar",h4("🐴 Stables")),
+          p("Animals are kept separately from carried inventory and do not count towards carry weight."),
+          uiOutput(ns("stable_ui"))
+        )
+      ))
     )
   )
 }
@@ -324,6 +332,24 @@ inventoryTabServer <- function(id, state, restoring, add_log, char_rev, session_
     # ----------------------------
     # UI outputs
     # ----------------------------
+    stable_animals <- reactive({
+      invalidateLater(5000,session)
+      cid<-current_trade_character()
+      if(!nzchar(cid)||isTRUE(state$offline_mode))return(data.frame())
+      get_character_stable(cid)
+    })
+
+    output$stable_ui <- renderUI({
+      animals<-stable_animals()
+      if(!is.data.frame(animals)||!nrow(animals))return(tags$em("No animals are currently registered to this stable."))
+      tagList(lapply(seq_len(nrow(animals)),function(i){a<-animals[i,,drop=FALSE]
+        div(class="item-card",div(class="item-head",div(
+          div(class="item-title",paste0(if(isTRUE(a$mountable[[1L]]))"🐎 " else "🐾 ",a$name[[1L]])),
+          div(class="item-sub",paste0(a$species[[1L]]," • ",if(isTRUE(a$mountable[[1L]]))"Mountable" else "Unmountable"," • Speed ",a$speed[[1L]]," ft • AC ",a$armour_class[[1L]]," • HP ",a$current_hp[[1L]],"/",a$max_hp[[1L]]," • Value ",a$gold_value[[1L]],"g"),tags$br(),a$description[[1L]])
+        )))
+      }))
+    })
+
     output$items_active_ui <- renderUI({
       df <- general_items()
       if (!nrow(df)) return(tags$em("No items."))

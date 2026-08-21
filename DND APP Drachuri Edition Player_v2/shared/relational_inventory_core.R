@@ -35,9 +35,34 @@ lookup_equipment_provenance <- function(material, build_quality, armour_type = N
 
 inventory_definition_kind <- function(type) {
   type <- tolower(trimws(as.character(type %||% "item")))
+  if (type %in% c("animal", "animals")) return("animal")
   if (type %in% c("weapon", "weapons")) return("weapon")
   if (type %in% c("armor", "armour", "shield")) return("armour")
   "item"
+}
+
+animal_catalogue_ready <- function(con) {
+  isTRUE(tryCatch(DBI::dbGetQuery(con,
+    "SELECT to_regclass('public.animals') IS NOT NULL AS ready")$ready[[1L]], error=function(e) FALSE))
+}
+
+get_character_stable <- function(character_id) {
+  con<-get_db_connection();if(is.null(con))return(data.frame());on.exit(release_db_connection(con),add=TRUE)
+  if(!animal_catalogue_ready(con))return(data.frame())
+  tryCatch(DBI::dbGetQuery(con,paste(
+    "SELECT ca.id,ca.animal_id,COALESCE(NULLIF(ca.custom_name,''),a.name) AS name,a.name AS breed,a.species,a.description,",
+    "a.speed,a.armour_class,a.max_hp,ca.current_hp,a.gold_value,a.mountable,ca.notes,ca.acquired_at",
+    "FROM character_animals ca JOIN animals a ON a.id=ca.animal_id WHERE ca.character_id=$1 ORDER BY lower(COALESCE(NULLIF(ca.custom_name,''),a.name))"
+  ),params=list(as.character(character_id))),error=function(e){message("get_character_stable failed: ",e$message);data.frame()})
+}
+
+give_animal_to_character <- function(character_id, animal_id, custom_name=NULL) {
+  con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE)
+  if(!animal_catalogue_ready(con))return(NULL)
+  tryCatch(DBI::dbGetQuery(con,paste(
+    "INSERT INTO character_animals(character_id,animal_id,custom_name,current_hp)",
+    "SELECT $1,$2,NULLIF(trim($3),''),max_hp FROM animals WHERE id=$2 RETURNING id"
+  ),params=list(as.character(character_id),as.character(animal_id),as.character(custom_name%||%""))),error=function(e){message("give_animal_to_character failed: ",e$message);NULL})
 }
 
 inventory_item_category <- function(item) {
@@ -108,7 +133,12 @@ save_control_catalogue_definition <- function(entry) {
     id <- as.character(entry$id); name <- as.character(entry$name); desc <- as.character(entry$desc %||% "")
     value <- as.numeric(entry$value %||% 0); weight <- as.numeric(entry$weight %||% 0)
     pools <- as.character(entry$pools %||% character())
-    if (kind == "weapon") {
+    if (kind == "animal") {
+      DBI::dbExecute(con,paste(
+        "INSERT INTO animals(id,name,species,description,speed,armour_class,max_hp,gold_value,mountable,updated_at)",
+        "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,now()) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,species=EXCLUDED.species,description=EXCLUDED.description,speed=EXCLUDED.speed,armour_class=EXCLUDED.armour_class,max_hp=EXCLUDED.max_hp,gold_value=EXCLUDED.gold_value,mountable=EXCLUDED.mountable,updated_at=now()"
+      ),params=list(id,name,as.character(meta$species%||%"Animal"),desc,as.integer(meta$speed%||%30L),as.integer(meta$armour_class%||%10L),as.integer(meta$max_hp%||%5L),value,isTRUE(meta$mountable)))
+    } else if (kind == "weapon") {
       type1 <- tolower(as.character(meta$dmg_type1 %||% "other")); type2 <- tolower(as.character(meta$dmg_type2 %||% "other"))
       valid <- c(enemy_damage_types(), "other"); if (!type1 %in% valid) type1 <- "other"; if (!type2 %in% valid) type2 <- "other"
       DBI::dbExecute(con, paste(
@@ -134,11 +164,12 @@ save_control_catalogue_definition <- function(entry) {
 get_control_catalogue_definitions <- function() {
   con<-get_db_connection();if(is.null(con))return(list());on.exit(release_db_connection(con),add=TRUE)
   tryCatch({
-    weapons<-DBI::dbGetQuery(con,"SELECT * FROM weapons ORDER BY lower(name)");armour<-DBI::dbGetQuery(con,"SELECT * FROM armour ORDER BY lower(name)");items<-DBI::dbGetQuery(con,"SELECT * FROM items ORDER BY lower(name)")
+    weapons<-DBI::dbGetQuery(con,"SELECT * FROM weapons ORDER BY lower(name)");armour<-DBI::dbGetQuery(con,"SELECT * FROM armour ORDER BY lower(name)");items<-DBI::dbGetQuery(con,"SELECT * FROM items ORDER BY lower(name)");animals<-if(animal_catalogue_ready(con))DBI::dbGetQuery(con,"SELECT * FROM animals ORDER BY lower(name)")else data.frame()
     out<-list()
     if(nrow(weapons))for(i in seq_len(nrow(weapons))){x<-weapons[i,,drop=FALSE];magic<-enemy_db_json(x$magical_properties[[1L]]%||%NULL,list());meta<-c(list(stat=as.character(x$stat[[1L]]%||%"str"),adv=as.character(x$advantage[[1L]]%||%"Normal"),to_hit_bonus=as.integer(x$to_hit_bonus[[1L]]%||%0L),damage1=as.character(x$damage_1[[1L]]%||%"1d4"),dmg_type1=as.character(x$damage_type_1[[1L]]%||%"other"),damage2=as.character(x$damage_2[[1L]]%||%""),dmg_type2=as.character(x$damage_type_2[[1L]]%||%"other"),proficient=isTRUE(x$proficient[[1L]])),magic);out[[length(out)+1L]]<-list(id=as.character(x$id[[1L]]),name=as.character(x$name[[1L]]),type="weapon",desc=as.character(x$description[[1L]]%||%""),value=as.numeric(x$value[[1L]]%||%0),weight=as.numeric(x$weight[[1L]]%||%0),qty=1,pools=enemy_db_values(x$pools[[1L]]%||%character()),meta=meta)}
     if(nrow(armour))for(i in seq_len(nrow(armour))){x<-armour[i,,drop=FALSE];magic<-enemy_db_json(x$magical_properties[[1L]]%||%NULL,list());meta<-c(list(base_ac=as.integer(x$base_ac[[1L]]%||%10L),type=as.character(x$armour_type[[1L]]%||%"Light"),custom_max_dex=as.integer(x$max_dex_bonus[[1L]]%||%0L),proficient=isTRUE(x$proficient[[1L]]),equipment_slot=as.character(x$equipment_slot[[1L]]%||%if(as.character(x$armour_type[[1L]])=="Shield")"shield"else"body"),ac_bonus=as.integer(x$ac_bonus[[1L]]%||%0L)),magic);out[[length(out)+1L]]<-list(id=as.character(x$id[[1L]]),name=as.character(x$name[[1L]]),type="armor",desc=as.character(x$description[[1L]]%||%""),value=as.numeric(x$value[[1L]]%||%0),weight=as.numeric(x$weight[[1L]]%||%0),qty=1,pools=enemy_db_values(x$pools[[1L]]%||%character()),meta=meta)}
     if(nrow(items))for(i in seq_len(nrow(items))){x<-items[i,,drop=FALSE];category<-as.character(x$category[[1L]]%||%"mundane_loot");magic<-enemy_db_json(x$magical_properties[[1L]]%||%NULL,list());meta<-c(list(category=category,effect=as.character(x$effect[[1L]]%||%""),effect_amount=as.character(x$effect_amount[[1L]]%||%""),ration_value=as.integer(x$ration_value[[1L]]%||%0L),shelf_life_days=as.integer(x$shelf_life_days[[1L]]%||%0L)),magic);out[[length(out)+1L]]<-list(id=as.character(x$id[[1L]]),name=as.character(x$name[[1L]]),type=if(category%in%c("food","consumable"))"consumable"else"item",desc=as.character(x$description[[1L]]%||%""),value=as.numeric(x$value[[1L]]%||%0),weight=as.numeric(x$weight[[1L]]%||%0),qty=1,pools=enemy_db_values(x$pools[[1L]]%||%character()),meta=meta)}
+    if(nrow(animals))for(i in seq_len(nrow(animals))){x<-animals[i,,drop=FALSE];out[[length(out)+1L]]<-list(id=as.character(x$id[[1L]]),name=as.character(x$name[[1L]]),type="animal",desc=as.character(x$description[[1L]]%||%""),value=as.numeric(x$gold_value[[1L]]%||%0),weight=0,qty=1,pools=character(),meta=list(category="animal",species=as.character(x$species[[1L]]),speed=as.integer(x$speed[[1L]]),armour_class=as.integer(x$armour_class[[1L]]),max_hp=as.integer(x$max_hp[[1L]]),mountable=isTRUE(x$mountable[[1L]])))}
     out
   },error=function(e){message("get_control_catalogue_definitions failed: ",e$message);list()})
 }
