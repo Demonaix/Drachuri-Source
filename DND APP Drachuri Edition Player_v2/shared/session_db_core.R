@@ -1598,6 +1598,18 @@ complete_session_long_rest <- function(cycle_id,character_id) {
   tryCatch({DBI::dbExecute(con,"INSERT INTO session_rest_completions(rest_cycle_id,character_id) VALUES($1,$2) ON CONFLICT DO NOTHING",params=list(as.integer(cycle_id),as.character(character_id)));DBI::dbGetQuery(con,paste("SELECT count(*)::integer AS completed,(SELECT count(*)::integer FROM session_players sp JOIN session_rest_cycles rc ON rc.session_id=sp.session_id WHERE rc.id=$1 AND sp.is_active=TRUE) AS active FROM session_rest_completions WHERE rest_cycle_id=$1"),params=list(as.integer(cycle_id)))[1,,drop=FALSE]},error=function(e){message("complete_session_long_rest failed: ",e$message);NULL})
 }
 
+get_session_supplies <- function(session_id,defaults=list()) {
+  con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE)
+  value<-function(name,fallback){x<-suppressWarnings(as.integer(defaults[[name]]%||%fallback));if(is.na(x)||x<0L)fallback else x}
+  tryCatch(DBI::dbGetQuery(con,paste("INSERT INTO session_supplies(session_id,wood,wood_max,water,water_max,rations,rations_max)","VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(session_id) DO UPDATE SET session_id=EXCLUDED.session_id RETURNING *"),params=list(as.integer(session_id),value("wood",3L),value("wood_max",10L),value("water",3L),value("water_max",5L),value("rations",3L),value("rations_max",5L)))[1,,drop=FALSE],error=function(e){message("get_session_supplies failed: ",e$message);NULL})
+}
+
+adjust_session_supply <- function(session_id,resource,amount=0L,fill=FALSE,defaults=list()) {
+  resource<-match.arg(as.character(resource),c("wood","water","rations"));row<-get_session_supplies(session_id,defaults);if(is.null(row))return(NULL)
+  con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE)
+  tryCatch(DBI::dbWithTransaction(con,{locked<-DBI::dbGetQuery(con,"SELECT * FROM session_supplies WHERE session_id=$1 FOR UPDATE",params=list(as.integer(session_id)));before<-as.integer(locked[[resource]][[1L]]);maximum<-as.integer(locked[[paste0(resource,"_max")]][[1L]]);after<-if(isTRUE(fill))maximum else max(0L,min(maximum,before+as.integer(amount)));sql<-paste0("UPDATE session_supplies SET ",resource,"=$2,updated_at=now() WHERE session_id=$1 RETURNING *");updated<-DBI::dbGetQuery(con,sql,params=list(as.integer(session_id),after))[1,,drop=FALSE];list(row=updated,before=before,after=after,applied=!identical(before,after))}),error=function(e){message("adjust_session_supply failed: ",e$message);NULL})
+}
+
 get_active_encounter_conditions <- function(encounter_id, target_actor_id = NULL) {
   con <- get_db_connection()
   if (is.null(con)) return(data.frame())

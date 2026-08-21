@@ -434,6 +434,11 @@ restTabServer <- function(
         try(add_log(msg = msg, toast = toast, flash = flash), silent = TRUE)
       } else message(msg)
     }
+    supply_defaults<-function(x){list(wood=x$resources$wood$cur%||%3L,wood_max=x$resources$wood$max%||%10L,water=x$resources$water$cur%||%3L,water_max=x$resources$water$max%||%5L,rations=x$resources$rations$cur%||%3L,rations_max=x$resources$rations$max%||%5L)}
+    online_session_id<-function(){sid<-suppressWarnings(as.integer(state$active_session_id%||%NA));if(isTRUE(state$offline_mode)||is.na(sid)||sid<1L)NA_integer_ else sid}
+    apply_supply_row<-function(x,row){if(is.null(row)||!is.data.frame(row)||!nrow(row))return(x);for(resource in c("wood","water","rations")){x$resources[[resource]]$cur<-as.integer(row[[resource]][[1L]]);x$resources[[resource]]$max<-as.integer(row[[paste0(resource,"_max")]][[1L]])};x}
+    change_supply<-function(x,resource,amount=0L,fill=FALSE){sid<-online_session_id();if(!is.na(sid)){result<-adjust_session_supply(sid,resource,amount,fill,supply_defaults(x));if(is.null(result))return(NULL);result$char<-apply_supply_row(x,result$row);return(result)};before<-as.integer(x$resources[[resource]]$cur%||%0L);maximum<-as.integer(x$resources[[resource]]$max%||%if(resource=="wood")10L else 5L);after<-if(isTRUE(fill))maximum else max(0L,min(maximum,before+as.integer(amount)));x$resources[[resource]]$cur<-after;list(char=x,before=before,after=after,applied=!identical(before,after))}
+    observe({invalidateLater(2500,session);if(isTRUE(restoring()))return();sid<-online_session_id();if(is.na(sid))return();x<-validate_character(state$char);row<-get_session_supplies(sid,supply_defaults(x));updated<-apply_supply_row(x,row);old<-vapply(c("wood","water","rations"),function(k)as.integer(x$resources[[k]]$cur%||%0L),integer(1));new<-vapply(c("wood","water","rations"),function(k)as.integer(updated$resources[[k]]$cur%||%0L),integer(1));if(!identical(old,new))state$char<-updated})
     
     
     observe({
@@ -493,16 +498,14 @@ restTabServer <- function(
     # Remove rations
     observeEvent(input$remove_rations_btn, {
       x <- validate_character(state$char)
-      x$resources$rations$cur <- max(0, (x$resources$rations$cur %||% 0) - 1)
-      state$char <- x
+      result<-change_supply(x,"rations",-1L);if(is.null(result))return(log_safe("⚠️ Party supplies unavailable",TRUE,"red"));state$char<-result$char
       log_safe("➖ Removed 1 ration", TRUE, "gold")
     })
     
     # Remove water
     observeEvent(input$remove_water_btn, {
       x <- validate_character(state$char)
-      x$resources$water$cur <- max(0, (x$resources$water$cur %||% 0) - 1)
-      state$char <- x
+      result<-change_supply(x,"water",-1L);if(is.null(result))return(log_safe("⚠️ Party supplies unavailable",TRUE,"red"));state$char<-result$char
       log_safe("➖ Removed water", TRUE, "blue")
     })
     
@@ -610,12 +613,7 @@ restTabServer <- function(
       # GATHER LOGIC
       # ----------------------------
       gain <- sample(1:3,1)
-      max_w <- x$resources$wood$max %||% 10
-      cur   <- x$resources$wood$cur %||% 0
-      
-      x$resources$wood$cur <- min(max_w, cur + gain)
-      
-      state$char <- x
+      result<-change_supply(x,"wood",gain);if(is.null(result))return(log_safe("⚠️ Party supplies unavailable",TRUE,"red"));state$char<-result$char
       
       log_safe(paste0("🌲 Gathered ", gain, " wood"), TRUE, "green")
     })
@@ -758,13 +756,11 @@ restTabServer <- function(
       x <- validate_character(state$char)
       
       wood <- x$resources$wood$cur %||% 0
-      
       if (wood <= 0) {
         log_safe("⚠️ No wood to light a fire", TRUE, "gold")
         return()
       }
-      
-      x$resources$wood$cur <- wood - 1
+      result<-change_supply(x,"wood",-1L);if(is.null(result)||!isTRUE(result$applied))return(log_safe("⚠️ No party wood available",TRUE,"gold"));x<-result$char
       x$status$has_fire <- TRUE
       
       state$char <- x
@@ -786,11 +782,7 @@ restTabServer <- function(
     # ----------------------------
     observeEvent(input$add_rations_btn, {
       x <- validate_character(state$char)
-      max_r <- x$resources$rations$max %||% 5
-      cur   <- x$resources$rations$cur %||% 0
-      
-      x$resources$rations$cur <- min(max_r, cur + 1)
-      state$char <- x
+      result<-change_supply(x,"rations",1L);if(is.null(result))return(log_safe("⚠️ Party supplies unavailable",TRUE,"red"));state$char<-result$char
       
       log_safe("➕ Gained 1 ration", TRUE, "green")
     })
@@ -806,7 +798,7 @@ restTabServer <- function(
         return()
       }
       
-      x$resources$rations$cur <- cur - 1
+      result<-change_supply(x,"rations",-1L);if(is.null(result)||!isTRUE(result$applied))return(log_safe("⚠️ No party rations available",TRUE,"gold"));x<-result$char
       x$status$ate_today <- TRUE
       
       state$char <- x
@@ -826,10 +818,7 @@ restTabServer <- function(
       }
       
       gain <- sample(0:2,1)
-      max_r <- x$resources$rations$max %||% 5
-      cur   <- x$resources$rations$cur %||% 0
-      
-      x$resources$rations$cur <- min(max_r, cur + gain)
+      result<-change_supply(x,"rations",gain);if(is.null(result))return(log_safe("⚠️ Party supplies unavailable",TRUE,"red"));x<-result$char
       x$status$foraged_today <- TRUE
       
       state$char <- x
@@ -842,11 +831,7 @@ restTabServer <- function(
     # ----------------------------
     observeEvent(input$add_water_btn, {
       x <- validate_character(state$char)
-      max_w <- x$resources$water$max %||% 5
-      cur   <- x$resources$water$cur %||% 0
-      
-      x$resources$water$cur <- min(max_w, cur + 1)
-      state$char <- x
+      result<-change_supply(x,"water",1L);if(is.null(result))return(log_safe("⚠️ Party supplies unavailable",TRUE,"red"));state$char<-result$char
       
       log_safe("💧 Gained water", TRUE, "blue")
     })
@@ -862,7 +847,7 @@ restTabServer <- function(
         return()
       }
       
-      x$resources$water$cur <- cur - 1
+      result<-change_supply(x,"water",-1L);if(is.null(result)||!isTRUE(result$applied))return(log_safe("⚠️ No party water available",TRUE,"gold"));x<-result$char
       x$status$drank_today <- TRUE
       
       state$char <- x
@@ -874,10 +859,7 @@ restTabServer <- function(
       x <- validate_character(state$char)
       session$sendCustomMessage(session$ns("play_rest_sfx"), list(name = "refill"))
       
-      max_w <- x$resources$water$max %||% 5
-      x$resources$water$cur <- max_w
-      
-      state$char <- x
+      result<-change_supply(x,"water",fill=TRUE);if(is.null(result))return(log_safe("⚠️ Party supplies unavailable",TRUE,"red"));state$char<-result$char
       
       log_safe("🏞️ Water refilled to max", TRUE, "blue")
     })
