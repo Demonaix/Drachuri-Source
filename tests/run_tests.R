@@ -44,10 +44,11 @@ load_functions(global_file, c(
   "calc_auto_ac_for_char", "get_effective_max_hp", "get_weapon_hit_bonus",
   "starting_character_hp", "camp_gathering_yield", "consume_heart_sindre",
   "character_subclass_names", "magical_identity_labels", "skill_identity_labels",
-  "character_magic_types", "bloodlust_bite_required", "merchant_haggle_terms"
+  "character_magic_types", "bloodlust_bite_required", "merchant_haggle_terms",
+  "food_item_meta", "food_rations_available", "consume_food_ration", "spoil_character_food"
 ))
 load_functions(relational_inventory_file, c("equipment_material_is_eligible", "inventory_item_category"))
-load_functions(enemy_generator_file, c("resolve_layered_damage_traits", "enemy_is_animal", "roll_enemy_mundane_loot"))
+load_functions(enemy_generator_file, c("resolve_layered_damage_traits", "enemy_is_animal", "roll_enemy_mundane_loot", "roll_enemy_food_loot"))
 load_functions(
   session_file,
   c(
@@ -1183,6 +1184,19 @@ test("non-animal NPCs receive a small universal mundane loot roll", {
   stopifnot(length(humanoid)==2L,all(humanoid%in%c("spoon","rope","torch")))
   stopifnot(!length(test_env$roll_enemy_mundane_loot(catalogue,"Animal",character(),count=2L)))
   stopifnot(!length(test_env$roll_enemy_mundane_loot(catalogue,"Bandit","Animal",count=2L)))
+})
+
+test("food supplies rations, is consumed earliest-first, and spoils by campaign day", {
+  food<-data.frame(id=c("bread","cheese"),name=c("Bread","Cheese"),type="consumable",desc="",value=1,weight=1,qty=1,equipped=FALSE,in_bag=FALSE,meta=I(list(list(category="food",ration_value=2L,shelf_life_days=1L,food_acquired_day=5L),list(category="food",ration_value=4L,shelf_life_days=10L,food_acquired_day=5L))),edit=FALSE,stringsAsFactors=FALSE)
+  x<-list(meta=list(day=5L),inventory=list(items=food));stopifnot(test_env$food_rations_available(x)==6L)
+  eaten<-test_env$consume_food_ration(x);stopifnot(eaten$applied,eaten$item_name=="Bread",eaten$remaining==5L)
+  spoiled<-test_env$spoil_character_food(eaten$char,7L);stopifnot("Bread"%in%spoiled$spoiled,test_env$food_rations_available(spoiled$char,7L)==4L)
+})
+
+test("non-animal NPCs receive food but animal NPCs do not", {
+  catalogue<-list(apple=list(meta=list(category="food")),bread=list(meta=list(category="food")),rope=list(meta=list(category="mundane_loot")))
+  stopifnot(length(test_env$roll_enemy_food_loot(catalogue,"Bandit",character(),count=2L))==2L)
+  stopifnot(!length(test_env$roll_enemy_food_loot(catalogue,"Animal",character(),count=1L)))
 })
 
 test("merchant temperament and haggling produce bounded buy and sell prices", {

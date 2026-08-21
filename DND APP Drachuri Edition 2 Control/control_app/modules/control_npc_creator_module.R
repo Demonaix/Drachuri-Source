@@ -110,7 +110,7 @@ controlNpcCreatorServer <- function(id, ctrl=NULL, bump_refresh=NULL) {
       templates(tryCatch(DBI::dbGetQuery(con,"select * from npc_templates order by lower(enemy_type), lower(name)"),error=function(e)data.frame()))
     }
     apply_blueprint <- function(b, name=NULL, add_mundane=TRUE) {
-      if(isTRUE(add_mundane))b$loot_ids<-unique(c(b$loot_ids%||%character(),roll_enemy_mundane_loot(inventory_catalog(),provenance_enemy_type(),b$characteristics%||%character())))
+      if(isTRUE(add_mundane))b$loot_ids<-unique(c(b$loot_ids%||%character(),roll_enemy_mundane_loot(inventory_catalog(),provenance_enemy_type(),b$characteristics%||%character()),roll_enemy_food_loot(inventory_catalog(),provenance_enemy_type(),b$characteristics%||%character())))
       feature_equipment_overrides(b$equipment_overrides%||%list())
       feature_names<-function(ids){defs<-npc_features();vapply(ids,function(id){hit<-Filter(function(x)identical(x$id,id),defs);if(length(hit))as.character(hit[[1]]$name%||%id)else gsub("_"," ",id)},character(1))}
       generated_name<-paste(c(as.character(b$enemy_type%||%"Enemy"),feature_names(b$characteristics%||%character())),collapse=" ")

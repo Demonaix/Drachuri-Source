@@ -114,6 +114,15 @@ roll_enemy_mundane_loot <- function(catalogue, enemy_type="", characteristics=ch
   if(!count)character()else sample(mundane,count,replace=FALSE)
 }
 
+roll_enemy_food_loot <- function(catalogue, enemy_type="", characteristics=character(), count=NULL) {
+  if(enemy_is_animal(enemy_type,characteristics)||!length(catalogue))return(character())
+  food<-names(Filter(function(x)identical(as.character((x$meta%||%list())$category%||%""),"food"),catalogue))
+  if(!length(food))return(character())
+  if(is.null(count))count<-sample(1:3,1,prob=c(.6,.3,.1))
+  count<-max(0L,min(length(food),as.integer(count%||%0L)))
+  if(!count)character()else sample(food,count,replace=FALSE)
+}
+
 resolve_enemy_blueprint <- function(enemy_type="Custom", characteristics=character()) {
   types<-enemy_generator_types(); mods<-enemy_generator_characteristics(); type<-if(enemy_type%in%names(types))enemy_type else "Custom"; out<-types[[type]]
   out$enemy_type<-type; out$characteristics<-unique(intersect(as.character(characteristics),names(mods))); out$attack_ids<-as.character(out$attack_ids%||%character()); out$loot_ids<-as.character(out$loot_ids%||%character())

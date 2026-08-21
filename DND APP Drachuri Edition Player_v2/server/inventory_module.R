@@ -176,6 +176,7 @@ inventoryTabServer <- function(id, state, restoring, add_log, char_rev, session_
         as.character(type %||% "item"),
         "weapon" = "🗡️",
         "armor"  = "🛡️",
+        "consumable" = "🍎",
         "blood"  = "🩸",
         "heart"  = "❤️",
         "glyph"  = "🔮",
@@ -304,6 +305,7 @@ inventoryTabServer <- function(id, state, restoring, add_log, char_rev, session_
                 " • ", i$value %||% 0, "g"
               ),
               if (isTRUE(i$equipped)) tags$span(" • EQUIPPED"),
+              if(identical(as.character((i$meta%||%list())$category%||%""),"food"))tags$span(paste0(" • ",(i$meta%||%list())$food_rations_remaining%||%((i$meta%||%list())$ration_value%||%1)*(i$qty%||%1)," ration(s) • fresh through day ",(i$meta%||%list())$fresh_until_day%||%((validate_character(state$char)$meta$day%||%1)+((i$meta%||%list())$shelf_life_days%||%3)))),
               tags$br(),
               i$desc %||% ""
             )

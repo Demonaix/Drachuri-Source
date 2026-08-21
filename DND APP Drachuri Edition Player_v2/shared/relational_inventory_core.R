@@ -92,10 +92,10 @@ inventory_definition_id <- function(con, kind, item) {
       isTRUE(meta$proficient %||% TRUE)))
   } else {
     DBI::dbExecute(con, paste(
-      "INSERT INTO items(id,name,item_type,description,value,weight,effect,effect_amount,category)",
-      "VALUES($1,$2,'item',$3,$4,$5,$6,$7,$8) ON CONFLICT(id) DO NOTHING"
+      "INSERT INTO items(id,name,item_type,description,value,weight,effect,effect_amount,category,ration_value,shelf_life_days)",
+      "VALUES($1,$2,'item',$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(id) DO NOTHING"
     ), params = list(id, name, desc, value, weight, as.character(meta$effect %||% ""),
-      as.character(meta$effect_amount %||% ""), inventory_item_category(item)))
+      as.character(meta$effect_amount %||% ""), inventory_item_category(item),as.integer(meta$ration_value%||%0L),as.integer(meta$shelf_life_days%||%0L)))
   }
   id
 }
@@ -122,9 +122,9 @@ save_control_catalogue_definition <- function(entry) {
       ), params=list(id,name,desc,value,weight,as.integer(meta$base_ac%||%10L),armour_type,as.integer(meta$custom_max_dex%||%0L),isTRUE(meta$proficient%||%TRUE),enemy_pg_array(pools)))
     } else {
       DBI::dbExecute(con, paste(
-        "INSERT INTO items(id,name,item_type,description,value,weight,effect,effect_amount,pools,category,updated_at)",
-        "VALUES($1,$2,'item',$3,$4,$5,$6,$7,$8::text[],$9,now()) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,description=EXCLUDED.description,value=EXCLUDED.value,weight=EXCLUDED.weight,effect=EXCLUDED.effect,effect_amount=EXCLUDED.effect_amount,pools=EXCLUDED.pools,category=EXCLUDED.category,updated_at=now()"
-      ), params=list(id,name,desc,value,weight,as.character(meta$effect%||%""),as.character(meta$effect_amount%||%""),enemy_pg_array(pools),inventory_item_category(data.frame(type=entry$type%||%"item",meta=I(list(meta))))))
+        "INSERT INTO items(id,name,item_type,description,value,weight,effect,effect_amount,pools,category,ration_value,shelf_life_days,updated_at)",
+        "VALUES($1,$2,'item',$3,$4,$5,$6,$7,$8::text[],$9,$10,$11,now()) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,description=EXCLUDED.description,value=EXCLUDED.value,weight=EXCLUDED.weight,effect=EXCLUDED.effect,effect_amount=EXCLUDED.effect_amount,pools=EXCLUDED.pools,category=EXCLUDED.category,ration_value=EXCLUDED.ration_value,shelf_life_days=EXCLUDED.shelf_life_days,updated_at=now()"
+      ), params=list(id,name,desc,value,weight,as.character(meta$effect%||%""),as.character(meta$effect_amount%||%""),enemy_pg_array(pools),inventory_item_category(data.frame(type=entry$type%||%"item",meta=I(list(meta)))),as.integer(meta$ration_value%||%0L),as.integer(meta$shelf_life_days%||%0L)))
     }
     TRUE
   }, error=function(e){message("save_control_catalogue_definition failed: ",e$message);FALSE})
@@ -137,7 +137,7 @@ get_control_catalogue_definitions <- function() {
     out<-list()
     if(nrow(weapons))for(i in seq_len(nrow(weapons))){x<-weapons[i,,drop=FALSE];out[[length(out)+1L]]<-list(id=as.character(x$id[[1L]]),name=as.character(x$name[[1L]]),type="weapon",desc=as.character(x$description[[1L]]%||%""),value=as.numeric(x$value[[1L]]%||%0),weight=as.numeric(x$weight[[1L]]%||%0),qty=1,pools=enemy_db_values(x$pools[[1L]]%||%character()),meta=list(stat=as.character(x$stat[[1L]]%||%"str"),adv=as.character(x$advantage[[1L]]%||%"Normal"),to_hit_bonus=as.integer(x$to_hit_bonus[[1L]]%||%0L),damage1=as.character(x$damage_1[[1L]]%||%"1d4"),dmg_type1=as.character(x$damage_type_1[[1L]]%||%"other"),damage2=as.character(x$damage_2[[1L]]%||%""),dmg_type2=as.character(x$damage_type_2[[1L]]%||%"other"),proficient=isTRUE(x$proficient[[1L]])))}
     if(nrow(armour))for(i in seq_len(nrow(armour))){x<-armour[i,,drop=FALSE];out[[length(out)+1L]]<-list(id=as.character(x$id[[1L]]),name=as.character(x$name[[1L]]),type="armor",desc=as.character(x$description[[1L]]%||%""),value=as.numeric(x$value[[1L]]%||%0),weight=as.numeric(x$weight[[1L]]%||%0),qty=1,pools=enemy_db_values(x$pools[[1L]]%||%character()),meta=list(base_ac=as.integer(x$base_ac[[1L]]%||%10L),type=as.character(x$armour_type[[1L]]%||%"Light"),custom_max_dex=as.integer(x$max_dex_bonus[[1L]]%||%0L),proficient=isTRUE(x$proficient[[1L]])))}
-    if(nrow(items))for(i in seq_len(nrow(items))){x<-items[i,,drop=FALSE];category<-as.character(x$category[[1L]]%||%"mundane_loot");out[[length(out)+1L]]<-list(id=as.character(x$id[[1L]]),name=as.character(x$name[[1L]]),type=if(category%in%c("food","consumable"))"consumable"else"item",desc=as.character(x$description[[1L]]%||%""),value=as.numeric(x$value[[1L]]%||%0),weight=as.numeric(x$weight[[1L]]%||%0),qty=1,pools=enemy_db_values(x$pools[[1L]]%||%character()),meta=list(category=category,effect=as.character(x$effect[[1L]]%||%""),effect_amount=as.character(x$effect_amount[[1L]]%||%"")))}
+    if(nrow(items))for(i in seq_len(nrow(items))){x<-items[i,,drop=FALSE];category<-as.character(x$category[[1L]]%||%"mundane_loot");out[[length(out)+1L]]<-list(id=as.character(x$id[[1L]]),name=as.character(x$name[[1L]]),type=if(category%in%c("food","consumable"))"consumable"else"item",desc=as.character(x$description[[1L]]%||%""),value=as.numeric(x$value[[1L]]%||%0),weight=as.numeric(x$weight[[1L]]%||%0),qty=1,pools=enemy_db_values(x$pools[[1L]]%||%character()),meta=list(category=category,effect=as.character(x$effect[[1L]]%||%""),effect_amount=as.character(x$effect_amount[[1L]]%||%""),ration_value=as.integer(x$ration_value[[1L]]%||%0L),shelf_life_days=as.integer(x$shelf_life_days[[1L]]%||%0L)))}
     out
   },error=function(e){message("get_control_catalogue_definitions failed: ",e$message);list()})
 }

@@ -1532,6 +1532,35 @@ inventory_get <- function(x) {
   inventory_normalize(x$inventory$items)
 }
 
+food_item_meta <- function(meta, qty=1, current_day=1L) {
+  meta<-if(is.list(meta))meta else list();ration_value<-max(1L,as.integer(meta$ration_value%||%1L));shelf_life<-max(0L,as.integer(meta$shelf_life_days%||%3L))
+  if(is.null(meta$food_acquired_day))meta$food_acquired_day<-as.integer(current_day)
+  if(is.null(meta$fresh_until_day))meta$fresh_until_day<-as.integer(meta$food_acquired_day)+shelf_life
+  if(is.null(meta$food_rations_remaining))meta$food_rations_remaining<-max(0,as.numeric(qty%||%1)*ration_value)
+  meta$ration_value<-ration_value;meta$shelf_life_days<-shelf_life;meta
+}
+
+food_rations_available <- function(x, current_day=NULL) {
+  x<-validate_character(x);day<-as.integer(current_day%||%x$meta$day%||%1L);inv<-inventory_normalize(x$inventory$items);total<-0
+  if(nrow(inv))for(i in seq_len(nrow(inv))){m<-inv$meta[[i]]%||%list();if(identical(as.character(m$category%||%""),"food")){m<-food_item_meta(m,inv$qty[[i]],day);if(day<=as.integer(m$fresh_until_day))total<-total+as.numeric(m$food_rations_remaining)}}
+  as.integer(floor(total))
+}
+
+consume_food_ration <- function(x, current_day=NULL) {
+  x<-validate_character(x);day<-as.integer(current_day%||%x$meta$day%||%1L);inv<-inventory_normalize(x$inventory$items);candidates<-list()
+  if(nrow(inv))for(i in seq_len(nrow(inv))){m<-inv$meta[[i]]%||%list();if(identical(as.character(m$category%||%""),"food")){m<-food_item_meta(m,inv$qty[[i]],day);inv$meta[[i]]<-m;if(day<=as.integer(m$fresh_until_day)&&as.numeric(m$food_rations_remaining)>0)candidates[[length(candidates)+1L]]<-c(i=i,expiry=as.integer(m$fresh_until_day))}}
+  if(!length(candidates))return(list(char=x,applied=FALSE,item_name="",remaining=0L))
+  pick<-candidates[[which.min(vapply(candidates,function(z)z[["expiry"]],numeric(1)))]];i<-as.integer(pick[["i"]]);m<-inv$meta[[i]];m$food_rations_remaining<-as.numeric(m$food_rations_remaining)-1;item_name<-inv$name[[i]]
+  if(m$food_rations_remaining<=0)inv<-inv[-i,,drop=FALSE]else{inv$meta[[i]]<-m;inv$qty[[i]]<-ceiling(m$food_rations_remaining/max(1,m$ration_value))}
+  x$inventory$items<-inventory_normalize(inv);list(char=x,applied=TRUE,item_name=item_name,remaining=food_rations_available(x,day))
+}
+
+spoil_character_food <- function(x, current_day=NULL) {
+  x<-validate_character(x);day<-as.integer(current_day%||%x$meta$day%||%1L);inv<-inventory_normalize(x$inventory$items);spoiled<-character();keep<-rep(TRUE,nrow(inv))
+  if(nrow(inv))for(i in seq_len(nrow(inv))){m<-inv$meta[[i]]%||%list();if(identical(as.character(m$category%||%""),"food")){m<-food_item_meta(m,inv$qty[[i]],max(1L,day-1L));inv$meta[[i]]<-m;if(day>as.integer(m$fresh_until_day)){keep[[i]]<-FALSE;spoiled<-c(spoiled,inv$name[[i]])}}}
+  x$inventory$items<-inventory_normalize(inv[keep,,drop=FALSE]);list(char=x,spoiled=spoiled)
+}
+
 load_character_from_db <- function(char_id) {
   con <- get_db_connection()
   if (is.null(con)) return(NULL)
@@ -2294,6 +2323,9 @@ advance_day_all <- function(x, add_log = NULL, state = NULL) {
   x$meta <- x$meta %||% list()
   day <- as.integer(x$meta$day %||% 1)
   x$meta$day <- day + 1
+
+  spoilage<-spoil_character_food(x,x$meta$day);x<-spoilage$char
+  if(length(spoilage$spoiled))log_safe(paste0("🥀 Spoiled food discarded: ",paste(spoilage$spoiled,collapse=", "),"."),flash="gold")
   
   log_safe(paste0("📅 Day advanced to ", x$meta$day), toast = TRUE)
   

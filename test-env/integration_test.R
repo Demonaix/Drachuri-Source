@@ -271,8 +271,9 @@ con<-get_db_connection()
 DBI::dbExecute(con,"INSERT INTO items(id,name,item_type,category) VALUES('qa_mundane','QA Rope','item','mundane_loot')")
 category_rows<-DBI::dbGetQuery(con,"SELECT category FROM items WHERE category='mundane_loot' LIMIT 1")
 mundane_count<-DBI::dbGetQuery(con,"SELECT count(*) AS n FROM items WHERE id LIKE 'mundane\\_%' ESCAPE '\\'")$n[[1L]]
+food_summary<-DBI::dbGetQuery(con,"SELECT count(*) AS n,min(ration_value) AS min_rations,max(ration_value) AS max_rations,min(shelf_life_days) AS min_shelf,max(shelf_life_days) AS max_shelf FROM items WHERE id LIKE 'food\\_%' ESCAPE '\\'")
 release_db_connection(con)
-stopifnot(nrow(category_rows)==1L,mundane_count==100L)
+stopifnot(nrow(category_rows)==1L,mundane_count==100L,food_summary$n[[1L]]==100L,food_summary$min_rations[[1L]]>=1L,food_summary$max_rations[[1L]]>food_summary$min_rations[[1L]],food_summary$max_shelf[[1L]]>food_summary$min_shelf[[1L]])
 
 stopifnot(isTRUE(end_encounter_combat(1L)))
 ended_snapshot <- get_player_live_snapshot(1L, "1002")

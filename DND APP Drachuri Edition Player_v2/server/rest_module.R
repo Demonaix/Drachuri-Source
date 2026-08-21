@@ -597,8 +597,8 @@ restTabServer <- function(
     output$rations_display <- renderUI({
       x <- validate_character(state$char)
       r <- x$resources$rations
-      
-      tags$div(sprintf("Total: %d / %d", r$cur %||% 0, r$max %||% 5))
+      food<-food_rations_available(x)
+      tags$div(sprintf("Carried food: %d ration%s • Party preserved rations: %d / %d",food,if(food==1)""else"s",r$cur %||% 0,r$max %||% 5))
     })
     
     output$wood_display <- renderUI({
@@ -811,20 +811,15 @@ restTabServer <- function(
     observeEvent(input$consume_rations_btn, {
       x <- validate_character(state$char)
       session$sendCustomMessage(session$ns("play_rest_sfx"), list(name = "eat"))
-      
-      cur <- x$resources$rations$cur %||% 0
-      
-      if (cur <= 0) {
-        log_safe("⚠️ No rations to consume", TRUE, "gold")
-        return()
+      food<-consume_food_ration(x)
+      if(isTRUE(food$applied)){x<-food$char;food_name<-food$item_name}else{
+        cur<-x$resources$rations$cur%||%0
+        if(cur<=0)return(log_safe("⚠️ No edible food or preserved rations available",TRUE,"gold"))
+        result<-change_supply(x,"rations",-1L);if(is.null(result)||!isTRUE(result$applied))return(log_safe("⚠️ No rations available",TRUE,"gold"));x<-result$char;food_name<-"a preserved party ration"
       }
-      
-      result<-change_supply(x,"rations",-1L);if(is.null(result)||!isTRUE(result$applied))return(log_safe("⚠️ No party rations available",TRUE,"gold"));x<-result$char
       x$status$ate_today <- TRUE
-      
       state$char <- x
-      
-      log_safe("🍖 You eat a ration. You feel sustained.", TRUE, "green")
+      log_safe(paste0("🍖 You eat ",food_name,". You feel sustained."),TRUE,"green")
     })
     
     observeEvent(input$forage_btn,{session$sendCustomMessage(session$ns("play_rest_sfx"),list(name="forage"));show_gather_modal("rations")},ignoreInit=TRUE)
