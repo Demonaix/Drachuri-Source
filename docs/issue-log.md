@@ -412,6 +412,16 @@ This is the authoritative issue register for the player and control apps. The or
 - **Automated test:** Haggling price rules pass unit coverage. Fresh migrations 001–018 and integration coverage pass invitation, purchase, resale, stock, inventory and transaction history. One Control and two Player apps start together.
 - **Retest:** Generate one merchant of each wealth/specialty combination. Invite two players; buy and sell ordinary items and equipment; confirm the shown roll affects price, material/quality survives, both purses and quantities update, an unaffordable sale is refused, and closing the merchant removes Player access.
 
+### CTRL-004 — Party HUD empty and merchant invitation controls obscured
+
+- **Status:** Fixed — awaiting Control retest
+- **Priority:** High
+- **Area:** Control shell / sessions / merchants
+- **Reported:** 2026-08-21
+- **Cause:** The legacy header Session ID input defaulted to `1` and could overwrite the session selected by the Sessions module. The HUD and merchant recipient list therefore queried the wrong session. The fixed HUD also occupied space over the centred dashboard at laptop widths.
+- **Fix:** Removed the competing Session ID input; the Sessions tab is now authoritative and the header only displays its active choice. Player membership/HP uses one shared three-second Control reactive. The desktop dashboard has a HUD gutter, responsive narrow-screen layout, and a separated merchant invitation panel/actions row.
+- **Retest:** Set a populated session active and confirm the HUD and merchant player choices populate within three seconds. Switch sessions and confirm both change together. Check that the HUD covers no controls on desktop and becomes an in-flow panel below 900px.
+
 ## Planned features
 
 ### FEATURE-001 — Rune module and combat integration

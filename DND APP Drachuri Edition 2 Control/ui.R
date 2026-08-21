@@ -45,8 +45,8 @@ ui_control <- fluidPage(
       }
 
       .control-shell {
-        max-width: 1500px;
-        margin: 18px auto;
+        max-width: none;
+        margin: 18px 18px 18px 220px;
         padding: 0 14px 20px 14px;
       }
 
@@ -145,6 +145,12 @@ ui_control <- fluidPage(
       .control-party-hud h4 { margin:0 0 8px; font-size:14px; }
       .control-party-member { padding:7px; margin-bottom:6px; border-radius:8px; background:rgba(255,255,255,.08); font-size:12px; }
       .control-party-member.inactive { opacity:.5; }
+      .merchant-invite-panel { clear:both; margin-top:16px; padding-top:12px; border-top:1px solid rgba(191,167,111,.5); }
+      .merchant-invite-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+      @media (max-width: 900px) {
+        .control-shell { margin:10px; padding:0 8px 18px; }
+        .control-party-hud { position:relative; left:auto; top:auto; width:auto; max-height:220px; margin-bottom:12px; }
+      }
 
       .shiny-input-container {
         margin-bottom: 0;
@@ -170,7 +176,7 @@ ui_control <- fluidPage(
       
       div(
         class = "control-toolbar",
-        numericInput("ctrl_session_id", "Session ID", value = 1, min = 1, width = "140px"),
+        uiOutput("ctrl_active_session"),
         actionButton("ctrl_refresh", "Refresh", class = "btn btn-default")
       ),
       
