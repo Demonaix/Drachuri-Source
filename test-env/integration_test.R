@@ -256,6 +256,19 @@ con<-get_db_connection();DBI::dbExecute(con,"UPDATE merchants SET status='closed
 closed_quote<-create_merchant_quote(critical_merchant$id[[1L]],"1002","buy",stock_id=critical_bundle$stock$id[[1L]])
 stopifnot(merchant_action_failed(closed_quote),grepl("no longer open",merchant_error_message(closed_quote),fixed=TRUE))
 
+animal_stock<-Filter(function(x)identical(x$type,"animal"),get_control_catalogue_definitions())[[1L]]
+animal_stock$catalogue_id<-animal_stock$id;animal_stock$qty<-1L
+animal_buyer<-load_character_from_db("1002");animal_buyer$inventory$gold<-500;save_character_to_db(animal_buyer,"1002")
+livestock_merchant<-create_merchant(1L,"QA Drover","moderate","livestock","fair",100,list(animal_stock))
+livestock_bundle<-get_merchant_bundle(livestock_merchant$id[[1L]])
+livestock_quote<-create_merchant_quote(livestock_merchant$id[[1L]],"1002","buy",stock_id=livestock_bundle$stock$id[[1L]],natural_roll_override=10L)
+livestock_purchase<-merchant_trade(livestock_merchant$id[[1L]],"1002",quote_id=livestock_quote$id[[1L]])
+stopifnot(is.list(livestock_purchase),isTRUE(livestock_purchase$is_animal),nrow(get_character_stable("1002"))==1L,!any(load_character_from_db("1002")$inventory$items$type=="animal"))
+owned_animal<-get_character_stable("1002")
+livestock_sale_quote<-create_merchant_quote(livestock_merchant$id[[1L]],"1002","sell",player_item_id=paste0("animal:",owned_animal$id[[1L]]),natural_roll_override=10L)
+livestock_sale<-merchant_trade(livestock_merchant$id[[1L]],"1002",quote_id=livestock_sale_quote$id[[1L]])
+stopifnot(is.list(livestock_sale),livestock_sale$direction=="sell",nrow(get_character_stable("1002"))==0L)
+
 stopifnot(identical(get_session_fire(1L),FALSE),isTRUE(set_session_fire(1L,TRUE)),identical(get_session_fire(1L),TRUE))
 rest_cycle<-begin_session_long_rest(1L,"1001",1L);stopifnot(!is.null(rest_cycle),isTRUE(rest_cycle$can_apply))
 rest_progress<-complete_session_long_rest(rest_cycle$cycle_id,"1001","half");stopifnot(rest_progress$completed[[1L]]==1L)
