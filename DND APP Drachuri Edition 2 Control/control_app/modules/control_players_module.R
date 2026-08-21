@@ -32,6 +32,7 @@ controlPlayersUI <- function(id) {
         # -------------------------
         div(class = "card",
             h4("Players in Session"),
+            selectInput(ns("remove_character_id"), "Player to remove", choices = character()),
             DT::DTOutput(ns("players_tbl")),
             br(),
             actionButton(ns("remove_player"), "Remove Selected", class = "btn btn-danger")
@@ -105,6 +106,7 @@ controlPlayersServer <- function(id, ctrl, session_tbl, players_tbl, positions_t
         rownames = FALSE
       )
     })
+    observe({df<-players_tbl();if(!is.data.frame(df)||!nrow(df))return(updateSelectInput(session,"remove_character_id",choices=character()));ids<-as.character(df$character_id);labels<-as.character(df$display_name%||%df$char_name%||%ids);updateSelectInput(session,"remove_character_id",choices=setNames(ids,labels),selected=isolate(input$remove_character_id%||%ids[[1L]]))})
     
 
     observeEvent(input$refresh_characters, {
@@ -137,12 +139,9 @@ controlPlayersServer <- function(id, ctrl, session_tbl, players_tbl, positions_t
     # Remove player
     # --------------------------------
     observeEvent(input$remove_player, {
-      idx <- input$players_tbl_rows_selected
       df <- players_tbl()
-      
-      if (is.null(idx) || !nrow(df)) return()
-      
-      cid <- df$character_id[idx]
+      cid<-as.character(input$remove_character_id%||%"")
+      if(!nzchar(cid)){idx<-input$players_tbl_rows_selected;if(is.null(idx)||!nrow(df))return();cid<-as.character(df$character_id[idx])}
       
       ok <- remove_character_from_session(
         session_id = ctrl$session_id,

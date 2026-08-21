@@ -331,7 +331,10 @@ restTabUI <- function(id) {
       
       div(
         class = "camp-status",
-        uiOutput(ns("camp_status"))
+        uiOutput(ns("camp_status")),
+        selectInput(ns("rest_outcome"), "Tonight's recovery",
+          choices = c("Full rest"="full", "Half rest"="half", "No rest / skip"="skip"),
+          selected = "full", width = "220px")
       ),
       
       h4(),
@@ -617,7 +620,8 @@ restTabServer <- function(
     
     output$fire_visual <- renderUI({
       x <- validate_character(state$char)
-      has_fire <- isTRUE(x$status$has_fire)
+      sid<-suppressWarnings(as.integer(state$active_session_id%||%NA))
+      if(!isTRUE(state$offline_mode)&&!is.na(sid)){invalidateLater(2500,session);has_fire<-get_session_fire(sid,list(wood=x$resources$wood$cur%||%3L,wood_max=x$resources$wood$max%||%10L))}else has_fire<-isTRUE(x$status$has_fire)
       
       if (has_fire) {
         img(src = "fire.png", class = "camp-fire", alt = "Lit campfire")
@@ -633,6 +637,8 @@ restTabServer <- function(
     # ----------------------------
     observeEvent(input$advance_day, {
       if (isTRUE(restoring())) return()
+      sid<-suppressWarnings(as.integer(state$active_session_id%||%NA));cid<-as.character(state$char_id%||%"")
+      if(!isTRUE(state$offline_mode)&&!is.na(sid)&&nzchar(cid)){perform_long_rest("skip");return()}
       
       x <- validate_character(state$char)
       
@@ -679,7 +685,8 @@ restTabServer <- function(
     # ----------------------------
     # LONG REST
     # ----------------------------
-    perform_long_rest <- function() {
+    perform_long_rest <- function(outcome=input$rest_outcome%||%"full") {
+      outcome<-match.arg(as.character(outcome),c("full","half","skip"))
       x <- validate_character(state$char)
       session_id<-suppressWarnings(as.integer(state$active_session_id%||%NA));character_id<-as.character(state$char_id%||%"");cycle<-NULL
       if(!isTRUE(state$offline_mode)&&!is.na(session_id)&&nzchar(character_id)){
@@ -689,9 +696,14 @@ restTabServer <- function(
       }
       x$status$resting <- TRUE
       x$status$has_fire <- FALSE   # extinguish on long rest
-      
-      x <- restore_sindre(x, hours = 12, add_log = add_log)
-      x <- reset_class_uses_for_rest(x, "long_rest")
+      if(!is.null(cycle))set_session_fire(session_id,FALSE)
+      if(identical(outcome,"full")){
+        x <- restore_sindre(x, hours = 12, add_log = add_log)
+        x <- reset_class_uses_for_rest(x, "long_rest")
+      }else if(identical(outcome,"half")){
+        x <- restore_sindre(x, hours = 6, add_log = add_log)
+        x <- reset_class_uses_for_rest(x, "short_rest")
+      }
 
       # Day-advance helpers can apply damage through the shared state. Publish
       # the prepared character first so they never read and restore stale data.
@@ -702,7 +714,8 @@ restTabServer <- function(
         log_safe("⚠️ Long Rest stopped: saved maximum HP is invalid. No HP value was overwritten.", TRUE, "red")
         return()
       }
-      ok <- set_effective_hp_state(state, cur = max_hp, temp = 0)
+      target_hp<-if(identical(outcome,"full"))max_hp else if(identical(outcome,"half"))min(max_hp,as.integer(state$char$resources$hp$cur%||%0L)+ceiling(max_hp/2)) else as.integer(state$char$resources$hp$cur%||%0L)
+      ok <- set_effective_hp_state(state, cur = target_hp, temp = if(identical(outcome,"skip"))as.integer(state$char$resources$hp$temp%||%0L) else 0)
       if (!isTRUE(ok)) {
         log_safe("⚠️ Long Rest healing failed.", TRUE, "red")
         return()
@@ -712,10 +725,11 @@ restTabServer <- function(
         state$char$meta$day<-as.integer(cycle$day_number)
         saved_id<-tryCatch(save_character_to_db(state$char,char_id=character_id),error=function(e)NULL)
         if(is.null(saved_id)){log_safe("⚠️ Your party rest could not be saved, so it was not marked complete for the group.",TRUE,"red");return()}
-        progress<-complete_session_long_rest(cycle$cycle_id,character_id)
+        progress<-complete_session_long_rest(cycle$cycle_id,character_id,outcome)
         if(is.null(progress)){log_safe("⚠️ Your rest completed locally but the party completion marker could not be saved.",TRUE,"red");return()}
-        log_safe(paste0("🌙 Party Long Rest complete for day ",cycle$day_number," (",progress$completed[[1L]],"/",progress$active[[1L]]," active characters)."),TRUE,"gold")
-      }else log_safe("🌙 Long Rest complete. A new day begins.", TRUE, "gold")
+        label<-c(full="Full rest",half="Half rest",skip="No rest")[[outcome]]
+        log_safe(paste0("🌙 ",label," recorded for party day ",cycle$day_number," (",progress$completed[[1L]],"/",progress$active[[1L]]," active characters)."),TRUE,"gold")
+      }else log_safe("🌙 Rest complete. A new day begins.", TRUE, "gold")
     }
     observeEvent(input$long_rest, {
       x <- validate_character(state$char)
@@ -724,11 +738,11 @@ restTabServer <- function(
         show_blood_addiction_modal("long_rest")
         return()
       }
-      perform_long_rest()
+      perform_long_rest(input$rest_outcome%||%"full")
     })
     observeEvent(input$force_long_rest, {
       removeModal()
-      perform_long_rest()
+      perform_long_rest(input$rest_outcome%||%"full")
     }, ignoreInit = TRUE)
     
     # ----------------------------
@@ -767,6 +781,7 @@ restTabServer <- function(
       }
       result<-change_supply(x,"wood",-1L);if(is.null(result)||!isTRUE(result$applied))return(log_safe("⚠️ No party wood available",TRUE,"gold"));x<-result$char
       x$status$has_fire <- TRUE
+      sid<-suppressWarnings(as.integer(state$active_session_id%||%NA));if(!isTRUE(state$offline_mode)&&!is.na(sid))set_session_fire(sid,TRUE)
       
       state$char <- x
       
@@ -775,10 +790,11 @@ restTabServer <- function(
     
     observe({
       x <- validate_character(state$char)
+      sid<-suppressWarnings(as.integer(state$active_session_id%||%NA));lit<-if(!isTRUE(state$offline_mode)&&!is.na(sid)){invalidateLater(2500,session);get_session_fire(sid)}else isTRUE(x$status$has_fire)
       
       updateActionButton(
         session, "light_fire",
-        label = if (isTRUE(x$status$has_fire)) "🔥 Stoke Fire" else "🔥 Light Fire"
+        label = if (isTRUE(lit)) "🔥 Stoke Fire" else "🔥 Light Fire"
       )
     })
     

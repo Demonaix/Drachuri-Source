@@ -225,6 +225,13 @@ accepted<-resolve_trade_offer(offer$offer_id,"1002",TRUE);stopifnot(accepted$sta
 received<-accepted$character$inventory$items;received_meta<-Filter(function(x)nzchar(as.character(x$material%||%""))&&nzchar(as.character(x$build_quality%||%"")),received$meta);stopifnot(any(received$name==loot_row$name),length(received_meta)>=1L)
 gold_offer<-create_trade_offer(1L,"1001","1002","gold",gold_amount=5L);stopifnot(gold_offer$sender$inventory$gold==15)
 declined<-resolve_trade_offer(gold_offer$offer_id,"1002",FALSE);stopifnot(declined$status=="declined",declined$character$inventory$gold==20)
+accepted_gold<-create_trade_offer(1L,"1001","1002","gold",gold_amount=5L);stopifnot(accepted_gold$sender$inventory$gold==15)
+accepted_gold_result<-resolve_trade_offer(accepted_gold$offer_id,"1002",TRUE);stopifnot(accepted_gold_result$status=="accepted",accepted_gold_result$character$inventory$gold==5)
+
+stopifnot(identical(get_session_fire(1L),FALSE),isTRUE(set_session_fire(1L,TRUE)),identical(get_session_fire(1L),TRUE))
+rest_cycle<-begin_session_long_rest(1L,"1001",1L);stopifnot(!is.null(rest_cycle),isTRUE(rest_cycle$can_apply))
+rest_progress<-complete_session_long_rest(rest_cycle$cycle_id,"1001","half");stopifnot(rest_progress$completed[[1L]]==1L)
+rest_saved<-DBI::dbGetQuery(con,"SELECT rest_outcome FROM session_rest_completions WHERE rest_cycle_id=$1 AND character_id=$2",params=list(rest_cycle$cycle_id,"1001"));stopifnot(rest_saved$rest_outcome[[1L]]=="half")
 note_id<-send_private_note(1L,"1001","1002","Meet me beside the old standing stone.")
 stopifnot(!is.null(note_id));notes<-get_private_notes("1002",TRUE);stopifnot(any(notes$id==note_id),grepl("QA Rogue",notes$sender_name[notes$id==note_id],fixed=TRUE))
 stopifnot(mark_private_note(note_id,"1002","read"));stopifnot(!note_id%in%get_private_notes("1002",TRUE)$id)

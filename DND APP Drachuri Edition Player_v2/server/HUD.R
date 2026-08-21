@@ -88,6 +88,11 @@ hudServer <- function(id, state, live_snapshot = NULL) {
     calc_passive <- function(x) {
       as.integer(10 + mod_calc(x$abilities$bld_str %||% 10))
     }
+
+    output$hud_gold <- renderUI({
+      x<-validate_character(state$char)
+      span(class="hud-stat",paste0("💰 ",as.numeric(x$inventory$gold%||%0)))
+    })
     
     get_effective_hp_for_hud <- function(x) {
       x <- validate_character(x)

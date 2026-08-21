@@ -103,6 +103,11 @@ server_control <- function(input, output, session) {
     session_data()$events %||% data.frame()
     
   })
+  output$control_party_hud<-renderUI({
+    p<-players_tbl();if(!is.data.frame(p)||!nrow(p))return(div(class="control-party-hud",h4("Party"),span("No players in session")))
+    member<-lapply(seq_len(nrow(p)),function(i){name<-as.character(p$display_name[[i]]%||%p$char_name[[i]]%||%p$character_id[[i]]);hp<-if("current_hp"%in%names(p))as.character(p$current_hp[[i]]%||%"—")else"—";temp<-if("temp_hp"%in%names(p))as.integer(p$temp_hp[[i]]%||%0L)else 0L;active<-if("is_active"%in%names(p))isTRUE(p$is_active[[i]])else TRUE;div(class=paste("control-party-member",if(!active)"inactive"else""),strong(name),br(),span(paste0("HP ",hp,if(temp>0L)paste0(" +",temp)else"",if(!active)" · inactive"else"")))})
+    div(class="control-party-hud",h4("Party · Session ",ctrl$session_id%||%"—"),member)
+  })
   # ------------------------------------------------------------
   # Top-level refresh control
   # ------------------------------------------------------------

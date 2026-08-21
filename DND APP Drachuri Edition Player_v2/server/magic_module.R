@@ -933,7 +933,7 @@ magicTabServer <- function(
         desc <- c(desc, "Your reserves are thin, forcing careful casting.")
       }
       
-      if (regen == 0) {
+      if (regen == 0 && grepl("Tylwyth|Fae", race, ignore.case = TRUE)) {
         desc <- c(desc, "Your power does not return naturally — it must be taken.")
       }
       

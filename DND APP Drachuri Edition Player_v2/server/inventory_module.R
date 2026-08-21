@@ -153,12 +153,12 @@ inventoryTabServer <- function(id, state, restoring, add_log, char_rev, session_
       sid<-current_trade_session();cid<-current_trade_character()
       result<-create_trade_offer(sid,cid,input$trade_recipient,input$trade_kind,item_id=input$trade_item_id,gold_amount=input$trade_gold%||%0L)
       if(is.null(result)){showNotification("Trade could not be created. The item or gold may no longer be available.",type="error");return()}
-      state$char<-result$sender;removeModal();showNotification("Trade offer sent.",type="message")
+      state$char<-result$sender;load_from_state();removeModal();showNotification("Trade offer sent.",type="message")
     },ignoreInit=TRUE)
 
     observe({
       invalidateLater(3000,session);cid<-current_trade_character();if(!nzchar(cid)||isTRUE(state$offline_mode))return()
-      sender_update<-consume_trade_sender_update(cid);if(!is.null(sender_update)&&is.list(sender_update$character)){state$char<-sender_update$character;showNotification("A trade was resolved; your inventory and purse have been refreshed.",type="message")}
+      sender_update<-consume_trade_sender_update(cid);if(!is.null(sender_update)&&is.list(sender_update$character)){state$char<-sender_update$character;load_from_state();showNotification("A trade was resolved; your inventory and purse have been refreshed.",type="message")}
       if(!is.null(session$userData$pending_trade_id)||!is.null(session$userData$pending_note_id)||!is.null(session$userData$pending_opportunity))return()
       offers<-get_pending_trade_offers(cid);if(!nrow(offers))return();fresh<-offers[!offers$id%in%shown_trade_ids(),,drop=FALSE];if(!nrow(fresh))return();o<-fresh[1,,drop=FALSE];shown_trade_ids(unique(c(shown_trade_ids(),o$id)))
       summary<-enemy_db_json(o$summary[[1]],list());meta<-summary$meta%||%list();stat_line<-if(identical(summary$type,"weapon"))paste0("\nDamage: ",meta$damage1%||%"—"," ",meta$dmg_type1%||%""," · uses ",toupper(meta$stat%||%"str")," · material ",meta$material%||%"standard") else if(identical(summary$type,"armor"))paste0("\nArmour: AC ",meta$base_ac%||%"—"," · ",meta$type%||%"Armour") else ""
@@ -167,7 +167,7 @@ inventoryTabServer <- function(id, state, restoring, add_log, char_rev, session_
       session$userData$pending_trade_id<-o$id[[1]]
     })
 
-    resolve_visible_trade <- function(accept){id<-session$userData$pending_trade_id;if(is.null(id))return();result<-resolve_trade_offer(id,current_trade_character(),accept);removeModal();session$userData$pending_trade_id<-NULL;if(is.null(result)){showNotification("Trade is no longer available.",type="error");return()};if(isTRUE(accept))state$char<-result$character;showNotification(if(accept)"Trade accepted and added to your character." else "Trade declined; it was returned to the sender.",type="message")}
+    resolve_visible_trade <- function(accept){id<-session$userData$pending_trade_id;if(is.null(id))return();result<-resolve_trade_offer(id,current_trade_character(),accept);removeModal();session$userData$pending_trade_id<-NULL;if(is.null(result)){showNotification("Trade is no longer available.",type="error");return()};if(isTRUE(accept)){state$char<-result$character;load_from_state()};showNotification(if(accept)"Trade accepted and added to your character." else "Trade declined; it was returned to the sender.",type="message")}
     observeEvent(input$accept_trade,resolve_visible_trade(TRUE),ignoreInit=TRUE)
     observeEvent(input$decline_trade,resolve_visible_trade(FALSE),ignoreInit=TRUE)
     
@@ -207,6 +207,7 @@ inventoryTabServer <- function(id, state, restoring, add_log, char_rev, session_
     
     load_from_state <- function() {
       x <- validate_character(state$char)
+      freezeReactiveValue(input, "gold")
       updateNumericInput(session, "gold", value = x$inventory$gold %||% 0)
     }
     

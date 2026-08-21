@@ -67,10 +67,12 @@ controlInventoryServer <- function(id, ctrl, players_tbl = NULL, bump_refresh = 
     output$item_preview <- renderUI({ x<-selected(); if(is.null(x)) return(NULL); tagList(h4(x$name), p(x$desc), tags$strong(paste(x$type,"•",x$value,"gold •",x$weight,"lb")), p(paste("Pools:",paste(x$pools%||%"none",collapse=", ")))) })
     observeEvent(input$item_id, { x<-selected(); if(is.null(x))return(); updateTextInput(session,"name",value=x$name);updateSelectInput(session,"type",selected=x$type);updateTextInput(session,"pools",value=paste(x$pools%||%character(),collapse=", "));updateTextInput(session,"desc",value=x$desc);updateSelectInput(session,"category",selected=as.character(x$meta$category%||%if(identical(x$type,"consumable"))"consumable"else"mundane_loot"));updateNumericInput(session,"value",value=x$value);updateNumericInput(session,"weight",value=x$weight); updateTextInput(session,"damage",value=as.character(x$meta$damage1%||%x$meta$base_ac%||%"")); updateSelectInput(session,"stat",selected=as.character(x$meta$stat%||%x$meta$type%||%"str"));updateSelectInput(session,"damage_type_1",selected=tolower(as.character(x$meta$dmg_type1%||%"other")));updateTextInput(session,"damage_2",value=as.character(x$meta$damage2%||%""));updateSelectInput(session,"damage_type_2",selected=tolower(as.character(x$meta$dmg_type2%||%"other")));updateCheckboxInput(session,"lock_provenance",value=isTRUE(x$meta$lock_provenance));updateSelectInput(session,"locked_material",selected=as.character(x$meta$material%||%"Steel"));updateSelectInput(session,"locked_quality",selected=as.character(x$meta$build_quality%||%"Bog-Standard")) },ignoreInit=TRUE)
     observe({
-      p <- if (is.reactive(players_tbl)) players_tbl() else data.frame()
+      ctrl$refresh_key; sid<-suppressWarnings(as.integer(ctrl$session_id%||%NA))
+      p <- if(!is.na(sid))tryCatch(get_session_players(sid),error=function(e)data.frame()) else if (is.reactive(players_tbl)) players_tbl() else data.frame()
       if(!is.data.frame(p)||!nrow(p)) return(updateSelectInput(session,"player_id",choices=character()))
       ids<-as.character(p$character_id%||%p$id); names<-as.character(p$char_name%||%p$name%||%ids)
-      updateSelectInput(session,"player_id",choices=setNames(ids,names))
+      labels<-as.character(p$display_name%||%names);labels[is.na(labels)|!nzchar(labels)]<-names[is.na(labels)|!nzchar(labels)]
+      keep<-isolate(input$player_id%||%"");updateSelectInput(session,"player_id",choices=setNames(ids,labels),selected=if(keep%in%ids)keep else ids[[1L]])
     })
     observeEvent(input$save_item, {
       nm<-trimws(input$name%||%""); if(!nzchar(nm)) return(showNotification("Enter an item name.",type="error"))

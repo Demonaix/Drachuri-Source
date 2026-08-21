@@ -140,6 +140,11 @@ ui_control <- fluidPage(
         opacity: 0.82;
       }
 
+      .control-party-hud { position:fixed; left:10px; top:120px; width:190px; max-height:calc(100vh - 145px); overflow-y:auto; z-index:900; padding:10px; border:1px solid rgba(191,167,111,.72); border-radius:12px; background:rgba(24,18,16,.94); color:#fff7df; box-shadow:0 6px 20px rgba(0,0,0,.35); }
+      .control-party-hud h4 { margin:0 0 8px; font-size:14px; }
+      .control-party-member { padding:7px; margin-bottom:6px; border-radius:8px; background:rgba(255,255,255,.08); font-size:12px; }
+      .control-party-member.inactive { opacity:.5; }
+
       .shiny-input-container {
         margin-bottom: 0;
       }
@@ -152,6 +157,7 @@ ui_control <- fluidPage(
   
   div(
     class = "control-shell",
+    uiOutput("control_party_hud"),
     
     # --------------------------------------------------------
     # Header / global toolbar

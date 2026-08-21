@@ -1149,7 +1149,7 @@ remove_character_from_session <- function(session_id, character_id) {
   if (is.na(session_id) || session_id < 1 || !nzchar(character_id)) return(FALSE)
   
   tryCatch({
-    DBI::dbExecute(
+    changed <- DBI::dbExecute(
       con,
       "
       DELETE FROM session_players
@@ -1159,7 +1159,7 @@ remove_character_from_session <- function(session_id, character_id) {
       params = list(session_id, character_id)
     )
     
-    TRUE
+    changed > 0L
   }, error = function(e) {
     message("remove_character_from_session failed: ", e$message)
     FALSE

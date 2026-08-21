@@ -335,6 +335,71 @@ This is the authoritative issue register for the player and control apps. The or
 - **Fix/checkpoint:** `a288ceb`
 - **Retest:** Create one ordinary object and one item in every other category in Control. Save/reload each, give or loot copies to a player, and confirm names/details remain intact and Control retains the selected category.
 
+### TRADE-002 — Gold transfer appeared to change neither purse
+
+- **Status:** Fixed — awaiting two-player retest
+- **Priority:** High
+- **Area:** Player trading / HUD
+- **Reported:** 2026-08-21
+- **Fix:** Prevented the stale Inventory gold input from overwriting a transactional trade result, immediately refreshes both participants after resolution, and implemented the previously missing Player HUD gold renderer.
+- **Automated test:** An accepted five-gold offer now leaves the sender five lower and the recipient five higher in the relational wallet and character state.
+- **Retest:** Send and accept gold with two open Player clients. Confirm both Inventory and top-HUD totals change without reopening the app.
+
+### MAGIC-003 — Blood-dependent power text appeared for non-Fae sorcerers
+
+- **Status:** Fixed — awaiting Magic-screen retest
+- **Priority:** Medium
+- **Area:** Magic description
+- **Reported:** 2026-08-21
+- **Fix:** The “must be taken” description is now restricted to Tylwyth/Fae characters with zero natural regeneration in both applications.
+- **Retest:** Compare a non-Fae zero-regeneration sorcerer with a Tylwyth/Fae equivalent.
+
+### CAMP-003 — Fire was local to the player who lit it
+
+- **Status:** Fixed — awaiting multi-player retest
+- **Priority:** High
+- **Area:** Rest / shared camp
+- **Reported:** 2026-08-21
+- **Fix:** Migration 017 stores fire state with shared session supplies. Camp screens poll that common state; lighting or extinguishing it updates every client.
+- **Retest:** Open two Player clients, light the fire in one, and confirm the second changes within three seconds and does not spend extra wood.
+
+### REST-004 — Mixed party rest outcomes and runaway Skip Day
+
+- **Status:** Implemented — awaiting multi-player retest
+- **Priority:** High
+- **Area:** Rest / day synchronisation
+- **Reported:** 2026-08-21
+- **Rule:** Each active player chooses Full, Half, or No Rest for the same party night. All advance to the shared day; full receives full recovery, half receives six-hour/short-rest recovery and half maximum HP, and no-rest receives no recovery. Online Skip Day records No Rest in the current shared cycle and cannot jump ahead alone.
+- **Fix:** Migration 017 records the individual outcome on each rest completion. Existing one-completion-per-character protection remains authoritative.
+- **Retest:** Use three clients in one session and choose full, half, and skip. Confirm the same day on all three, distinct recovery, and that repeated Skip Day cannot advance again.
+
+### CTRL-002 — Control gift recipient and session removal selection
+
+- **Status:** Fixed — awaiting Control retest
+- **Priority:** High
+- **Area:** Control inventory / players
+- **Reported:** 2026-08-21
+- **Fix:** Gift recipients now load directly from the active session and retain a valid selection. Player removal has an explicit named selector rather than depending on a fragile table-row selection, and reports success only when a row was actually removed.
+- **Retest:** Switch Control between two sessions, give a catalogue copy to a selected player, then remove that player and confirm both lists refresh.
+
+### CTRL-003 — Control needs a persistent party HUD
+
+- **Status:** Implemented — awaiting visual retest
+- **Priority:** Medium
+- **Area:** Control shell
+- **Reported:** 2026-08-21
+- **Fix:** Added a scrollable left-side session HUD showing each player, current/temp HP, and inactive status from the shared Control snapshot.
+- **Retest:** Check the HUD at common laptop resolution with several players and confirm it updates after HP changes and session switches.
+
+### NPC-006 — Generated default names omit feature identity
+
+- **Status:** Fixed — awaiting NPC Creator retest
+- **Priority:** Low
+- **Area:** NPC Creator
+- **Reported:** 2026-08-21
+- **Fix:** Generated names now combine the selected pool/type with readable configured feature names, for example “Undead Animal Armoured”, rather than falling back to “Undead Enemy”.
+- **Retest:** Apply defaults to pools with one and several custom features and confirm the editable name includes each feature display name.
+
 ## Planned features
 
 ### FEATURE-001 — Rune module and combat integration

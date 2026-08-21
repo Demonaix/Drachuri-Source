@@ -1617,9 +1617,22 @@ begin_session_long_rest <- function(session_id,character_id,current_day) {
   }),error=function(e){message("begin_session_long_rest failed: ",e$message);NULL})
 }
 
-complete_session_long_rest <- function(cycle_id,character_id) {
+complete_session_long_rest <- function(cycle_id,character_id,outcome="full") {
   con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE)
-  tryCatch({DBI::dbExecute(con,"INSERT INTO session_rest_completions(rest_cycle_id,character_id) VALUES($1,$2) ON CONFLICT DO NOTHING",params=list(as.integer(cycle_id),as.character(character_id)));DBI::dbGetQuery(con,paste("SELECT count(*)::integer AS completed,(SELECT count(*)::integer FROM session_players sp JOIN session_rest_cycles rc ON rc.session_id=sp.session_id WHERE rc.id=$1 AND sp.is_active=TRUE) AS active FROM session_rest_completions WHERE rest_cycle_id=$1"),params=list(as.integer(cycle_id)))[1,,drop=FALSE]},error=function(e){message("complete_session_long_rest failed: ",e$message);NULL})
+  outcome<-match.arg(as.character(outcome),c("full","half","skip"))
+  tryCatch({DBI::dbExecute(con,"INSERT INTO session_rest_completions(rest_cycle_id,character_id,rest_outcome) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",params=list(as.integer(cycle_id),as.character(character_id),outcome));DBI::dbGetQuery(con,paste("SELECT count(*)::integer AS completed,(SELECT count(*)::integer FROM session_players sp JOIN session_rest_cycles rc ON rc.session_id=sp.session_id WHERE rc.id=$1 AND sp.is_active=TRUE) AS active FROM session_rest_completions WHERE rest_cycle_id=$1"),params=list(as.integer(cycle_id)))[1,,drop=FALSE]},error=function(e){message("complete_session_long_rest failed: ",e$message);NULL})
+}
+
+get_session_fire <- function(session_id,defaults=list()) {
+  row<-get_session_supplies(session_id,defaults)
+  if(is.null(row)||!"has_fire"%in%names(row))return(FALSE)
+  isTRUE(row$has_fire[[1L]])
+}
+
+set_session_fire <- function(session_id,lit=TRUE,defaults=list()) {
+  get_session_supplies(session_id,defaults)
+  con<-get_db_connection();if(is.null(con))return(FALSE);on.exit(release_db_connection(con),add=TRUE)
+  tryCatch({DBI::dbExecute(con,"UPDATE session_supplies SET has_fire=$2,updated_at=now() WHERE session_id=$1",params=list(as.integer(session_id),isTRUE(lit)));TRUE},error=function(e){message("set_session_fire failed: ",e$message);FALSE})
 }
 
 get_session_supplies <- function(session_id,defaults=list()) {
