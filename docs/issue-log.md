@@ -171,14 +171,16 @@ This is the authoritative issue register for the player and control apps. The or
 
 ### DATA-001 — Inventory definitions are still stored primarily inside blobs
 
-- **Status:** Open
+- **Status:** Investigating
 - **Priority:** Critical
 - **Area:** Database / inventory foundation
 - **Reported:** 2026-08-20
 - **Original report:** Weapons and items need authoritative relational tables with explicit variables rather than relying on blobs.
-- **Test notes:** New `armour`, `weapons`, `items`, `materials`, and `conditions` tables were created manually but have not been audited or integrated. Review schema, keys, constraints, ownership, and migration safety before writing application logic.
+- **Schema audit (2026-08-21):** Live Supabase contains lowercase `armour`, `weapons`, and `items`, plus quoted mixed-case `"Materials"` and `"Condition"`. The three item tables have useful typed columns and pool arrays. However, weapons and armour currently have no material/condition foreign keys, so the modifier tables cannot yet be applied authoritatively. `"Condition"` also risks confusion with combat conditions, and both mixed-case names require permanent SQL quoting.
+- **Recommended foundation:** Keep the existing tables untouched until a reviewed migration exists. Standardise the modifier tables to unquoted lowercase names (prefer `item_materials` and `item_conditions`), add explicit nullable material/condition references with foreign keys, validation constraints, and timestamps, then backfill catalogue data before switching application reads away from blobs. Character inventory should ultimately store owned-item instances referencing definitions, while retaining per-instance quantity, equipped state, condition and approved overrides.
+- **Migration safety:** Do not make the new tables authoritative or remove blob fields until definition backfill, dual-read compatibility, and rollback tests pass.
 - **Fix/checkpoint:** —
-- **Retest:** Not started.
+- **Retest:** Schema integration not started; audit completed read-only.
 
 ### DATA-002 — Control item editor lacks complete damage-type support
 
