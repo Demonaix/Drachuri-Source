@@ -966,6 +966,37 @@ test("Natural Magic applies its highest eligible class-level upgrade", {
   stopifnot(rain$resolved_upgrade$cold_lightning_modifier == 4L)
 })
 
+test("all Natural Magic specialties retain their homebrew combat contracts", {
+  spells <- test_env$CLASS_SPELL_DEFINITIONS[c(
+    "grasping_vines", "calling_rain", "call_beast", "wasting_sickness"
+  )]
+  stopifnot(length(spells) == 4L)
+  stopifnot(identical(
+    unname(vapply(spells, function(spell) unname(spell$choice[["natural_specialty"]]), character(1))),
+    c("Plants", "Rain", "Animals", "Disease")
+  ))
+  stopifnot(all(vapply(spells, function(spell) spell$cost == 20L, logical(1))))
+  stopifnot(all(vapply(spells, function(spell) identical(spell$action_type, "action"), logical(1))))
+  stopifnot(all(vapply(spells, function(spell) isTRUE(spell$concentration), logical(1))))
+
+  vines <- spells$grasping_vines
+  stopifnot(identical(vines$resolution$ability, "str"))
+  stopifnot(any(vapply(vines$effects, function(effect) identical(effect$value, "difficult"), logical(1))))
+  stopifnot(any(vapply(vines$effects, function(effect) identical(effect$value, "restrained"), logical(1))))
+
+  rain <- spells$calling_rain
+  stopifnot(any(vapply(rain$effects, function(effect) identical(effect$damage_type, "fire") && effect$value == -4L, logical(1))))
+  stopifnot(any(vapply(rain$effects, function(effect) identical(effect$damage_type, c("cold", "lightning")) && effect$value == 2L, logical(1))))
+
+  beast <- spells$call_beast
+  stopifnot(identical(beast$effects[[1L]]$type, "summon"))
+  stopifnot(identical(unname(unlist(beast$effects[[1L]]$scaling[c("2", "11", "15")])), c("CR 1/2", "CR 1", "CR 2")))
+
+  disease <- spells$wasting_sickness
+  stopifnot(identical(disease$resolution$ability, "con"))
+  stopifnot(identical(disease$effects[[1L]]$value, "poisoned"))
+})
+
 test("blood magic uses Blood Strength save DC and multiclass proficiency", {
   test_env$normalise_character_classes <- function(char, class_defs = NULL) char$build$classes
   character <- list(
