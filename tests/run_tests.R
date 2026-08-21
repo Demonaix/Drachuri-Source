@@ -147,6 +147,19 @@ test("character identities use current subclasses and every skill family", {
   }, logical(1))))
 })
 
+test("rest fire visuals only reference assets shipped with each app", {
+  app_dirs <- c(
+    file.path(project_dir, "DND APP Drachuri Edition Player_v2"),
+    file.path(project_dir, "DND APP Drachuri Edition 2 Control")
+  )
+  for (app_dir in app_dirs) {
+    module_text <- paste(readLines(file.path(app_dir, "server", "rest_module.R"), warn = FALSE), collapse = "\n")
+    stopifnot(file.exists(file.path(app_dir, "www", "fire.png")))
+    stopifnot(!grepl('src = "embers.png"', module_text, fixed = TRUE))
+    stopifnot(grepl('alt = "Unlit campfire"', module_text, fixed = TRUE))
+  }
+})
+
 test("temporary HP absorbs damage before current HP", {
   result <- test_env$calculate_hp_damage(12L, 5L, 8L)
   stopifnot(identical(result$hp_after, 9L))

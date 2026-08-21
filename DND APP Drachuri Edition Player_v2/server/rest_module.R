@@ -617,9 +617,12 @@ restTabServer <- function(
       has_fire <- isTRUE(x$status$has_fire)
       
       if (has_fire) {
-        img(src = "fire.png", class = "camp-fire")
+        img(src = "fire.png", class = "camp-fire", alt = "Lit campfire")
       } else {
-        img(src = "embers.png", class = "camp-fire", style = "opacity:0.4; filter:grayscale(80%);")
+        img(
+          src = "fire.png", class = "camp-fire", alt = "Unlit campfire",
+          style = "opacity:0.22; filter:grayscale(100%) brightness(35%);"
+        )
       }
     })
     # ----------------------------
