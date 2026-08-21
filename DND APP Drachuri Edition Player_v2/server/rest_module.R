@@ -691,6 +691,12 @@ restTabServer <- function(
     # ----------------------------
     observeEvent(input$long_rest, {
       x <- validate_character(state$char)
+      session_id<-suppressWarnings(as.integer(state$active_session_id%||%NA));character_id<-as.character(state$char_id%||%"");cycle<-NULL
+      if(!isTRUE(state$offline_mode)&&!is.na(session_id)&&nzchar(character_id)){
+        cycle<-begin_session_long_rest(session_id,character_id,x$meta$day%||%1L)
+        if(is.null(cycle)){log_safe("⚠️ Party Long Rest could not be coordinated with the server. Nothing was changed.",TRUE,"red");return()}
+        if(!isTRUE(cycle$can_apply)){log_safe(paste0("🌙 You already completed the party rest for day ",cycle$day_number,". Waiting for the rest of the party (",cycle$completed,"/",cycle$active,")."),TRUE,"gold");return()}
+      }
       x$status$resting <- TRUE
       x$status$has_fire <- FALSE   # extinguish on long rest
       
@@ -712,10 +718,14 @@ restTabServer <- function(
         return()
       }
       clamp_session_hp_to_max(state)
-      
-      
-      
-      log_safe("🌙 Long Rest complete. A new day begins.", TRUE, "gold")
+      if(!is.null(cycle)){
+        state$char$meta$day<-as.integer(cycle$day_number)
+        saved_id<-tryCatch(save_character_to_db(state$char,char_id=character_id),error=function(e)NULL)
+        if(is.null(saved_id)){log_safe("⚠️ Your party rest could not be saved, so it was not marked complete for the group.",TRUE,"red");return()}
+        progress<-complete_session_long_rest(cycle$cycle_id,character_id)
+        if(is.null(progress)){log_safe("⚠️ Your rest completed locally but the party completion marker could not be saved.",TRUE,"red");return()}
+        log_safe(paste0("🌙 Party Long Rest complete for day ",cycle$day_number," (",progress$completed[[1L]],"/",progress$active[[1L]]," active characters)."),TRUE,"gold")
+      }else log_safe("🌙 Long Rest complete. A new day begins.", TRUE, "gold")
     })
     
     # ----------------------------

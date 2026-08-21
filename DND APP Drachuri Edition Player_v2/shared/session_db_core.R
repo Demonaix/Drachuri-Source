@@ -1578,6 +1578,26 @@ end_encounter_condition <- function(encounter_id, target_actor_id, condition) {
   })
 }
 
+begin_session_long_rest <- function(session_id,character_id,current_day) {
+  con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE)
+  session_id<-suppressWarnings(as.integer(session_id));character_id<-as.character(character_id%||%"");current_day<-suppressWarnings(as.integer(current_day%||%1L));if(is.na(current_day)||current_day<1L)current_day<-1L
+  if(is.na(session_id)||!nzchar(character_id))return(NULL)
+  tryCatch(DBI::dbWithTransaction(con,{
+    DBI::dbGetQuery(con,"SELECT pg_advisory_xact_lock($1)",params=list(session_id))
+    latest<-DBI::dbGetQuery(con,"SELECT * FROM session_rest_cycles WHERE session_id=$1 AND rest_type='long_rest' ORDER BY day_number DESC LIMIT 1",params=list(session_id))
+    active<-DBI::dbGetQuery(con,"SELECT count(*)::integer AS n FROM session_players WHERE session_id=$1 AND is_active=TRUE",params=list(session_id))$n[[1L]]
+    completed<-if(nrow(latest))DBI::dbGetQuery(con,"SELECT count(*)::integer AS n FROM session_rest_completions WHERE rest_cycle_id=$1",params=list(latest$id[[1L]]))$n[[1L]]else 0L
+    if(!nrow(latest)||completed>=max(1L,active)){day_number<-max(current_day+1L,if(nrow(latest))as.integer(latest$day_number[[1L]])+1L else 2L);latest<-DBI::dbGetQuery(con,"INSERT INTO session_rest_cycles(session_id,day_number,initiated_by) VALUES($1,$2,$3) ON CONFLICT(session_id,day_number,rest_type) DO UPDATE SET session_id=EXCLUDED.session_id RETURNING *",params=list(session_id,day_number,character_id));completed<-0L}
+    already<-DBI::dbGetQuery(con,"SELECT 1 FROM session_rest_completions WHERE rest_cycle_id=$1 AND character_id=$2",params=list(latest$id[[1L]],character_id))
+    list(cycle_id=as.integer(latest$id[[1L]]),day_number=as.integer(latest$day_number[[1L]]),can_apply=!nrow(already),completed=as.integer(completed),active=max(1L,as.integer(active)))
+  }),error=function(e){message("begin_session_long_rest failed: ",e$message);NULL})
+}
+
+complete_session_long_rest <- function(cycle_id,character_id) {
+  con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE)
+  tryCatch({DBI::dbExecute(con,"INSERT INTO session_rest_completions(rest_cycle_id,character_id) VALUES($1,$2) ON CONFLICT DO NOTHING",params=list(as.integer(cycle_id),as.character(character_id)));DBI::dbGetQuery(con,paste("SELECT count(*)::integer AS completed,(SELECT count(*)::integer FROM session_players sp JOIN session_rest_cycles rc ON rc.session_id=sp.session_id WHERE rc.id=$1 AND sp.is_active=TRUE) AS active FROM session_rest_completions WHERE rest_cycle_id=$1"),params=list(as.integer(cycle_id)))[1,,drop=FALSE]},error=function(e){message("complete_session_long_rest failed: ",e$message);NULL})
+}
+
 get_active_encounter_conditions <- function(encounter_id, target_actor_id = NULL) {
   con <- get_db_connection()
   if (is.null(con)) return(data.frame())

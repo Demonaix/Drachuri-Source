@@ -27,6 +27,20 @@ stopifnot(nrow(membership) == 1L)
 stopifnot(membership$session_id[[1L]] == 1L)
 stopifnot(membership$active_encounter_id[[1L]] == 1L)
 
+# Party rests share one day cycle. A character cannot create the next day
+# while any active party member has not completed the current rest.
+rest_one<-begin_session_long_rest(1L,1001L,1L)
+stopifnot(is.list(rest_one),rest_one$can_apply,rest_one$day_number==2L)
+progress_one<-complete_session_long_rest(rest_one$cycle_id,1001L)
+stopifnot(progress_one$completed[[1L]]==1L,progress_one$active[[1L]]==10L)
+rest_repeat<-begin_session_long_rest(1L,1001L,2L)
+stopifnot(!rest_repeat$can_apply,rest_repeat$cycle_id==rest_one$cycle_id)
+rest_two<-begin_session_long_rest(1L,1002L,1L)
+stopifnot(rest_two$can_apply,rest_two$cycle_id==rest_one$cycle_id,rest_two$day_number==2L)
+for(cid in 1002:1010)complete_session_long_rest(rest_one$cycle_id,cid)
+rest_next<-begin_session_long_rest(1L,1001L,2L)
+stopifnot(rest_next$can_apply,rest_next$day_number==3L,rest_next$cycle_id!=rest_one$cycle_id)
+
 character <- load_character_from_db(1001L)
 stopifnot(is.list(character))
 character$journal$log <- c(character$journal$log, "Multiplayer regression save marker")
