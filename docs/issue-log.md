@@ -52,14 +52,16 @@ This is the authoritative issue register for the player and control apps. The or
 
 ### CHAR-002 — Magical nature and skill identity lack variety
 
-- **Status:** Open
+- **Status:** Fixed — awaiting retest
 - **Priority:** Medium
 - **Area:** Character generation
 - **Reported:** 2026-08-17
 - **Original report:** Magical nature and skill identity repeatedly produce the same archetypes, especially Starved Abyss Channeler and Cunning Stalker Operative.
-- **Test notes:** Audit weighting, deterministic seeds, fallback choices, and whether existing values are being reused.
-- **Fix/checkpoint:** —
-- **Retest:** Not started.
+- **Cause:** These titles are derived identities rather than random generation, but two fallbacks erased much of the character variation. Magical Nature read the obsolete single `build$subclass` field instead of the current class entries, making most characters generic Channelers; its capacity label then overwrote its flow label. Skill Identity recognised only seven of the 29 available skills, so characters led by History, Medicine, Insight, Endurance and most other skills became Wanderer Operatives.
+- **Fix (2026-08-21):** Added one shared identity engine used by Player and Control. Magical Nature reads all current and legacy subclass locations and retains capacity, flow, subclass and magical-state dimensions in the title. Skill Identity now has distinct core and supporting titles for every skill in the homebrew skill list. Titles remain grounded in saved character mechanics rather than being randomly varied, so identical builds can still legitimately share an identity.
+- **Automated test:** Confirms a multiclass Heart Eater is detected from `build$classes`, distinguishes an `Abyss Storm Devourer`, produces `Chronicler Physician` for History/Medicine, and verifies all 29 skills avoid the generic Wanderer fallback. Both module copies parse and all 57 rule tests pass.
+- **Fix/checkpoint:** `9868484`
+- **Retest:** Compare Magical Nature on characters with different Sindre capacity/flow and subclasses; confirm the title changes on each relevant dimension. Compare Skill Identity on characters led by less-common skills such as History, Medicine, Endurance, Precision and Mandred Connection; confirm their titles are distinct and their displayed top skills remain accurate.
 
 ### REST-001 — Unlit rest-fire image is missing
 
