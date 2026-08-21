@@ -2300,6 +2300,16 @@ camp_gathering_yield <- function(total) {
   total<-suppressWarnings(as.integer(total));if(is.na(total)||total<10L)0L else if(total<15L)1L else if(total<20L)2L else if(total<25L)3L else 4L
 }
 
+character_skill_modifier <- function(char,skill,skill_defs=NULL) {
+  char<-validate_character(char);skill<-as.character(skill%||%"");key<-gsub(" ","_",tolower(skill))
+  if(is.null(skill_defs))skill_defs<-if(exists("SKILLS_LIST",inherits=TRUE))get("SKILLS_LIST",inherits=TRUE)else data.frame()
+  row<-if(is.data.frame(skill_defs)&&nrow(skill_defs))skill_defs[tolower(skill_defs$Skill)==tolower(skill),,drop=FALSE]else data.frame();ability<-if(nrow(row))as.character(row$Ability[[1L]])else"int"
+  score<-suppressWarnings(as.integer(char$abilities[[ability]]%||%10L));if(is.na(score))score<-10L
+  rank<-as.character(char$prof$skills[[key]]%||%"None");multiplier<-if(tolower(rank)=="expertise")2L else if(tolower(rank)=="proficient")1L else 0L
+  proficiency<-if(exists("character_proficiency_bonus",mode="function",inherits=TRUE))character_proficiency_bonus(char)else{level<-as.integer(char$build$level%||%1L);2L+max(0L,floor((level-1L)/4L))}
+  as.integer(floor((score-10L)/2L)+multiplier*proficiency)
+}
+
 new_character <- function() {
   list(
     save_version = APP_SAVE_VERSION,

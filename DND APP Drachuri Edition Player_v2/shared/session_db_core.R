@@ -1647,6 +1647,26 @@ resolve_camp_gather_request <- function(request_id,responder_id,accept=TRUE,help
   }),error=function(e){message("resolve_camp_gather_request failed: ",e$message);NULL})
 }
 
+create_party_skill_check <- function(session_id,skill,ability,context,requester_id,requester_modifier,scope="party") {
+  con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE);scope<-match.arg(scope,c("solo","party"))
+  tryCatch(DBI::dbGetQuery(con,"INSERT INTO party_skill_checks(session_id,skill,ability,context,requester_character_id,requester_modifier,scope) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *",params=list(as.integer(session_id),as.character(skill),as.character(ability),trimws(as.character(context%||%"")),as.character(requester_id),as.integer(requester_modifier),scope))[1,,drop=FALSE],error=function(e){message("create_party_skill_check failed: ",e$message);NULL})
+}
+
+get_pending_party_skill_checks <- function(session_id,character_id) {
+  con<-get_db_connection();if(is.null(con))return(data.frame());on.exit(release_db_connection(con),add=TRUE)
+  tryCatch(DBI::dbGetQuery(con,paste("SELECT c.*,COALESCE(sp.display_name,cb.char_name,c.requester_character_id) AS requester_name FROM party_skill_checks c","LEFT JOIN session_players sp ON sp.session_id=c.session_id AND sp.character_id::text=c.requester_character_id LEFT JOIN character_blobs cb ON cb.id::text=c.requester_character_id","WHERE c.session_id=$1 AND c.scope='party' AND c.status='pending' AND c.requester_character_id<>$2 ORDER BY c.created_at"),params=list(as.integer(session_id),as.character(character_id))),error=function(e)data.frame())
+}
+
+resolve_party_skill_check <- function(check_id,responder_id,helper_modifier=NULL) {
+  con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE)
+  tryCatch(DBI::dbWithTransaction(con,{row<-DBI::dbGetQuery(con,"SELECT * FROM party_skill_checks WHERE id=$1 FOR UPDATE",params=list(as.integer(check_id)));if(!nrow(row)||row$status[[1L]]!="pending")stop("This check has already resolved.");solo<-row$scope[[1L]]=="solo";if(!solo&&as.character(row$requester_character_id[[1L]])==as.character(responder_id))stop("The requester cannot assist their own check.");lead_roll<-sample.int(20L,1L)+as.integer(row$requester_modifier[[1L]]);helper_roll<-if(solo)NA_integer_ else sample.int(20L,1L)+as.integer(helper_modifier%||%0L);total<-max(c(lead_roll,helper_roll),na.rm=TRUE);DBI::dbExecute(con,"UPDATE party_skill_checks SET helper_character_id=$2,helper_modifier=$3,requester_roll=$4,helper_roll=$5,final_total=$6,status='resolved',resolved_at=now() WHERE id=$1",params=list(row$id[[1L]],if(solo)NA_character_ else as.character(responder_id),if(solo)NA_integer_ else as.integer(helper_modifier),lead_roll,helper_roll,total));list(id=as.integer(row$id[[1L]]),skill=row$skill[[1L]],context=row$context[[1L]],requester_roll=lead_roll,helper_roll=helper_roll,final_total=total,assisted=!solo)}),error=function(e){message("resolve_party_skill_check failed: ",e$message);NULL})
+}
+
+get_recent_party_skill_results <- function(session_id) {
+  con<-get_db_connection();if(is.null(con))return(data.frame());on.exit(release_db_connection(con),add=TRUE)
+  tryCatch(DBI::dbGetQuery(con,paste("SELECT c.*,COALESCE(rp.display_name,rc.char_name,c.requester_character_id) AS requester_name,COALESCE(hp.display_name,hc.char_name,c.helper_character_id) AS helper_name FROM party_skill_checks c","LEFT JOIN session_players rp ON rp.session_id=c.session_id AND rp.character_id::text=c.requester_character_id LEFT JOIN character_blobs rc ON rc.id::text=c.requester_character_id","LEFT JOIN session_players hp ON hp.session_id=c.session_id AND hp.character_id::text=c.helper_character_id LEFT JOIN character_blobs hc ON hc.id::text=c.helper_character_id","WHERE c.session_id=$1 AND c.status='resolved' ORDER BY c.resolved_at DESC LIMIT 20"),params=list(as.integer(session_id))),error=function(e)data.frame())
+}
+
 get_active_encounter_conditions <- function(encounter_id, target_actor_id = NULL) {
   con <- get_db_connection()
   if (is.null(con)) return(data.frame())
