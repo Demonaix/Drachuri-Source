@@ -622,6 +622,42 @@ restore_sindre <- function(x, hours = 0, full = FALSE, add_log = NULL) {
   x
 }
 
+# Resolve the magical resource gained from consuming one heart. Heart Eaters
+# restore their normal reserve completely and keep the heart's listed value as
+# temporary Sindre. Other characters only keep the portion above their normal
+# maximum as temporary Sindre.
+consume_heart_sindre <- function(current, maximum, temporary = 0,
+                                 heart_value = 0, heart_eater = FALSE) {
+  current <- suppressWarnings(as.integer(current %||% 0L))
+  maximum <- suppressWarnings(as.integer(maximum %||% 0L))
+  temporary <- suppressWarnings(as.integer(temporary %||% 0L))
+  heart_value <- suppressWarnings(as.integer(heart_value %||% 0L))
+  if (is.na(current)) current <- 0L
+  if (is.na(maximum)) maximum <- 0L
+  if (is.na(temporary)) temporary <- 0L
+  if (is.na(heart_value)) heart_value <- 0L
+  maximum <- max(0L, maximum)
+  current <- max(0L, min(current, maximum))
+  temporary <- max(0L, temporary)
+  heart_value <- max(0L, heart_value)
+
+  if (isTRUE(heart_eater)) {
+    return(list(
+      current = maximum,
+      temporary = temporary + heart_value,
+      temporary_gained = heart_value
+    ))
+  }
+
+  combined <- current + heart_value
+  overflow <- max(0L, combined - maximum)
+  list(
+    current = min(combined, maximum),
+    temporary = temporary + overflow,
+    temporary_gained = overflow
+  )
+}
+
 reset_class_uses_for_rest <- function(char, rest_type = c("short_rest", "long_rest")) {
   rest_type <- match.arg(rest_type)
   char <- validate_character(char)

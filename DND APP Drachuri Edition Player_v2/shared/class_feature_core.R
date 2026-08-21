@@ -76,7 +76,7 @@ CLASS_FEATURE_INTEGRATION <- list(
   "Barbarian::3::frenzy" = list(status = "working", note = "While raging, a bonus action grants an additional attack action for the turn."),
   "Barbarian::3::spirit_totem" = list(status = "working", note = "Bear expands Rage resistance, Wolf grants Strength attack advantage, and Eagle grants bonus-action Dash."),
   "Hanianol Sorcerer::3::seer" = list(status = "working", note = "Control can paint Mandred convergence terrain; Natural Magic costs half Sindre there and enemy saves roll with disadvantage."),
-  "Hanianol Sorcerer::3::exquisite_taste" = list(status = "working", note = "Blood restores HP; hearts fully restore Sindre and grant temporary HP overheal."),
+  "Hanianol Sorcerer::3::exquisite_taste" = list(status = "working", note = "Blood restores HP; hearts fully restore Sindre and grant their listed value as temporary Sindre."),
   "Hanianol Sorcerer::3::shadow_step" = list(status = "working", note = "Heart Eaters can phase through blocked map tiles within their normal movement range."),
   "Na'Haran Sorcerer::3::spellsword" = list(status = "working", note = "Magical combat abilities reduce matching immunity to resistance and resistance to normal damage."),
   "Na'Haran Sorcerer::3::wild_insight" = list(status = "working", note = "Available in combat as a bonus-action d100 Wild Magic roll."),

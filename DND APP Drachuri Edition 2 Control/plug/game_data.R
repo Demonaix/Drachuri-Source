@@ -1196,7 +1196,7 @@ CLASSES <- list(
             
             exquisite_taste = list(
               name = "Exquisite Taste",
-              desc = "Drinking blood restores HP. Eating hearts grants full Sindre and overheal."
+              desc = "Drinking blood restores HP. Eating hearts fully restores Sindre and grants the heart's value as temporary Sindre."
             ),
             
             shadow_step = list(

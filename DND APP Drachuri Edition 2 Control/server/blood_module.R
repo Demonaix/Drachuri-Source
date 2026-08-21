@@ -751,11 +751,12 @@ bloodTabServer <- function(
             if (is.na(cur)) cur <- 0
             if (is.na(tot)) tot <- 0
             
-            new_cur <- cur + sindre
-            overflow <- max(0, new_cur - tot)
-            
-            x$resources$sindre$cur <- min(new_cur, tot)
-            x$resources$sindre$temp <- (x$resources$sindre$temp %||% 0) + overflow
+            heart_result <- consume_heart_sindre(
+              cur, tot, x$resources$sindre$temp, sindre,
+              heart_eater = isTRUE(is_heart_eater())
+            )
+            x$resources$sindre$cur <- heart_result$current
+            x$resources$sindre$temp <- heart_result$temporary
             
             # reduce heart count
             if (hearts <= 1) {
@@ -777,7 +778,11 @@ bloodTabServer <- function(
               paste0(
                 "🫀 Consumed heart from ", source,
                 ": +", sindre, " Sindre",
-                if (overflow > 0) paste0(" (+", overflow, " overflow)") else "",
+                if (isTRUE(is_heart_eater())) {
+                  paste0(" (fully restored; +", heart_result$temporary_gained, " temporary Sindre)")
+                } else if (heart_result$temporary_gained > 0) {
+                  paste0(" (+", heart_result$temporary_gained, " temporary Sindre)")
+                } else "",
                 " → ", x$resources$sindre$cur, "/", tot
               ),
               TRUE,

@@ -42,7 +42,7 @@ load_functions <- function(path, names) {
 load_functions(global_file, c(
   "character_save_payload", "restore_sindre", "reset_class_uses_for_rest",
   "calc_auto_ac_for_char", "get_effective_max_hp", "get_weapon_hit_bonus",
-  "starting_character_hp", "camp_gathering_yield"
+  "starting_character_hp", "camp_gathering_yield", "consume_heart_sindre"
 ))
 load_functions(relational_inventory_file, c("equipment_material_is_eligible"))
 load_functions(enemy_generator_file, c("resolve_layered_damage_traits"))
@@ -112,6 +112,18 @@ test("higher-level character creation calculates class HP", {
 
 test("camp gathering checks map to bounded supply yields", {
   stopifnot(identical(vapply(c(1L,9L,10L,14L,15L,19L,20L,24L,25L,40L),test_env$camp_gathering_yield,integer(1)),c(0L,0L,1L,1L,2L,2L,3L,3L,4L,4L)))
+})
+
+test("heart consumption grants predictable temporary Sindre", {
+  ordinary <- test_env$consume_heart_sindre(90L, 100L, 3L, 25L, FALSE)
+  stopifnot(identical(ordinary$current, 100L))
+  stopifnot(identical(ordinary$temporary, 18L))
+  stopifnot(identical(ordinary$temporary_gained, 15L))
+
+  heart_eater <- test_env$consume_heart_sindre(10L, 100L, 3L, 25L, TRUE)
+  stopifnot(identical(heart_eater$current, 100L))
+  stopifnot(identical(heart_eater$temporary, 28L))
+  stopifnot(identical(heart_eater$temporary_gained, 25L))
 })
 
 test("temporary HP absorbs damage before current HP", {
