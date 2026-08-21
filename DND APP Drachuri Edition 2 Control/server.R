@@ -138,6 +138,7 @@ server_control <- function(input, output, session) {
   source("control_app/modules/control_npc_pools_module.R", local = FALSE)
   source("control_app/modules/control_npc_features_module.R", local = FALSE)
   source("control_app/modules/control_npc_attacks_module.R", local = FALSE)
+  source("control_app/modules/control_merchants_module.R", local = FALSE)
   
  
   # ------------------------------------------------------------
@@ -207,5 +208,6 @@ server_control <- function(input, output, session) {
   controlNpcPoolsServer("npc_pools")
   controlNpcFeaturesServer("npc_features")
   controlNpcAttacksServer("npc_attacks")
+  controlMerchantsServer("merchants",ctrl,players_tbl,bump_refresh)
   
 }

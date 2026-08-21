@@ -159,7 +159,7 @@ inventoryTabServer <- function(id, state, restoring, add_log, char_rev, session_
     observe({
       invalidateLater(3000,session);cid<-current_trade_character();if(!nzchar(cid)||isTRUE(state$offline_mode))return()
       sender_update<-consume_trade_sender_update(cid);if(!is.null(sender_update)&&is.list(sender_update$character)){state$char<-sender_update$character;load_from_state();showNotification("A trade was resolved; your inventory and purse have been refreshed.",type="message")}
-      if(!is.null(session$userData$pending_trade_id)||!is.null(session$userData$pending_note_id)||!is.null(session$userData$pending_opportunity))return()
+      if(!is.null(session$userData$pending_merchant_id)||!is.null(session$userData$pending_trade_id)||!is.null(session$userData$pending_note_id)||!is.null(session$userData$pending_opportunity))return()
       offers<-get_pending_trade_offers(cid);if(!nrow(offers))return();fresh<-offers[!offers$id%in%shown_trade_ids(),,drop=FALSE];if(!nrow(fresh))return();o<-fresh[1,,drop=FALSE];shown_trade_ids(unique(c(shown_trade_ids(),o$id)))
       summary<-enemy_db_json(o$summary[[1]],list());meta<-summary$meta%||%list();stat_line<-if(identical(summary$type,"weapon"))paste0("\nDamage: ",meta$damage1%||%"—"," ",meta$dmg_type1%||%""," · uses ",toupper(meta$stat%||%"str")," · material ",meta$material%||%"standard") else if(identical(summary$type,"armor"))paste0("\nArmour: AC ",meta$base_ac%||%"—"," · ",meta$type%||%"Armour") else ""
       details<-if(o$offer_kind[[1]]=="gold")paste0(o$gold_amount[[1]]," gold") else paste0(summary$name%||%"Item"," (",summary$type%||%"item",") · qty ",summary$qty%||%1," · ",summary$weight%||%0," lb · value ",summary$value%||%0,"g",stat_line,"\n",summary$desc%||%"")

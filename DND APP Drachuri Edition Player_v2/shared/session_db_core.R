@@ -87,6 +87,56 @@ mark_private_note <- function(note_id,recipient_id,status=c("read","acknowledged
   tryCatch({DBI::dbExecute(con,paste0("UPDATE private_notes SET ",set_sql," WHERE id=$1 AND recipient_character_id=$2"),params=list(as.integer(note_id),as.character(recipient_id),status));TRUE},error=function(e){message("mark_private_note failed: ",e$message);FALSE})
 }
 
+create_merchant <- function(session_id,name,wealth_class="moderate",specialty="general",temperament="fair",gold=50,stock=list()) {
+  con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE)
+  wealth_class<-match.arg(as.character(wealth_class),c("poor","moderate","rich"));specialty<-match.arg(as.character(specialty),c("general","food","weapons","armour","hunter"));temperament<-match.arg(as.character(temperament),c("hard","fair","generous"))
+  tryCatch(DBI::dbWithTransaction(con,{m<-DBI::dbGetQuery(con,"INSERT INTO merchants(session_id,name,wealth_class,specialty,temperament,gold) VALUES($1,$2,$3,$4,$5,$6) RETURNING *",params=list(as.integer(session_id),trimws(as.character(name)),wealth_class,specialty,temperament,max(0,as.numeric(gold))))
+    for(item in stock){qty<-max(1L,as.integer(item$qty%||%1L));base<-max(0,as.numeric(item$value%||%0));DBI::dbExecute(con,"INSERT INTO merchant_stock(merchant_id,catalogue_id,item_json,quantity,base_value) VALUES($1,$2,$3::jsonb,$4,$5)",params=list(m$id[[1L]],as.character(item$catalogue_id%||%item$id%||%""),enemy_json(item),qty,base))};m[1,,drop=FALSE]
+  }),error=function(e){message("create_merchant failed: ",e$message);NULL})
+}
+
+list_session_merchants <- function(session_id,open_only=FALSE) {
+  con<-get_db_connection();if(is.null(con))return(data.frame());on.exit(release_db_connection(con),add=TRUE);extra<-if(isTRUE(open_only))" AND status='open'"else""
+  tryCatch(DBI::dbGetQuery(con,paste0("SELECT * FROM merchants WHERE session_id=$1",extra," ORDER BY created_at DESC"),params=list(as.integer(session_id))),error=function(e)data.frame())
+}
+
+get_merchant_bundle <- function(merchant_id) {
+  con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE)
+  tryCatch({m<-DBI::dbGetQuery(con,"SELECT * FROM merchants WHERE id=$1",params=list(as.integer(merchant_id)));if(!nrow(m))return(NULL);s<-DBI::dbGetQuery(con,"SELECT * FROM merchant_stock WHERE merchant_id=$1 AND quantity>0 ORDER BY id",params=list(as.integer(merchant_id)));list(merchant=m[1,,drop=FALSE],stock=s)},error=function(e)NULL)
+}
+
+invite_players_to_merchant <- function(merchant_id,character_ids) {
+  con<-get_db_connection();if(is.null(con))return(FALSE);on.exit(release_db_connection(con),add=TRUE);ids<-unique(as.character(character_ids));ids<-ids[nzchar(ids)];if(!length(ids))return(FALSE)
+  tryCatch({for(cid in ids)DBI::dbExecute(con,"INSERT INTO merchant_invitations(merchant_id,character_id,status) VALUES($1,$2,'pending') ON CONFLICT(merchant_id,character_id) DO UPDATE SET status='pending',updated_at=now()",params=list(as.integer(merchant_id),cid));TRUE},error=function(e){message("invite_players_to_merchant failed: ",e$message);FALSE})
+}
+
+get_pending_merchant_invitations <- function(character_id,pending_only=TRUE) {
+  con<-get_db_connection();if(is.null(con))return(data.frame());on.exit(release_db_connection(con),add=TRUE)
+  status_sql<-if(isTRUE(pending_only))"i.status='pending'"else"i.status IN ('pending','opened')"
+  tryCatch(DBI::dbGetQuery(con,paste0("SELECT i.*,m.name,m.wealth_class,m.specialty,m.temperament,m.gold FROM merchant_invitations i JOIN merchants m ON m.id=i.merchant_id WHERE i.character_id=$1 AND ",status_sql," AND m.status='open' ORDER BY i.created_at"),params=list(as.character(character_id))),error=function(e)data.frame())
+}
+
+mark_merchant_invitation <- function(merchant_id,character_id,status=c("opened","dismissed")) {
+  status<-match.arg(status);con<-get_db_connection();if(is.null(con))return(FALSE);on.exit(release_db_connection(con),add=TRUE)
+  tryCatch(DBI::dbExecute(con,"UPDATE merchant_invitations SET status=$3,updated_at=now() WHERE merchant_id=$1 AND character_id=$2",params=list(as.integer(merchant_id),as.character(character_id),status))>0L,error=function(e)FALSE)
+}
+
+merchant_trade <- function(merchant_id,character_id,direction=c("buy","sell"),stock_id=NULL,player_item_id=NULL) {
+  direction<-match.arg(direction);con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE)
+  tryCatch(DBI::dbWithTransaction(con,{merchant<-DBI::dbGetQuery(con,"SELECT * FROM merchants WHERE id=$1 AND status='open' FOR UPDATE",params=list(as.integer(merchant_id)));if(!nrow(merchant))stop("Merchant is no longer open.")
+    row<-DBI::dbGetQuery(con,"SELECT id,state_blob FROM character_blobs WHERE id::text=$1 FOR UPDATE",params=list(as.character(character_id)));if(!nrow(row))stop("Character not found.");char<-validate_character(unserialize(row$state_blob[[1L]]));char<-hydrate_character_inventory_relational(con,char,as.character(character_id));inv<-inventory_normalize(char$inventory$items)
+    skill_bonus<-character_skill_modifier(char,"Persuasion");haggle_roll<-sample.int(20L,1L)+skill_bonus
+    if(direction=="buy"){
+      stock<-DBI::dbGetQuery(con,"SELECT * FROM merchant_stock WHERE id=$1 AND merchant_id=$2 AND quantity>0 FOR UPDATE",params=list(as.integer(stock_id),as.integer(merchant_id)));if(!nrow(stock))stop("That item has sold out.");terms<-merchant_haggle_terms(stock$base_value[[1L]],"buy",merchant$temperament[[1L]],haggle_roll);if(as.numeric(char$inventory$gold)<terms$price)stop("Not enough gold.")
+      item<-enemy_db_json(stock$item_json[[1L]],list());item$id<-paste0("merchant_",merchant_id,"_",stock$id[[1L]],"_",sample(1000:9999,1));item$qty<-1;item$equipped<-FALSE;item$edit<-FALSE;newrow<-enemy_loot_to_inventory_row(item,id=item$id);char$inventory$items<-inventory_normalize(rbind(inv,newrow));char$inventory$gold<-as.numeric(char$inventory$gold)-terms$price;DBI::dbExecute(con,"UPDATE merchant_stock SET quantity=quantity-1 WHERE id=$1",params=list(stock$id[[1L]]));DBI::dbExecute(con,"UPDATE merchants SET gold=gold+$2,updated_at=now() WHERE id=$1",params=list(as.integer(merchant_id),terms$price));item_name<-as.character(item$name%||%"Item")
+    }else{
+      idx<-match(as.character(player_item_id),inv$id);if(is.na(idx))stop("That item is no longer in your inventory.");sold<-inv[idx,,drop=FALSE];terms<-merchant_haggle_terms(as.numeric(sold$value[[1L]]),"sell",merchant$temperament[[1L]],haggle_roll);if(as.numeric(merchant$gold[[1L]])<terms$price)stop("The merchant cannot afford that item.");item<-as.list(sold[1,,drop=FALSE]);item$meta<-sold$meta[[1L]];item$qty<-1L
+      if(as.numeric(sold$qty[[1L]])>1){inv$qty[[idx]]<-as.numeric(inv$qty[[idx]])-1}else inv<-inv[-idx,,drop=FALSE];char$inventory$items<-inventory_normalize(inv);char$inventory$gold<-as.numeric(char$inventory$gold)+terms$price;DBI::dbExecute(con,"UPDATE merchants SET gold=gold-$2,updated_at=now() WHERE id=$1",params=list(as.integer(merchant_id),terms$price));DBI::dbExecute(con,"INSERT INTO merchant_stock(merchant_id,catalogue_id,item_json,quantity,base_value) VALUES($1,$2,$3::jsonb,1,$4)",params=list(as.integer(merchant_id),as.character(item$id%||%""),enemy_json(item),max(0,as.numeric(sold$value[[1L]]))));item_name<-as.character(sold$name[[1L]])
+    }
+    DBI::dbExecute(con,"UPDATE character_blobs SET state_blob=$1,char_name=$2,updated_at=now() WHERE id::text=$3",params=list(list(serialize(char,NULL)),char$meta$name,as.character(character_id)));sync_character_inventory_relational(con,char,as.character(character_id));DBI::dbExecute(con,"INSERT INTO merchant_transactions(merchant_id,character_id,direction,item_name,base_value,final_price,haggle_roll,haggle_dc,haggle_success) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)",params=list(as.integer(merchant_id),as.character(character_id),direction,item_name,terms$base,terms$price,terms$roll,terms$dc,terms$success));list(character=char,item_name=item_name,direction=direction,terms=terms,merchant_gold=if(direction=="buy")as.numeric(merchant$gold[[1L]])+terms$price else as.numeric(merchant$gold[[1L]])-terms$price)
+  }),error=function(e){message("merchant_trade failed: ",e$message);structure(NULL,error=e$message)})
+}
+
 # ============================================================
 # READ HELPERS
 # ============================================================

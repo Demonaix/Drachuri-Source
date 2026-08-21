@@ -400,6 +400,18 @@ This is the authoritative issue register for the player and control apps. The or
 - **Fix:** Generated names now combine the selected pool/type with readable configured feature names, for example “Undead Animal Armoured”, rather than falling back to “Undead Enemy”.
 - **Retest:** Apply defaults to pools with one and several custom features and confirm the editable name includes each feature display name.
 
+### FEATURE-004 — Persistent merchant generation and player haggling
+
+- **Status:** Implemented — awaiting live playtest
+- **Priority:** Medium
+- **Area:** Control merchants / Player trading
+- **Requested:** 2026-08-21
+- **Scope delivered:** Control can generate Poor, Moderate, or Rich merchants specialising in general goods, food, weapons, armour, or hunting stock. Stock comes from the authoritative Control catalogue, including quantities and rolled equipment material/build quality. Merchants have a real purse and a Hard, Fair, or Generous haggling temperament.
+- **Player workflow:** Invited players receive a merchant popup and retain a merchant button while the shop is open. Buying and selling makes a Persuasion check against the merchant temperament, shows the roll/DC/result and calculates a bounded price. Inventory, stock, character gold and merchant gold update atomically; equipment provenance travels with the item.
+- **Persistence:** Migration 018 stores merchants, stock, invitations and an immutable transaction history. Control can inspect current stock/purse, reinvite players, or close the merchant.
+- **Automated test:** Haggling price rules pass unit coverage. Fresh migrations 001–018 and integration coverage pass invitation, purchase, resale, stock, inventory and transaction history. One Control and two Player apps start together.
+- **Retest:** Generate one merchant of each wealth/specialty combination. Invite two players; buy and sell ordinary items and equipment; confirm the shown roll affects price, material/quality survives, both purses and quantities update, an unaffordable sale is refused, and closing the merchant removes Player access.
+
 ## Planned features
 
 ### FEATURE-001 — Rune module and combat integration

@@ -228,6 +228,16 @@ declined<-resolve_trade_offer(gold_offer$offer_id,"1002",FALSE);stopifnot(declin
 accepted_gold<-create_trade_offer(1L,"1001","1002","gold",gold_amount=5L);stopifnot(accepted_gold$sender$inventory$gold==15)
 accepted_gold_result<-resolve_trade_offer(accepted_gold$offer_id,"1002",TRUE);stopifnot(accepted_gold_result$status=="accepted",accepted_gold_result$character$inventory$gold==5)
 
+qa_apple<-list(id="qa_apple",catalogue_id="qa_apple",name="QA Apple",type="consumable",desc="Fresh test fruit.",value=2,weight=.2,qty=2,meta=list(category="consumable"))
+merchant<-create_merchant(1L,"QA Grocer","moderate","food","fair",50,list(qa_apple));stopifnot(nrow(merchant)==1L)
+stopifnot(invite_players_to_merchant(merchant$id[[1L]],c("1001","1002")))
+merchant_invites<-get_pending_merchant_invitations("1002");stopifnot(nrow(merchant_invites)==1L,merchant_invites$name[[1L]]=="QA Grocer")
+merchant_bundle<-get_merchant_bundle(merchant$id[[1L]]);stock_id<-merchant_bundle$stock$id[[1L]]
+bought<-merchant_trade(merchant$id[[1L]],"1002","buy",stock_id=stock_id);stopifnot(is.list(bought),any(bought$character$inventory$items$name=="QA Apple"))
+bought_id<-bought$character$inventory$items$id[match("QA Apple",bought$character$inventory$items$name)]
+sold<-merchant_trade(merchant$id[[1L]],"1002","sell",player_item_id=bought_id);stopifnot(is.list(sold),!bought_id%in%sold$character$inventory$items$id)
+merchant_tx<-DBI::dbGetQuery(con,"SELECT direction,haggle_roll,haggle_dc FROM merchant_transactions WHERE merchant_id=$1 ORDER BY id",params=list(merchant$id[[1L]]));stopifnot(identical(as.character(merchant_tx$direction),c("buy","sell")))
+
 stopifnot(identical(get_session_fire(1L),FALSE),isTRUE(set_session_fire(1L,TRUE)),identical(get_session_fire(1L),TRUE))
 rest_cycle<-begin_session_long_rest(1L,"1001",1L);stopifnot(!is.null(rest_cycle),isTRUE(rest_cycle$can_apply))
 rest_progress<-complete_session_long_rest(rest_cycle$cycle_id,"1001","half");stopifnot(rest_progress$completed[[1L]]==1L)

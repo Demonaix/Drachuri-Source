@@ -2447,6 +2447,16 @@ character_skill_modifier <- function(char,skill,skill_defs=NULL) {
   as.integer(floor((score-10L)/2L)+multiplier*proficiency)
 }
 
+merchant_haggle_terms <- function(base_value,direction=c("buy","sell"),temperament=c("fair","hard","generous"),roll) {
+  direction<-match.arg(direction);temperament<-match.arg(temperament)
+  base<-max(0,as.numeric(base_value%||%0));roll<-as.integer(roll%||%0L)
+  dc<-c(generous=10L,fair=13L,hard=16L)[[temperament]];success<-roll>=dc
+  normal<-if(direction=="buy")c(generous=.90,fair=1,hard=1.15)[[temperament]] else c(generous=.65,fair=.50,hard=.35)[[temperament]]
+  margin<-if(success)min(.25,.10+.05*floor(max(0,roll-dc)/5))else 0
+  multiplier<-if(success){if(direction=="buy")normal-margin else normal+margin}else{if(direction=="buy")normal+.10 else max(.10,normal-.10)}
+  list(base=base,dc=dc,roll=roll,success=success,multiplier=multiplier,price=max(if(base>0)1 else 0,round(base*multiplier)))
+}
+
 new_character <- function() {
   list(
     save_version = APP_SAVE_VERSION,

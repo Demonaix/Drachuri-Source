@@ -44,7 +44,7 @@ load_functions(global_file, c(
   "calc_auto_ac_for_char", "get_effective_max_hp", "get_weapon_hit_bonus",
   "starting_character_hp", "camp_gathering_yield", "consume_heart_sindre",
   "character_subclass_names", "magical_identity_labels", "skill_identity_labels",
-  "character_magic_types", "bloodlust_bite_required"
+  "character_magic_types", "bloodlust_bite_required", "merchant_haggle_terms"
 ))
 load_functions(relational_inventory_file, c("equipment_material_is_eligible", "inventory_item_category"))
 load_functions(enemy_generator_file, c("resolve_layered_damage_traits"))
@@ -1170,6 +1170,15 @@ test("ordinary non-equipment loot receives an authoritative category", {
   stopifnot(identical(test_env$inventory_item_category(mundane), "mundane_loot"))
   stopifnot(identical(test_env$inventory_item_category(crafting), "crafting"))
   stopifnot(identical(test_env$inventory_item_category(potion), "consumable"))
+})
+
+test("merchant temperament and haggling produce bounded buy and sell prices", {
+  hard_fail <- test_env$merchant_haggle_terms(100, "buy", "hard", 5)
+  hard_win <- test_env$merchant_haggle_terms(100, "buy", "hard", 21)
+  generous_sell <- test_env$merchant_haggle_terms(100, "sell", "generous", 15)
+  stopifnot(hard_fail$dc == 16L, !hard_fail$success, hard_fail$price == 125)
+  stopifnot(hard_win$success, hard_win$price < hard_fail$price)
+  stopifnot(generous_sell$success, generous_sell$price >= 75)
 })
 
 test("layered NPC damage traits escalate duplicates and resolve conflicts", {
