@@ -14,13 +14,13 @@ This is the authoritative issue register for the player and control apps. The or
 
 ### CTRL-001 — Control dropdown selections flash or revert
 
-- **Status:** In progress — live dual-write compatibility active
+- **Status:** Fixed — awaiting real control-app retest
 - **Priority:** High
 - **Area:** Control UI / reactive refresh
 - **Reported:** 2026-08-17
 - **Original report:** Difficulty selecting weapons and other values because dropdowns flash, revert, or lose their options.
 - **Work already attempted:** Reactive selection-preservation changes in checkpoints `1e536cc` and `5ab776e`.
-- **Test notes:** Issue was still reproducible after earlier fixes. Record the exact tab, dropdown, selected value, and value it changes to on the next reproduction.
+- **Test notes:** User reports the issue is now fixed as of 2026-08-21. Retain the exact-tab/value reproduction note if it returns.
 - **Fix/checkpoint:** —
 - **Retest:** Required in the real control app.
 
@@ -39,14 +39,16 @@ This is the authoritative issue register for the player and control apps. The or
 
 ### BLOOD-001 — Hearts do not grant expected temporary Sindre
 
-- **Status:** Open
+- **Status:** Fixed — awaiting retest
 - **Priority:** Medium
 - **Area:** Blood / hearts / resources
 - **Reported:** 2026-08-17
 - **Original report:** Eating hearts appears not to add temporary Sindre. It adds only +2 temporary HP, which may also be incorrect.
-- **Test notes:** Confirm the intended rule by heart type and compare temporary HP and temporary Sindre before/after consumption.
-- **Fix/checkpoint:** —
-- **Retest:** Not started.
+- **Cause:** Player and Control had diverged heart rules. Player treated the Heart Eater's “overheal” as 25% of maximum HP (only +2 on a 10-HP character) and granted no temporary Sindre. Control instead applied ordinary Sindre overflow to everyone. The class description did not say which resource was intended to overheal.
+- **Rule fixed (2026-08-21):** A normal consumer adds the heart's listed Sindre to their current reserve and retains only the amount above their normal maximum as temporary Sindre. A Heart Eater first restores their normal Sindre completely, then gains the heart's entire listed value as temporary Sindre. Hearts do not grant temporary HP. Existing temporary Sindre is preserved and the new gain is added to it.
+- **Automated test:** Covers a normal character consuming a 25-Sindre heart at 90/100 with three existing temporary Sindre (ends 100 normal and 18 temporary), and a Heart Eater consuming the same heart at 10/100 (ends 100 normal and 28 temporary). Both blood modules and their descriptions parse; all 56 rule tests pass.
+- **Fix/checkpoint:** `d0b565e`
+- **Retest:** With a Heart Eater below maximum Sindre, consume one heart and confirm normal Sindre fills completely, temporary Sindre increases by the heart's displayed value, temporary HP does not change, and the heart count falls by one. Repeat with a non-Heart-Eater near maximum and confirm only the actual overflow becomes temporary Sindre.
 
 ### CHAR-002 — Magical nature and skill identity lack variety
 
