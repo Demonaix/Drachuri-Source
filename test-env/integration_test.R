@@ -50,6 +50,18 @@ stopifnot(get_session_supplies(1L)$water[[1L]]==0L,!adjust_session_supply(1L,"wa
 refilled<-adjust_session_supply(1L,"water",fill=TRUE)
 stopifnot(refilled$after==5L,get_session_supplies(1L)$water[[1L]]==5L)
 
+gather_request<-create_camp_gather_request(1L,50L,"1001","rations",3L,"1002")
+stopifnot(is.data.frame(gather_request),nrow(gather_request)==1L)
+pending_gather<-get_pending_camp_gather_requests("1002")
+stopifnot(any(pending_gather$id==gather_request$id[[1L]]))
+gather_result<-resolve_camp_gather_request(gather_request$id[[1L]],"1002",TRUE,5L)
+stopifnot(gather_result$status=="resolved",gather_result$assisted,gather_result$amount>=0L,gather_result$amount<=4L)
+stopifnot(is.null(create_camp_gather_request(1L,50L,"1001","wood",0L,NULL)))
+decline_request<-create_camp_gather_request(1L,50L,"1003","water",1L,"1004")
+stopifnot(resolve_camp_gather_request(decline_request$id[[1L]],"1004",FALSE,0L)$status=="declined")
+retry_request<-create_camp_gather_request(1L,50L,"1003","water",1L,NULL)
+stopifnot(is.data.frame(retry_request),nrow(retry_request)==1L)
+
 character <- load_character_from_db(1001L)
 stopifnot(is.list(character))
 character$journal$log <- c(character$journal$log, "Multiplayer regression save marker")

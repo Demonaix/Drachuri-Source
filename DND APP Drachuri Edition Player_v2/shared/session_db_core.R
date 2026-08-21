@@ -1610,6 +1610,43 @@ adjust_session_supply <- function(session_id,resource,amount=0L,fill=FALSE,defau
   tryCatch(DBI::dbWithTransaction(con,{locked<-DBI::dbGetQuery(con,"SELECT * FROM session_supplies WHERE session_id=$1 FOR UPDATE",params=list(as.integer(session_id)));before<-as.integer(locked[[resource]][[1L]]);maximum<-as.integer(locked[[paste0(resource,"_max")]][[1L]]);after<-if(isTRUE(fill))maximum else max(0L,min(maximum,before+as.integer(amount)));sql<-paste0("UPDATE session_supplies SET ",resource,"=$2,updated_at=now() WHERE session_id=$1 RETURNING *");updated<-DBI::dbGetQuery(con,sql,params=list(as.integer(session_id),after))[1,,drop=FALSE];list(row=updated,before=before,after=after,applied=!identical(before,after))}),error=function(e){message("adjust_session_supply failed: ",e$message);NULL})
 }
 
+create_camp_gather_request <- function(session_id,day_number,requester_id,resource,requester_bonus,helper_id=NULL) {
+  con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE);helper_id<-as.character(helper_id%||%"");if(!nzchar(helper_id))helper_id<-NA_character_
+  tryCatch({row<-DBI::dbGetQuery(con,paste("INSERT INTO camp_gather_requests(session_id,day_number,resource,requester_character_id,helper_character_id,requester_bonus)","SELECT $1,$2,$3,$4,$5,$6 WHERE NOT EXISTS(SELECT 1 FROM camp_gather_actions WHERE session_id=$1 AND day_number=$2 AND character_id=$4) RETURNING *"),params=list(as.integer(session_id),as.integer(day_number),as.character(resource),as.character(requester_id),helper_id,as.integer(requester_bonus)));if(!nrow(row))NULL else row[1,,drop=FALSE]},error=function(e){message("create_camp_gather_request failed: ",e$message);NULL})
+}
+
+get_pending_camp_gather_requests <- function(helper_id) {
+  con<-get_db_connection();if(is.null(con))return(data.frame());on.exit(release_db_connection(con),add=TRUE)
+  tryCatch(DBI::dbGetQuery(con,paste("SELECT r.*,COALESCE(sp.display_name,cb.char_name,r.requester_character_id) AS requester_name FROM camp_gather_requests r","LEFT JOIN session_players sp ON sp.session_id=r.session_id AND sp.character_id::text=r.requester_character_id LEFT JOIN character_blobs cb ON cb.id::text=r.requester_character_id","WHERE r.helper_character_id=$1 AND r.status='pending' ORDER BY r.created_at"),params=list(as.character(helper_id))),error=function(e)data.frame())
+}
+
+get_finished_camp_gather_requests <- function(requester_id) {
+  con<-get_db_connection();if(is.null(con))return(data.frame());on.exit(release_db_connection(con),add=TRUE)
+  tryCatch(DBI::dbGetQuery(con,"SELECT * FROM camp_gather_requests WHERE requester_character_id=$1 AND status IN ('resolved','declined') ORDER BY resolved_at DESC LIMIT 20",params=list(as.character(requester_id))),error=function(e)data.frame())
+}
+
+resolve_camp_gather_request <- function(request_id,responder_id,accept=TRUE,helper_bonus=0L) {
+  con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE)
+  tryCatch(DBI::dbWithTransaction(con,{
+    r<-DBI::dbGetQuery(con,"SELECT * FROM camp_gather_requests WHERE id=$1 FOR UPDATE",params=list(as.integer(request_id)))
+    if(!nrow(r)||r$status[[1L]]!="pending")stop("Gathering request is no longer pending.")
+    responder_id<-as.character(responder_id);helper<-as.character(r$helper_character_id[[1L]]%||%"")
+    if(nzchar(helper)&&helper!=responder_id)stop("This gathering request belongs to another helper.")
+    if(!isTRUE(accept)){
+      DBI::dbExecute(con,"UPDATE camp_gather_requests SET status='declined',resolved_at=now() WHERE id=$1",params=list(as.integer(request_id)))
+      list(status="declined")
+    }else{
+      actors<-unique(c(as.character(r$requester_character_id[[1L]]),if(nzchar(helper))helper))
+      used<-DBI::dbGetQuery(con,"SELECT character_id FROM camp_gather_actions WHERE session_id=$1 AND day_number=$2 AND character_id=ANY($3::text[])",params=list(r$session_id[[1L]],r$day_number[[1L]],paste0("{",paste(actors,collapse=","),"}")))
+      if(nrow(used))stop("A participant has already used today's camp gathering action.")
+      requester_roll<-sample.int(20L,1L)+as.integer(r$requester_bonus[[1L]]);helper_roll<-if(nzchar(helper))sample.int(20L,1L)+as.integer(helper_bonus)else NA_integer_;total<-max(c(requester_roll,helper_roll),na.rm=TRUE);amount<-camp_gathering_yield(total)
+      for(actor in actors)DBI::dbExecute(con,"INSERT INTO camp_gather_actions(session_id,day_number,character_id,resource,request_id) VALUES($1,$2,$3,$4,$5)",params=list(r$session_id[[1L]],r$day_number[[1L]],actor,r$resource[[1L]],r$id[[1L]]))
+      DBI::dbExecute(con,"INSERT INTO session_supplies(session_id) VALUES($1) ON CONFLICT DO NOTHING",params=list(r$session_id[[1L]]));resource<-as.character(r$resource[[1L]]);sql<-paste0("UPDATE session_supplies SET ",resource,"=LEAST(",resource,"_max,",resource,"+$2),updated_at=now() WHERE session_id=$1");DBI::dbExecute(con,sql,params=list(r$session_id[[1L]],amount));DBI::dbExecute(con,"UPDATE camp_gather_requests SET status='resolved',helper_bonus=$2,requester_roll=$3,helper_roll=$4,result_total=$5,yield_amount=$6,resolved_at=now() WHERE id=$1",params=list(r$id[[1L]],if(nzchar(helper))as.integer(helper_bonus)else NA_integer_,requester_roll,helper_roll,total,amount))
+      list(status="resolved",resource=resource,amount=amount,total=total,requester_roll=requester_roll,helper_roll=helper_roll,assisted=nzchar(helper))
+    }
+  }),error=function(e){message("resolve_camp_gather_request failed: ",e$message);NULL})
+}
+
 get_active_encounter_conditions <- function(encounter_id, target_actor_id = NULL) {
   con <- get_db_connection()
   if (is.null(con)) return(data.frame())

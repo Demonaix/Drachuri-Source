@@ -2288,6 +2288,18 @@ starting_character_hp <- function(class_name, level = 1L, constitution = 10L,
   as.integer(first_level + (level - 1L) * later_level)
 }
 
+camp_gathering_bonus <- function(char) {
+  char<-validate_character(char);score<-suppressWarnings(as.integer(char$abilities$bld_str%||%10L));if(is.na(score))score<-10L
+  skills<-char$prof$skills%||%list();idx<-which(tolower(names(skills))=="survival");rank<-if(length(idx))as.character(skills[[idx[[1L]]]]%||%"None")else"None"
+  proficiency<-if(exists("character_proficiency_bonus",mode="function",inherits=TRUE))character_proficiency_bonus(char)else{level<-as.integer(char$build$level%||%1L);2L+max(0L,floor((level-1L)/4L))}
+  multiplier<-if(tolower(rank)=="expertise")2L else if(tolower(rank)=="proficient")1L else 0L
+  as.integer(floor((score-10L)/2L)+multiplier*proficiency)
+}
+
+camp_gathering_yield <- function(total) {
+  total<-suppressWarnings(as.integer(total));if(is.na(total)||total<10L)0L else if(total<15L)1L else if(total<20L)2L else if(total<25L)3L else 4L
+}
+
 new_character <- function() {
   list(
     save_version = APP_SAVE_VERSION,
