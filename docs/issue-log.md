@@ -96,6 +96,19 @@ This is the authoritative issue register for the player and control apps. The or
 - **Fix/checkpoint:** `8ba3561`
 - **Retest:** On player one, choose each gathering type and inspect the solo/assistant modal. Ask player two to help; decline once and confirm both can still act, then retry and accept. Confirm the better of both displayed Survival totals determines 0–4 shared supplies. After resolution, verify neither participant can forage, gather water or gather wood again until the next shared day, while an uninvolved third player still can.
 
+### SKILL-001 — Independent player rolls duplicate one party skill check
+
+- **Status:** Implemented — awaiting real multi-player retest
+- **Priority:** High
+- **Area:** Skills / party collaboration
+- **Reported:** 2026-08-21
+- **Original report:** A question such as knowledge of a city should not prompt three unrelated History rolls. One player should lead the check alone or ask the party for assistance, combining relevant character skill.
+- **Rules implemented:** The normal skill-roll button creates one named check with optional context. Solo uses the leader's d20 plus the skill's mapped ability and saved proficiency/Expertise. “Ask party” broadcasts one request; the first other player to accept rolls with their own modifier, and the better of the two modified totals becomes the single party result. This follows the bounded advantage model used for assisted gathering and prevents accepted helpers from generating extra outcomes. Explicit advantage/disadvantage buttons remain personal rolls for circumstances imposed by the DM.
+- **Fix (2026-08-21):** Migration 014 adds durable pending and resolved party checks. Assistance prompts survive refresh, resolution uses a row lock so only one helper can complete a request, and every connected player receives the same leader/helper breakdown, context and final total in their log. The modifier helper uses the canonical skill-to-ability table plus character proficiency or Expertise, so History uses Intelligence, Medicine uses Blood Strength, and so on.
+- **Automated test:** The 14-migration integration suite verifies request visibility, assisted resolution, better-total selection, second-helper rejection, shared result retrieval, and solo resolution. All 55 rule tests pass. Migration 014 is applied to live Supabase.
+- **Fix/checkpoint:** `bba9e12`
+- **Retest:** From player one, click the normal History roll, enter a city question and ask the party. Accept on player two and confirm every client logs exactly one result with both modified rolls and the better total. Try accepting on player three afterward and confirm no second result appears. Repeat alone with Medicine and confirm the correct Blood Strength/proficiency modifier is used.
+
 ### MAGIC-001 — Natural magic spell rules need an intent audit
 
 - **Status:** Open
