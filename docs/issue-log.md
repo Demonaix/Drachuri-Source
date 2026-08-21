@@ -14,7 +14,7 @@ This is the authoritative issue register for the player and control apps. The or
 
 ### CTRL-001 — Control dropdown selections flash or revert
 
-- **Status:** Investigating
+- **Status:** In progress — relational schema and live backfill complete
 - **Priority:** High
 - **Area:** Control UI / reactive refresh
 - **Reported:** 2026-08-17
@@ -179,8 +179,8 @@ This is the authoritative issue register for the player and control apps. The or
 - **Schema audit (2026-08-21):** Live Supabase contains lowercase `armour`, `weapons`, and `items`, plus quoted mixed-case `"Materials"` and `"Condition"`. The three item tables have useful typed columns and pool arrays. However, weapons and armour currently have no material/condition foreign keys, so the modifier tables cannot yet be applied authoritatively. `"Condition"` also risks confusion with combat conditions, and both mixed-case names require permanent SQL quoting.
 - **Recommended foundation:** Keep the existing tables untouched until a reviewed migration exists. Standardise the modifier tables to unquoted lowercase names (prefer `item_materials` and `item_conditions`), add explicit nullable material/condition references with foreign keys, validation constraints, and timestamps, then backfill catalogue data before switching application reads away from blobs. Character inventory should ultimately store owned-item instances referencing definitions, while retaining per-instance quantity, equipped state, condition and approved overrides.
 - **Migration safety:** Do not make the new tables authoritative or remove blob fields until definition backfill, dual-read compatibility, and rollback tests pass.
-- **Fix/checkpoint:** —
-- **Retest:** Schema integration not started; audit completed read-only.
+- **Fix/checkpoint (2026-08-21):** Applied migration `007_relational_inventory`. Added lowercase `item_materials` and `item_conditions`, copied all legacy modifier rows, added default material/condition foreign keys to all three definition tables, and added relational `character_wallets`, `character_inventory_items`, and `inventory_pool_rules`. Owned items use real foreign keys through separate weapon/armour/item columns and retain quantity, equipped state, bag state, per-instance modifiers and approved JSON properties. Live backfill created six wallet rows and 44 owned-item rows (17 weapons, six armour pieces and 21 other items), including party-specific/homebrew definitions. Existing character blobs were not altered. Re-ran the backfill idempotently and confirmed the same totals.
+- **Retest:** Migration ledger confirms 001–007 applied. Backfill dry run and applied verification agree on six characters, 44 owned items and 111 total gold. Existing 50 automated game tests still pass. Remaining before authority switch: add application dual-write/dual-read compatibility, compare both representations during normal play, migrate the control catalogue/pool editors away from local RDS, then test rollback before retiring inventory fields inside character blobs.
 
 ### DATA-002 — Control item editor lacks complete damage-type support
 
