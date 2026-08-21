@@ -422,6 +422,26 @@ This is the authoritative issue register for the player and control apps. The or
 - **Fix:** Removed the competing Session ID input; the Sessions tab is now authoritative and the header only displays its active choice. Player membership/HP uses one shared three-second Control reactive. The desktop dashboard has a HUD gutter, responsive narrow-screen layout, and a separated merchant invitation panel/actions row.
 - **Retest:** Set a populated session active and confirm the HUD and merchant player choices populate within three seconds. Switch sessions and confirm both change together. Check that the HUD covers no controls on desktop and becomes an in-flow panel below 900px.
 
+### CTRL-005 — Control HUD lacked Player HUD features and Players table flashed
+
+- **Status:** Fixed — awaiting Control/combat retest
+- **Priority:** Medium
+- **Area:** Control HUD / Players
+- **Reported:** 2026-08-21
+- **Fix:** Control now instantiates the canonical Player party-HUD module against one compact three-second Control snapshot. It therefore shares the same cards, HP/temp HP and Sindre bars, race/class, conditions, initiative order, current-turn emphasis, enemies and summons. The Players module's frequently rebuilt interactive DT table was replaced with a stable named summary plus explicit removal selector.
+- **Retest:** Compare Control and Player HUDs outside combat and during a mixed player/enemy/summon encounter. Confirm values, conditions, order and active-turn styling match. Leave Players open for at least 15 seconds and confirm its list no longer flashes.
+
+### MERCHANT-001 — Haggling immediately traded and could crash on insufficient gold
+
+- **Status:** Fixed — awaiting Player retest
+- **Priority:** High
+- **Area:** Merchant trading
+- **Reported:** 2026-08-21
+- **Cause:** The Haggle button executed the database exchange immediately, so an unaffordable quote entered the transaction error path without allowing review.
+- **Fix:** Migration 019 adds persistent merchant quotes. Haggling now displays the roll, adjusted DC, result and exact buy/sell price before anything moves. The player must confirm; unaffordable confirmations are disabled with both purses shown. Declining records the quote and raises that character's next DC with the merchant by 2; accepting atomically exchanges the quoted amount and resets the rejection penalty.
+- **Automated test:** Fresh migrations 001–019 pass. Integration coverage rejects a DC 13 quote, verifies the next quote uses DC 15, accepts it once, and verifies the stored quote status and inventory exchange. All 64 rule tests pass.
+- **Retest:** Haggle with zero player gold and confirm there is no crash or exchange. Fund the player, decline twice and confirm DC rises twice, then accept and verify exactly the displayed price, stock, item and both purses update. Repeat for a sale and an underfunded merchant.
+
 ## Planned features
 
 ### FEATURE-001 — Rune module and combat integration

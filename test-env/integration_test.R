@@ -237,6 +237,11 @@ bought<-merchant_trade(merchant$id[[1L]],"1002","buy",stock_id=stock_id);stopifn
 bought_id<-bought$character$inventory$items$id[match("QA Apple",bought$character$inventory$items$name)]
 sold<-merchant_trade(merchant$id[[1L]],"1002","sell",player_item_id=bought_id);stopifnot(is.list(sold),!bought_id%in%sold$character$inventory$items$id)
 merchant_tx<-DBI::dbGetQuery(con,"SELECT direction,haggle_roll,haggle_dc FROM merchant_transactions WHERE merchant_id=$1 ORDER BY id",params=list(merchant$id[[1L]]));stopifnot(identical(as.character(merchant_tx$direction),c("buy","sell")))
+quote1<-create_merchant_quote(merchant$id[[1L]],"1002","buy",stock_id=stock_id);stopifnot(nrow(quote1)==1L,quote1$status[[1L]]=="pending")
+stopifnot(reject_merchant_quote(quote1$id[[1L]],"1002"))
+quote2<-create_merchant_quote(merchant$id[[1L]],"1002","buy",stock_id=stock_id);stopifnot(quote2$haggle_dc[[1L]]==15L)
+quoted_buy<-merchant_trade(merchant$id[[1L]],"1002",quote_id=quote2$id[[1L]]);stopifnot(is.list(quoted_buy),any(quoted_buy$character$inventory$items$name=="QA Apple"))
+quote_status<-DBI::dbGetQuery(con,"SELECT status FROM merchant_quotes WHERE id=$1",params=list(quote2$id[[1L]]));stopifnot(quote_status$status[[1L]]=="accepted")
 
 stopifnot(identical(get_session_fire(1L),FALSE),isTRUE(set_session_fire(1L,TRUE)),identical(get_session_fire(1L),TRUE))
 rest_cycle<-begin_session_long_rest(1L,"1001",1L);stopifnot(!is.null(rest_cycle),isTRUE(rest_cycle$can_apply))

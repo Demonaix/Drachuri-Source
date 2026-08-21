@@ -15,6 +15,7 @@ source("control_app/modules/control_npc_pools_module.R", local = FALSE)
 source("control_app/modules/control_npc_features_module.R", local = FALSE)
 source("control_app/modules/control_npc_attacks_module.R", local = FALSE)
 source("control_app/modules/control_merchants_module.R", local = FALSE)
+source("../DND APP Drachuri Edition Player_v2/server/party_hud_module.R", local = FALSE)
 
 ui_control <- fluidPage(
   useShinyjs(),
@@ -46,7 +47,7 @@ ui_control <- fluidPage(
 
       .control-shell {
         max-width: none;
-        margin: 18px 18px 18px 220px;
+        margin: 18px 18px 18px 170px;
         padding: 0 14px 20px 14px;
       }
 
@@ -150,6 +151,7 @@ ui_control <- fluidPage(
       @media (max-width: 900px) {
         .control-shell { margin:10px; padding:0 8px 18px; }
         .control-party-hud { position:relative; left:auto; top:auto; width:auto; max-height:220px; margin-bottom:12px; }
+        #control_partyhud-partyhud_root { position:relative; top:auto; left:auto; width:156px; max-height:220px; margin-bottom:12px; }
       }
 
       .shiny-input-container {
@@ -164,7 +166,7 @@ ui_control <- fluidPage(
   
   div(
     class = "control-shell",
-    uiOutput("control_party_hud"),
+    partyHudUI("control_partyhud"),
     
     # --------------------------------------------------------
     # Header / global toolbar

@@ -80,12 +80,15 @@ server_control <- function(input, output, session) {
     
   })
   
-  players_tbl <- reactive({
+  control_live_snapshot<-reactive({
     ctrl$refresh_key
     invalidateLater(3000, session)
     sid<-current_session_id()
-    if(is.null(sid))return(data.frame())
-    tryCatch(get_session_players(sid),error=function(e){message("Control player refresh failed: ",e$message);data.frame()})
+    if(is.null(sid))return(empty_player_live_snapshot())
+    tryCatch(get_player_live_snapshot(sid,"__control__",encounter_id=NULL,event_limit=20L),error=function(e){message("Control live snapshot failed: ",e$message);empty_player_live_snapshot()})
+  })
+  players_tbl <- reactive({
+    control_live_snapshot()$players%||%data.frame()
   })
   
   positions_tbl <- reactive({
@@ -105,11 +108,9 @@ server_control <- function(input, output, session) {
     session_data()$events %||% data.frame()
     
   })
-  output$control_party_hud<-renderUI({
-    p<-players_tbl();if(!is.data.frame(p)||!nrow(p))return(div(class="control-party-hud",h4("Party"),span("No players in session")))
-    member<-lapply(seq_len(nrow(p)),function(i){name<-as.character(p$display_name[[i]]%||%p$char_name[[i]]%||%p$character_id[[i]]);hp<-if("current_hp"%in%names(p))as.character(p$current_hp[[i]]%||%"—")else"—";temp<-if("temp_hp"%in%names(p))as.integer(p$temp_hp[[i]]%||%0L)else 0L;active<-if("is_active"%in%names(p))isTRUE(p$is_active[[i]])else TRUE;div(class=paste("control-party-member",if(!active)"inactive"else""),strong(name),br(),span(paste0("HP ",hp,if(temp>0L)paste0(" +",temp)else"",if(!active)" · inactive"else"")))})
-    div(class="control-party-hud",h4("Party · Session ",ctrl$session_id%||%"—"),member)
-  })
+  control_hud_state<-reactiveValues(active_session_id=NULL,active_encounter_id=NULL,char_id="__control__",offline_mode=FALSE)
+  observe({control_hud_state$active_session_id<-current_session_id();s<-control_live_snapshot()$session%||%data.frame();eid<-if(nrow(s))suppressWarnings(as.integer(s$active_encounter_id[[1L]]%||%NA))else NA_integer_;control_hud_state$active_encounter_id<-if(is.na(eid))NULL else eid})
+  partyHudServer("control_partyhud",control_hud_state,live_snapshot=control_live_snapshot)
   output$ctrl_active_session<-renderUI({
     sid<-current_session_id();span(class="control-kpi",paste0("Active session: ",sid%||%"none"))
   })

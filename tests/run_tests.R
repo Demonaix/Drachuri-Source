@@ -1176,9 +1176,11 @@ test("merchant temperament and haggling produce bounded buy and sell prices", {
   hard_fail <- test_env$merchant_haggle_terms(100, "buy", "hard", 5)
   hard_win <- test_env$merchant_haggle_terms(100, "buy", "hard", 21)
   generous_sell <- test_env$merchant_haggle_terms(100, "sell", "generous", 15)
+  rejected_once <- test_env$merchant_haggle_terms(100, "buy", "fair", 14, dc_penalty = 2L)
   stopifnot(hard_fail$dc == 16L, !hard_fail$success, hard_fail$price == 125)
   stopifnot(hard_win$success, hard_win$price < hard_fail$price)
   stopifnot(generous_sell$success, generous_sell$price >= 75)
+  stopifnot(rejected_once$dc == 15L, !rejected_once$success)
 })
 
 test("layered NPC damage traits escalate duplicates and resolve conflicts", {
