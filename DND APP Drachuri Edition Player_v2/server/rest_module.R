@@ -691,22 +691,26 @@ restTabServer <- function(
     # ----------------------------
     observeEvent(input$long_rest, {
       x <- validate_character(state$char)
-      max_hp <- as.integer(x$resources$hp$max %||% 0)
-      
-      ok <- set_effective_hp_state(state, cur = max_hp, temp = 0)
-      if (!isTRUE(ok)) {
-        log_safe("⚠️ Long Rest healing failed.", TRUE, "red")
-        return()
-      }
-      
-      x <- validate_character(state$char)
       x$status$resting <- TRUE
       x$status$has_fire <- FALSE   # extinguish on long rest
       
       x <- restore_sindre(x, hours = 12, add_log = add_log)
       x <- reset_class_uses_for_rest(x, "long_rest")
-      
-      state$char <- advance_day_all(x, add_log, state = state)
+
+      # Day-advance helpers can apply damage through the shared state. Publish
+      # the prepared character first so they never read and restore stale data.
+      state$char <- x
+      state$char <- advance_day_all(state$char, add_log, state = state)
+      max_hp <- get_effective_max_hp(state$char)
+      if (is.na(max_hp) || max_hp < 1L) {
+        log_safe("⚠️ Long Rest stopped: saved maximum HP is invalid. No HP value was overwritten.", TRUE, "red")
+        return()
+      }
+      ok <- set_effective_hp_state(state, cur = max_hp, temp = 0)
+      if (!isTRUE(ok)) {
+        log_safe("⚠️ Long Rest healing failed.", TRUE, "red")
+        return()
+      }
       clamp_session_hp_to_max(state)
       
       

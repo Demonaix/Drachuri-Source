@@ -1187,13 +1187,22 @@ is_session_active_for_character <- function(state) {
   !is.null(state$active_session_id) && !is.null(state$char_id)
 }
 
+get_effective_max_hp <- function(char) {
+  char <- validate_character(char)
+  base_max <- suppressWarnings(as.integer(char$resources$hp$max %||% 0L))
+  if (is.na(base_max) || base_max < 1L) return(0L)
+  exhaustion <- suppressWarnings(as.integer(char$status$exhaustion %||% 0L))
+  if (is.na(exhaustion)) exhaustion <- 0L
+  if (exhaustion >= 4L) max(1L, floor(base_max / 2L)) else base_max
+}
+
 get_effective_hp_state <- function(state) {
   x <- validate_character(state$char)
   
   hp <- x$resources$hp %||% list(max = 0, cur = 0, temp = 0)
   
   out <- list(
-    max = as.integer(hp$max %||% 0),
+    max = get_effective_max_hp(x),
     cur = as.integer(hp$cur %||% 0),
     temp = as.integer(hp$temp %||% 0),
     source = "character"
@@ -1230,7 +1239,7 @@ clamp_session_hp_to_max <- function(state) {
   if (!is_session_active_for_character(state)) return(FALSE)
   
   x <- validate_character(state$char)
-  max_hp <- as.integer(x$resources$hp$max %||% 0)
+  max_hp <- get_effective_max_hp(x)
   
   row <- get_session_player_row(state$active_session_id, state$char_id)
   if (nrow(row) == 0) return(FALSE)
@@ -2496,13 +2505,8 @@ validate_character <- function(x) {
   x$resources$hp$cur  <- max(0, min(x$resources$hp$max, x$resources$hp$cur))
   x$resources$hp$temp <- max(0, x$resources$hp$temp)
   
-  #Exhaustion HP
-  ex <- as.integer(x$status$exhaustion %||% 0)
-  
-  if (ex >= 4) {
-    x$resources$hp$max <- floor(x$resources$hp$max / 2)
-    x$resources$hp$cur <- min(x$resources$hp$cur, x$resources$hp$max)
-  }
+  # Exhaustion changes effective maximum HP at read/use time. Never mutate the
+  # canonical stored maximum here: validate_character() is called repeatedly.
   
   
   #rations

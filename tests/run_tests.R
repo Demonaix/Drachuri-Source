@@ -36,7 +36,7 @@ load_functions <- function(path, names) {
 
 load_functions(global_file, c(
   "character_save_payload", "restore_sindre", "reset_class_uses_for_rest",
-  "calc_auto_ac_for_char"
+  "calc_auto_ac_for_char", "get_effective_max_hp"
 ))
 load_functions(
   session_file,
@@ -980,6 +980,19 @@ test("conditional resistance is tracked without becoming permanent", {
   result <- test_env$apply_unlocked_class_effects(character, class_defs)
   stopifnot(length(result$combat_profile$resistances) == 0L)
   stopifnot(length(result$derived_effects$conditional) == 1L)
+})
+
+test("exhaustion halves effective HP without mutating stored maximum", {
+  test_env$validate_character <- identity
+  character <- list(
+    resources = list(hp = list(max = 20L, cur = 20L, temp = 0L)),
+    status = list(exhaustion = 4L)
+  )
+  stopifnot(test_env$get_effective_max_hp(character) == 10L)
+  stopifnot(character$resources$hp$max == 20L)
+  stopifnot(test_env$get_effective_max_hp(character) == 10L)
+  character$status$exhaustion <- 3L
+  stopifnot(test_env$get_effective_max_hp(character) == 20L)
 })
 
 cat("\n", tests_run, " tests passed.\n", sep = "")
