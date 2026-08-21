@@ -198,6 +198,8 @@ armouryTabServer <- function(id, state, restoring, add_log, char_rev) {
       prof <- isTRUE(meta$proficient)
       
       as.numeric(meta$to_hit_bonus %||% 0) +
+        as.numeric(meta$material_attack_bonus %||% 0) +
+        as.numeric(meta$quality_attack_bonus %||% 0) +
         ability_mod(stat) +
         if (prof) prof_bonus() else 0
     }
@@ -221,7 +223,8 @@ armouryTabServer <- function(id, state, restoring, add_log, char_rev) {
       )
       
       dex_add <- min(dex_mod, max_dex)
-      base_ac + dex_add + if (prof) pb else 0
+      base_ac + dex_add + as.numeric(meta$material_armour_modifier %||% 0) +
+        as.numeric(meta$quality_armour_modifier %||% 0) + if (prof) pb else 0
     }
     
     calc_auto_ac_local <- function() {
@@ -262,6 +265,7 @@ armouryTabServer <- function(id, state, restoring, add_log, char_rev) {
       p <- paste0("itm_", w$id, "_")
       meta <- weapon_meta_defaults_local(w$meta[[1]])
       hit_bonus <- weapon_hit_bonus(w)
+      damage_modifier <- as.numeric(meta$material_damage_modifier %||% 0) + as.numeric(meta$quality_damage_modifier %||% 0)
       
       if (isTRUE(w$edit)) {
         return(
@@ -315,6 +319,7 @@ armouryTabServer <- function(id, state, restoring, add_log, char_rev) {
                 " • Stat: ", toupper(meta$stat),
                 " • Damage: ", meta$damage1,
                 if (nzchar(meta$damage2)) paste0(" + ", meta$damage2) else "",
+                if (damage_modifier != 0) sprintf(" %+g", damage_modifier) else "",
                 if (nzchar(as.character(meta$material %||% ""))) paste0(" • ", meta$material, " / ", meta$build_quality %||% "Unrated") else "",
                 " • Qty: ", w$qty[[1]] %||% 1,
                 " • ", w$weight[[1]] %||% 0, " lbs",
@@ -356,6 +361,10 @@ armouryTabServer <- function(id, state, restoring, add_log, char_rev) {
               column(4, selectInput(ns(paste0(p, "armor_type")), "Armor Type", choices = COMBAT_ARMOR_TYPES, selected = meta$type)),
               column(4, numericInput(ns(paste0(p, "custom_max_dex")), "Custom Max Dex", value = meta$custom_max_dex, step = 1))
             ),
+            fluidRow(
+              column(6, selectInput(ns(paste0(p, "material")), "Material", c("Copper","Iron","Steel","Titanium Copper","Wood"), selected = meta$material %||% "Steel")),
+              column(6, selectInput(ns(paste0(p, "build_quality")), "Build quality", c("Very-Poorly-Crafted","Poorly-Crafted","Passably-Crafted","Bog-Standard","Well-Crafted","Master-Crafted"), selected = meta$build_quality %||% "Bog-Standard"))
+            ),
             checkboxInput(ns(paste0(p, "proficient")), "Proficient", value = isTRUE(meta$proficient)),
             div(
               style = "display:flex; gap:8px; flex-wrap:wrap;",
@@ -378,6 +387,7 @@ armouryTabServer <- function(id, state, restoring, add_log, char_rev) {
                 "AC: ", round(this_ac, 0),
                 " • Base AC: ", meta$base_ac,
                 " • Type: ", meta$type,
+                if (nzchar(as.character(meta$material %||% ""))) paste0(" • ", meta$material, " / ", meta$build_quality %||% "Unrated") else "",
                 " • Qty: ", a$qty[[1]] %||% 1,
                 " • ", a$weight[[1]] %||% 0, " lbs",
                 " • ", a$value[[1]] %||% 0, "g"
@@ -560,6 +570,10 @@ armouryTabServer <- function(id, state, restoring, add_log, char_rev) {
               meta$dmg_type2 <- as.character(input[[paste0(p, "dmg_type2")]] %||% "Other")
               meta$material <- as.character(input[[paste0(p, "material")]] %||% "Steel")
               meta$build_quality <- as.character(input[[paste0(p, "build_quality")]] %||% "Bog-Standard")
+              meta$material_id <- NULL; meta$condition_id <- NULL
+              meta$material_attack_bonus <- NULL; meta$material_damage_modifier <- NULL
+              meta$quality_attack_bonus <- NULL; meta$quality_damage_modifier <- NULL
+              meta <- utils::modifyList(meta, lookup_equipment_provenance(meta$material, meta$build_quality))
               meta$proficient <- isTRUE(input[[paste0(p, "proficient")]])
             }
             
@@ -568,6 +582,11 @@ armouryTabServer <- function(id, state, restoring, add_log, char_rev) {
               meta$base_ac <- suppressWarnings(as.numeric(input[[paste0(p, "base_ac")]] %||% 11))
               meta$type <- as.character(input[[paste0(p, "armor_type")]] %||% "Light")
               meta$custom_max_dex <- suppressWarnings(as.numeric(input[[paste0(p, "custom_max_dex")]] %||% 0))
+              meta$material <- as.character(input[[paste0(p, "material")]] %||% "Steel")
+              meta$build_quality <- as.character(input[[paste0(p, "build_quality")]] %||% "Bog-Standard")
+              meta$material_id <- NULL; meta$condition_id <- NULL
+              meta$material_armour_modifier <- NULL; meta$quality_armour_modifier <- NULL
+              meta <- utils::modifyList(meta, lookup_equipment_provenance(meta$material, meta$build_quality, meta$type))
               meta$proficient <- isTRUE(input[[paste0(p, "proficient")]])
             }
             

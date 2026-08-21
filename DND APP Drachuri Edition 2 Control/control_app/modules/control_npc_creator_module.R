@@ -34,10 +34,12 @@ controlNpcCreatorUI <- function(id) {
     })),
     div(class="form-section",fluidRow(
       column(4, selectInput(ns("armor_id"), "Standard D&D armour", choices=setNames(names(enemy_armor_catalog()),vapply(enemy_armor_catalog(),function(x)x$name,character(1))))),
-      column(4, selectizeInput(ns("attack_ids"), "Validated attacks", choices=character(), multiple=TRUE)),
+      column(4, selectizeInput(ns("attack_ids"), "Natural / special attacks", choices=character(), multiple=TRUE)),
       column(4, selectizeInput(ns("loot_ids"), "Additional guaranteed drops", choices=character(), multiple=TRUE))
     )),
     uiOutput(ns("armor_help")),
+    actionButton(ns("roll_equipment_preview"), "Roll equipment example", class="btn btn-default"),
+    uiOutput(ns("equipment_preview")),
     fluidRow(
       column(3,numericInput(ns("gold_min"),"Minimum gold",0,min=0,step=1)),
       column(3,numericInput(ns("gold_max"),"Maximum gold",0,min=0,step=1)),
@@ -73,15 +75,20 @@ controlNpcCreatorServer <- function(id, ctrl=NULL, bump_refresh=NULL) {
       if (is.list(x) && !is.data.frame(x)) return(x)
       tryCatch(jsonlite::fromJSON(as.character(x %||% ""), simplifyVector=FALSE), error=function(e) default)
     }
-    loot_choices <- setNames(names(enemy_loot_catalog()),vapply(enemy_loot_catalog(),function(a)paste0(a$name," — ",a$type," · ",a$weight," lb · ",a$value,"g"),character(1)))
-    updateSelectizeInput(session,"loot_ids",choices=loot_choices,server=TRUE)
-    attack_sig<-reactiveVal(""); pool_sig<-reactiveVal("")
-    all_attacks<-reactive({invalidateLater(1500,session);base<-enemy_attack_catalog();path<-file.path("control_app","data","npc_attacks.rds");saved<-if(file.exists(path))tryCatch(readRDS(path),error=function(e)list())else list();for(a in saved)base[[a$id]]<-a;base})
+    attack_sig<-reactiveVal(""); pool_sig<-reactiveVal(""); auto_armor_loot<-reactiveVal("")
+    inventory_catalog<-reactive({invalidateLater(1500,session);base<-enemy_loot_catalog();path<-file.path("control_app","data","control_inventory.rds");saved<-if(file.exists(path))tryCatch(readRDS(path),error=function(e)list())else list();for(item in saved)base[[item$id]]<-item;base})
+    inventory_records<-function(ids){catalog<-inventory_catalog();unname(catalog[intersect(as.character(ids),names(catalog))])}
+    weapon_attack<-function(id,item){meta<-item$meta%||%list();standard<-Filter(function(a)identical(as.character(a$loot_id%||%""),id),enemy_attack_catalog());if(length(standard)){attack<-standard[[1]];attack$name<-item$name;return(attack)};list(name=item$name,hit=as.integer(meta$to_hit_bonus%||%0L)+2L,dmg=as.character(meta$damage1%||%"1d4"),type=tolower(as.character(meta$dmg_type1%||%"other")),material="",loot_id=id)}
+    weapon_attacks<-reactive({catalog<-inventory_catalog();ids<-names(Filter(function(x)identical(as.character(x$type%||%""),"weapon"),catalog));setNames(lapply(ids,function(id)weapon_attack(id,catalog[[id]])),ids)})
+    all_attacks<-reactive({invalidateLater(1500,session);base<-enemy_attack_catalog();path<-file.path("control_app","data","npc_attacks.rds");saved<-if(file.exists(path))tryCatch(readRDS(path),error=function(e)list())else list();for(a in saved)base[[a$id]]<-a;Filter(function(a){id<-as.character(a$loot_id%||%"");!nzchar(id)||!id%in%names(weapon_attacks())},base)})
     npc_pools<-reactive({invalidateLater(1500,session);path<-file.path("control_app","data","npc_pools.rds");if(file.exists(path))tryCatch(readRDS(path),error=function(e)list())else list()})
-    observe({a<-all_attacks();choices<-setNames(names(a),vapply(a,function(x)paste0(x$name," — +",x$hit," / ",x$dmg," ",x$type),character(1)));sig<-paste(names(choices),choices,collapse="|");if(!identical(sig,attack_sig())){attack_sig(sig);updateSelectizeInput(session,"attack_ids",choices=choices,selected=isolate(input$attack_ids%||%character()),server=TRUE)}})
+    observe({catalog<-inventory_catalog();choices<-setNames(names(catalog),vapply(catalog,function(a)paste0(a$name," — ",a$type," · ",a$weight," lb · ",a$value,"g"),character(1)));updateSelectizeInput(session,"loot_ids",choices=choices,selected=isolate(input$loot_ids%||%character()),server=TRUE)})
+    observe({a<-all_attacks();choices<-setNames(names(a),vapply(a,function(x)paste0(x$name," — +",x$hit," / ",x$dmg," ",x$type),character(1)));sig<-paste(names(choices),choices,collapse="|");if(!identical(sig,attack_sig())){attack_sig(sig);updateSelectizeInput(session,"attack_ids",choices=choices,selected=intersect(isolate(input$attack_ids%||%character()),names(a)),server=TRUE)}})
     observe({p<-npc_pools();choices<-if(length(p))setNames(vapply(p,`[[`,"","id"),vapply(p,`[[`,"","name"))else setNames(names(enemy_generator_types()),names(enemy_generator_types()));sig<-paste(names(choices),choices,collapse="|");if(!identical(sig,pool_sig())){pool_sig(sig);updateSelectInput(session,"enemy_type",choices=choices,selected=if((isolate(input$enemy_type)%||%"")%in%unname(choices))isolate(input$enemy_type)else unname(choices)[1])}})
     output$characteristic_guide <- renderUI({ mods<-enemy_generator_characteristics(); tagList(div(class="trait-guide",lapply(names(mods),function(id)div(class="trait-note",strong(enemy_characteristic_labels()[[id]]),span(mods[[id]]$desc))))) })
     output$armor_help <- renderUI({ a<-enemy_armor_catalog()[[input$armor_id%||%"unarmoured"]]; div(class="trait-note",strong(a$name),span(a$desc," Equipped armour is automatically guaranteed as loot.")) })
+    equipment_preview<-eventReactive(input$roll_equipment_preview,{armor_loot<-enemy_armor_catalog()[[input$armor_id%||%"unarmoured"]]$loot_id%||%"";ids<-unique(c(input$loot_ids%||%character(),Filter(nzchar,armor_loot)));roll_loot_equipment_provenance(inventory_records(ids),input$enemy_type,input$characteristics%||%character())})
+    output$equipment_preview<-renderUI({items<-equipment_preview();if(!length(items))return(div(class="trait-note","No equipment is selected."));div(class="trait-guide",lapply(items,function(item){meta<-item$meta%||%list();div(class="trait-note",strong(item$name),span(paste0(item$type," · ",meta$material%||%"—"," · ",meta$build_quality%||%"—",if(identical(item$type,"weapon"))paste0(" · ",meta$damage1%||%""," ",meta$dmg_type1%||%"")else if(item$type%in%c("armor","armour"))paste0(" · base AC ",meta$base_ac%||%"—")else"")))}))})
     load_templates <- function() {
       con <- get_db_connection(); if (is.null(con)) return(); on.exit(release_db_connection(con),add=TRUE)
       templates(tryCatch(DBI::dbGetQuery(con,"select * from npc_templates order by lower(enemy_type), lower(name)"),error=function(e)data.frame()))
@@ -90,7 +97,7 @@ controlNpcCreatorServer <- function(id, ctrl=NULL, bump_refresh=NULL) {
       updateTextInput(session,"npc_name",value=name %||% paste(b$enemy_type, if(length(b$characteristics)) paste(b$characteristics,collapse=" ") else "Enemy"))
       updateNumericInput(session,"npc_hp",value=b$hp_max); updateNumericInput(session,"npc_ac",value=b$ac); updateNumericInput(session,"npc_speed",value=b$movement_speed)
       for (stat in names(b$abilities)) updateNumericInput(session,paste0("ability_",stat),value=b$abilities[[stat]])
-      updateSelectizeInput(session,"attack_ids",selected=b$attack_ids %||% character()); updateSelectizeInput(session,"loot_ids",selected=b$loot_ids %||% character())
+      updateSelectizeInput(session,"attack_ids",selected=intersect(b$attack_ids %||% character(),names(all_attacks()))); updateSelectizeInput(session,"loot_ids",selected=b$loot_ids %||% character())
       updateSelectInput(session,"armor_id",selected=b$armor_id%||%"unarmoured")
       updateNumericInput(session,"gold_min",value=as.integer((b$gold%||%c(0,0))[1])); updateNumericInput(session,"gold_max",value=as.integer((b$gold%||%c(0,0))[2]))
       for (f in c("resistances","immunities","vulnerabilities","condition_immunities")) updateSelectizeInput(session,f,selected=b[[f]] %||% character())
@@ -113,9 +120,6 @@ controlNpcCreatorServer <- function(id, ctrl=NULL, bump_refresh=NULL) {
       rolled <- roll_pool_inventory(pool$rules)
       armour_ids <- names(Filter(function(a) as.character(a$loot_id %||% "") %in% rolled, enemy_armor_catalog()))
       if (length(armour_ids)) blueprint$armor_id <- armour_ids[1]
-      attacks <- all_attacks()
-      carried_attacks <- names(Filter(function(a) as.character(a$loot_id %||% "") %in% rolled, attacks))
-      blueprint$attack_ids <- unique(c(blueprint$attack_ids %||% character(), carried_attacks))
       blueprint$loot_ids <- unique(c(blueprint$loot_ids %||% character(), rolled))
       blueprint
     }
@@ -125,13 +129,15 @@ controlNpcCreatorServer <- function(id, ctrl=NULL, bump_refresh=NULL) {
     observeEvent(input$armor_id, {
       armor<-enemy_armor_catalog()[[input$armor_id%||%"unarmoured"]]; dex<-as.integer(input$ability_dex%||%10L); dex_mod<-floor((dex-10L)/2L)
       ac<-if(identical(input$armor_id,"unarmoured"))10L+dex_mod else as.integer(armor$ac_base+min(dex_mod,armor$dex_cap)); updateNumericInput(session,"npc_ac",value=max(1L,ac))
+      selected<-setdiff(input$loot_ids%||%character(),auto_armor_loot());new_loot<-as.character(armor$loot_id%||%"");if(nzchar(new_loot))selected<-unique(c(selected,new_loot));auto_armor_loot(new_loot);updateSelectizeInput(session,"loot_ids",selected=selected)
     },ignoreInit=TRUE)
     current_record <- function(npc_id=NULL) {
-      catalog<-all_attacks();attack_ids<-intersect(input$attack_ids%||%character(),names(catalog)); attacks<-unname(catalog[attack_ids]); if(!length(attacks)) stop("Choose at least one validated attack.")
+      catalog<-all_attacks();attack_ids<-intersect(input$attack_ids%||%character(),names(catalog)); attacks<-unname(catalog[attack_ids])
       armor_id<-if(input$armor_id%in%names(enemy_armor_catalog()))input$armor_id else "unarmoured"; armor_loot<-enemy_armor_catalog()[[armor_id]]$loot_id%||%""
-      loot_ids<-intersect(input$loot_ids%||%character(),names(enemy_loot_catalog())); carried<-Filter(nzchar,vapply(attacks,function(a)as.character(a$loot_id%||%""),character(1))); loot_ids<-unique(c(loot_ids,carried,Filter(nzchar,armor_loot)))
+      loot_ids<-intersect(input$loot_ids%||%character(),names(inventory_catalog())); carried<-Filter(nzchar,vapply(attacks,function(a)as.character(a$loot_id%||%""),character(1))); loot_ids<-unique(c(loot_ids,carried,Filter(nzchar,armor_loot)))
+      carried_weapons<-intersect(loot_ids,names(weapon_attacks()));attacks<-c(attacks,unname(weapon_attacks()[carried_weapons]));attack_ids<-unique(c(attack_ids,carried_weapons));if(!length(attacks))stop("Give the NPC a weapon or choose a natural/special attack.")
       abilities <- setNames(lapply(c("str","dex","con","int","cha","bld_str"), function(s) as.integer(input[[paste0("ability_",s)]] %||% 10L)),c("str","dex","con","int","cha","bld_str"))
-      rolled_loot <- roll_loot_equipment_provenance(enemy_loot_records(loot_ids), input$enemy_type, input$characteristics %||% character())
+      rolled_loot <- roll_loot_equipment_provenance(inventory_records(loot_ids), input$enemy_type, input$characteristics %||% character())
       for (i in seq_along(attacks)) {
         loot_id <- as.character(attacks[[i]]$loot_id %||% "")
         loot_name <- if (nzchar(loot_id) && loot_id %in% names(enemy_loot_catalog())) enemy_loot_catalog()[[loot_id]]$name %||% "" else ""
@@ -156,7 +162,7 @@ controlNpcCreatorServer <- function(id, ctrl=NULL, bump_refresh=NULL) {
     output$npc_tbl<-renderDT({ df<-filtered(); if(!nrow(df)) return(NULL); chars<-vapply(df$characteristics,function(x)paste(unlist(parse_json(x)),collapse=", "),character(1)); view<-data.frame(name=df$name,type=df$enemy_type,characteristics=chars,hp=df$hp_max,ac=df$ac,speed=df$movement_speed,attack=df$attack_name,tags=df$tags); datatable(view,selection="single",rownames=FALSE,options=list(pageLength=10,scrollX=TRUE)) })
     selected_row <- function() { i<-input$npc_tbl_rows_selected; df<-filtered(); if(!length(i)||!nrow(df)) return(NULL); df[i[1],,drop=FALSE] }
     observeEvent(input$load_npc,{ r<-selected_row(); if(is.null(r)){showNotification("Select a template.",type="warning");return()}; selected_id(as.character(r$npc_id[1])); chars<-unlist(parse_json(r$characteristics[[1]])); updateSelectInput(session,"enemy_type",selected=r$enemy_type[1]); updateCheckboxGroupInput(session,"characteristics",selected=chars)
-      stored_attacks<-parse_json(r$attacks[[1]]); attack_ids<-names(Filter(function(def)any(vapply(stored_attacks,function(a)identical(a$name,def$name),logical(1))),all_attacks())); stored_loot<-parse_json(r$loot[[1]]); loot_ids<-names(Filter(function(def)any(vapply(stored_loot,function(a)identical(a$name,def$name),logical(1))),enemy_loot_catalog()))
+      stored_attacks<-parse_json(r$attacks[[1]]); attack_ids<-names(Filter(function(def)any(vapply(stored_attacks,function(a)identical(a$name,def$name),logical(1))),all_attacks())); stored_loot<-parse_json(r$loot[[1]]); loot_ids<-names(Filter(function(def)any(vapply(stored_loot,function(a)identical(a$name,def$name),logical(1))),inventory_catalog()))
       b<-list(enemy_type=r$enemy_type[1],characteristics=chars,hp_max=r$hp_max[1],ac=r$ac[1],armor_id=r$armor_id[1],movement_speed=r$movement_speed[1],abilities=parse_json(r$abilities[[1]]),attack_ids=attack_ids,loot_ids=loot_ids,gold=c(r$gold_min[1],r$gold_max[1]),resistances=enemy_db_values(r$resistances[[1]]),immunities=enemy_db_values(r$immunities[[1]]),vulnerabilities=enemy_db_values(r$vulnerabilities[[1]]),condition_immunities=enemy_db_values(r$condition_immunities[[1]])); apply_blueprint(b,r$name[1]); updateTextInput(session,"npc_tags",value=r$tags[1]) },ignoreInit=TRUE)
     observeEvent(input$delete_npc,{ r<-selected_row(); if(is.null(r)){showNotification("Select a template.",type="warning");return()}; con<-get_db_connection(); if(is.null(con))return(); on.exit(release_db_connection(con),add=TRUE); DBI::dbExecute(con,"delete from npc_templates where npc_id=$1",params=list(as.character(r$npc_id[1]))); selected_id(""); load_templates(); if(is.function(bump_refresh))bump_refresh() },ignoreInit=TRUE)
   })

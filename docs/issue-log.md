@@ -204,6 +204,7 @@ This is the authoritative issue register for the player and control apps. The or
 - **Test notes:** Clarify whether “condition” means item quality/durability, combat condition, or a separate equipment-condition concept. Avoid naming collision with combat conditions.
 - **Fix/checkpoint (2026-08-21):** Added neutral `Wood` (all modifiers zero). Migrated weapons without provenance prompt their owning player once per session to roll permanent material and build quality; bows have forced Wood and only roll build quality. Results are written to the owned-item row and an immutable assignment log, hydrated into inventory metadata, retained through gifts/trades, and applied to attack, damage and armour calculations. Newly saved NPC equipment rolls eligible provenance when the template is saved, so later loot already carries its make and quality.
 - **Regression fix (2026-08-21):** The first fresh test environment contained Wood but no build-quality rows, causing “material/build quality could not be saved”. Migration 009 now seeds the complete canonical material and build-quality definitions everywhere. A dedicated flag limits prompts to imported legacy weapons. Fresh player-created weapons instead expose manual Material and Build Quality fields. Control/NPC equipment rolls automatically unless its catalogue entry has “Lock this weapon to one material and build quality” enabled. Removed material adjectives from unlocked standard catalogue names/descriptions.
+- **Display/NPC checkpoint (2026-08-21):** Removed the Armoury's older local stat calculation. Weapon cards now include material and quality attack modifiers and show their flat damage modifier; armour cards show material, quality and adjusted AC. Imported armour now receives the same one-time provenance assignment through migration 010. NPC carried weapons are generated directly from inventory definitions, automatically become attacks and loot, and are no longer duplicated in the manual NPC attack picker. Changing NPC armour immediately replaces its guaranteed armour loot. The creator includes a rolled equipment preview showing material, quality and weapon/armour statistics.
 - **Retest:** The integration test now recreates a migrated weapon, successfully rolls and persists both values, verifies a fresh manually specified weapon does not prompt, generates random NPC equipment, loots it, and trades it without losing provenance. Isolated schema/integration tests and 52 automated tests pass.
 
 ### LOOT-001 — Loot restrictions need data-driven rules
@@ -216,6 +217,16 @@ This is the authoritative issue register for the player and control apps. The or
 - **Test notes:** Implement as validated eligibility rules rather than scattered UI checks.
 - **Fix/checkpoint (2026-08-21):** Migration 008 stores material eligibility as data: Iron excludes enemy type Fae; Titanium Copper requires characteristic Boss. NPC equipment provenance filters through those rules before material selection, and the chosen weapon material is copied into the NPC attack as well as its loot record.
 - **Retest:** Automated eligibility tests cover Fae/Iron and Boss/Titanium-Copper allow/deny paths. Manually save and loot one Fae weapon-user and one Boss weapon-user before closing.
+
+### NPC-UI-001 — Feature inventory rules and equipment/attack duplication
+
+- **Status:** Implemented — awaiting manual control UI retest
+- **Priority:** High
+- **Area:** Control / NPC features / enemy generator
+- **Reported:** 2026-08-21
+- **Original report:** Current feature rules could not be reliably selected from their dropdown; users wanted every rule printed with an example roll. Inventory weapons also required a separate duplicate NPC attack definition.
+- **Fix/checkpoint (2026-08-21):** Replaced the current-rules dropdown with a complete non-paginated table. Removal uses the selected table row, and Roll Example prints the actual item names produced. NPC weapon attacks are derived from the shared weapon inventory definition, including custom control weapons; the attack editor/picker remains for natural and special attacks only.
+- **Retest:** Both apps parse, the full integration suite passes, and one control plus two players start together. Manually add/update/remove grouped and independent feature rules and verify the printed sample roll.
 
 ### LOOT-002 — Mundane loot needs an authoritative category
 

@@ -19,6 +19,20 @@ inventory_json_list <- function(x) {
   tryCatch(jsonlite::fromJSON(as.character(x[[1L]]), simplifyVector = FALSE), error = function(e) list())
 }
 
+lookup_equipment_provenance <- function(material, build_quality, armour_type = NULL) {
+  con <- get_db_connection(); if (is.null(con)) return(list()); on.exit(release_db_connection(con), add=TRUE)
+  tryCatch({
+    row <- DBI::dbGetQuery(con, paste(
+      "SELECT m.id AS material_id,q.id AS condition_id,m.attack_bonus AS material_attack_bonus,",
+      "m.damage_modifier AS material_damage_modifier,q.attack_bonus AS quality_attack_bonus,",
+      "q.damage_modifier AS quality_damage_modifier,q.armour_modifier AS quality_armour_modifier,",
+      "CASE lower($3) WHEN 'light' THEN m.light_armour_modifier WHEN 'medium' THEN m.medium_armour_modifier WHEN 'heavy' THEN m.heavy_armour_modifier ELSE 0 END AS material_armour_modifier",
+      "FROM item_materials m CROSS JOIN item_conditions q WHERE lower(m.name)=lower($1) AND lower(q.name)=lower($2)"
+    ),params=list(as.character(material),as.character(build_quality),as.character(armour_type%||%"")))
+    if(!nrow(row))list() else as.list(row[1,,drop=FALSE])
+  },error=function(e)list())
+}
+
 inventory_definition_kind <- function(type) {
   type <- tolower(trimws(as.character(type %||% "item")))
   if (type %in% c("weapon", "weapons")) return("weapon")
@@ -204,10 +218,13 @@ pending_equipment_assignments <- function(character_id) {
   con <- get_db_connection(); if (is.null(con)) return(data.frame()); on.exit(release_db_connection(con), add = TRUE)
   if (!relational_inventory_ready(con)) return(data.frame())
   tryCatch(DBI::dbGetQuery(con, paste(
-    "SELECT ci.instance_id,COALESCE(ci.custom_name,w.name) AS weapon_name,ci.material_id,ci.condition_id,w.default_material_id,",
-    "m.name AS default_material FROM character_inventory_items ci JOIN weapons w ON w.id=ci.weapon_id",
-    "LEFT JOIN item_materials m ON m.id=w.default_material_id WHERE ci.character_id=$1",
-    "AND ci.needs_provenance_roll AND (ci.material_id IS NULL OR ci.condition_id IS NULL) ORDER BY weapon_name,ci.instance_id"
+    "SELECT ci.instance_id,COALESCE(ci.custom_name,w.name,a.name) AS equipment_name,",
+    "CASE WHEN ci.weapon_id IS NOT NULL THEN 'weapon' ELSE 'armour' END AS equipment_kind,",
+    "ci.material_id,ci.condition_id,COALESCE(w.default_material_id,a.default_material_id) AS default_material_id,",
+    "m.name AS default_material FROM character_inventory_items ci LEFT JOIN weapons w ON w.id=ci.weapon_id",
+    "LEFT JOIN armour a ON a.id=ci.armour_id LEFT JOIN item_materials m ON m.id=COALESCE(w.default_material_id,a.default_material_id)",
+    "WHERE ci.character_id=$1 AND (ci.weapon_id IS NOT NULL OR ci.armour_id IS NOT NULL)",
+    "AND ci.needs_provenance_roll AND (ci.material_id IS NULL OR ci.condition_id IS NULL) ORDER BY equipment_name,ci.instance_id"
   ), params = list(as.character(character_id))), error = function(e) data.frame())
 }
 
@@ -286,8 +303,8 @@ roll_equipment_assignment <- function(character_id, instance_id, assignment_sour
   con <- get_db_connection(); if (is.null(con)) return(NULL); on.exit(release_db_connection(con), add = TRUE)
   tryCatch(DBI::dbWithTransaction(con, {
     item <- DBI::dbGetQuery(con, paste(
-      "SELECT ci.*,COALESCE(ci.custom_name,w.name) AS weapon_name,w.default_material_id",
-      "FROM character_inventory_items ci JOIN weapons w ON w.id=ci.weapon_id",
+      "SELECT ci.*,COALESCE(ci.custom_name,w.name,a.name) AS equipment_name,COALESCE(w.default_material_id,a.default_material_id) AS default_material_id",
+      "FROM character_inventory_items ci LEFT JOIN weapons w ON w.id=ci.weapon_id LEFT JOIN armour a ON a.id=ci.armour_id",
       "WHERE ci.character_id=$1 AND ci.instance_id=$2 FOR UPDATE OF ci"
     ), params = list(as.character(character_id), as.character(instance_id)))
     if (!nrow(item)) stop("Weapon is no longer available.")
