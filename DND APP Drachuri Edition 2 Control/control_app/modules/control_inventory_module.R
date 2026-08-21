@@ -40,7 +40,7 @@ controlInventoryServer <- function(id, ctrl, players_tbl = NULL, bump_refresh = 
     })
     save_store <- function(x) tryCatch({ saveRDS(x, store_path); TRUE }, error=function(e) FALSE)
     item_category<-function(x){if(identical(x$type,"weapon"))"weapon"else if((x$type%||%"")%in%c("armor","armour"))"armor"else as.character(x$meta$category%||%if(identical(x$type,"consumable"))"consumable"else"mundane_loot")}
-    table_items<-function(key){items<-catalogue();Filter(function(x)switch(key,all=TRUE,weapons=item_category(x)=="weapon",armour=item_category(x)=="armor",food=item_category(x)=="food",magical=item_category(x)=="magical_item",mundane=item_category(x)=="mundane_loot",crafting=item_category(x)=="crafting",consumable=item_category(x)=="consumable",tool=item_category(x)=="tool",special=item_category(x)%in%c("treasure","quest"),FALSE),items)}
+    table_items<-function(key){items<-catalogue();Filter(function(x){magic<-isTRUE((x$meta%||%list())$is_magical)||item_category(x)=="magical_item";switch(key,all=TRUE,weapons=item_category(x)=="weapon",armour=item_category(x)=="armor",food=item_category(x)=="food",magical=magic,mundane=item_category(x)=="mundane_loot"&&!magic,crafting=item_category(x)=="crafting",consumable=item_category(x)=="consumable",tool=item_category(x)=="tool",special=item_category(x)%in%c("treasure","quest"),FALSE)},items)}
     table_frame<-function(key){
       items<-table_items(key);if(!length(items))return(data.frame())
       do.call(rbind,lapply(items,function(x){

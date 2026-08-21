@@ -2407,6 +2407,13 @@ get_status_modifiers <- function(x) {
   )
 }
 
+equipped_magical_traits <- function(char) {
+  char<-validate_character(char);inv<-inventory_normalize(char$inventory$items);out<-list(resistances=character(),immunities=character(),vulnerabilities=character(),condition_immunities=character())
+  if(!nrow(inv))return(out);active<-as.logical(inv$equipped)&!as.logical(inv$in_bag);active[is.na(active)]<-FALSE
+  for(i in which(active)){meta<-inv$meta[[i]]%||%list();if(!isTRUE(meta$is_magical))next;for(field in names(out))out[[field]]<-unique(c(out[[field]],tolower(as.character(meta[[field]]%||%character()))))}
+  out
+}
+
 # ----------------------------
 # Combat schema helpers
 # ----------------------------

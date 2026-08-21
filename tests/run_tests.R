@@ -46,7 +46,8 @@ load_functions(global_file, c(
   "character_subclass_names", "magical_identity_labels", "skill_identity_labels",
   "character_magic_types", "bloodlust_bite_required", "merchant_haggle_terms",
   "food_item_meta", "food_rations_available", "consume_food_ration", "spoil_character_food",
-  "camp_foraging_reward", "merchant_stock_category", "merchant_select_stock"
+  "camp_foraging_reward", "merchant_stock_category", "merchant_select_stock",
+  "equipped_magical_traits"
 ))
 load_functions(relational_inventory_file, c("equipment_material_is_eligible", "inventory_item_category"))
 load_functions(enemy_generator_file, c("resolve_layered_damage_traits", "enemy_is_animal", "roll_enemy_mundane_loot", "roll_enemy_food_loot"))
@@ -1222,6 +1223,14 @@ test("general merchants draw a balanced mix instead of armour-heavy stock", {
   catalogue<-c(lapply(1:20,function(i)make(paste0("armour",i),"armor","")),lapply(1:20,function(i)make(paste0("general",i))),lapply(1:20,function(i)make(paste0("food",i),"consumable","food")),lapply(1:10,function(i)make(paste0("weapon",i),"weapon","")))
   stock<-test_env$merchant_select_stock(catalogue,14L,"general");categories<-vapply(stock,test_env$merchant_stock_category,character(1))
   stopifnot(length(stock)==14L,sum(categories=="armour")<=3L,any(categories=="general"),any(categories=="food"),any(categories=="weapon"))
+})
+
+test("equipped magical armour contributes its damage and condition wards", {
+  test_env$validate_character<-identity;test_env$inventory_normalize<-function(items)items
+  item<-data.frame(id="ward",name="Ward",type="armor",desc="",value=1,weight=1,qty=1,equipped=TRUE,in_bag=FALSE,meta=I(list(list(is_magical=TRUE,resistances=c("Piercing","Fire"),condition_immunities="frightened"))),edit=FALSE,stringsAsFactors=FALSE)
+  traits<-test_env$equipped_magical_traits(list(inventory=list(items=item)))
+  stopifnot(setequal(traits$resistances,c("piercing","fire")),identical(traits$condition_immunities,"frightened"))
+  item$equipped<-FALSE;stopifnot(!length(test_env$equipped_magical_traits(list(inventory=list(items=item)))$resistances))
 })
 
 test("layered NPC damage traits escalate duplicates and resolve conflicts", {

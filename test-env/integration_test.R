@@ -276,8 +276,9 @@ DBI::dbExecute(con,"INSERT INTO items(id,name,item_type,category) VALUES('qa_mun
 category_rows<-DBI::dbGetQuery(con,"SELECT category FROM items WHERE category='mundane_loot' LIMIT 1")
 mundane_count<-DBI::dbGetQuery(con,"SELECT count(*) AS n FROM items WHERE id LIKE 'mundane\\_%' ESCAPE '\\'")$n[[1L]]
 food_summary<-DBI::dbGetQuery(con,"SELECT count(*) AS n,min(ration_value) AS min_rations,max(ration_value) AS max_rations,min(shelf_life_days) AS min_shelf,max(shelf_life_days) AS max_shelf FROM items WHERE id LIKE 'food\\_%' ESCAPE '\\'")
+magic_summary<-DBI::dbGetQuery(con,"SELECT (SELECT count(*) FROM items WHERE id LIKE 'magic_item\\_%' ESCAPE '\\')+(SELECT count(*) FROM weapons WHERE id LIKE 'magic_weapon\\_%' ESCAPE '\\')+(SELECT count(*) FROM armour WHERE id LIKE 'magic_armour\\_%' ESCAPE '\\') AS n,(SELECT count(*) FROM weapons WHERE id LIKE 'magic_weapon\\_%' ESCAPE '\\' AND damage_2='1d4') AS weapon_effects,(SELECT count(*) FROM armour WHERE id LIKE 'magic_armour\\_%' ESCAPE '\\' AND magical_properties ? 'resistances') AS armour_effects")
 release_db_connection(con)
-stopifnot(nrow(category_rows)==1L,mundane_count==100L,food_summary$n[[1L]]==100L,food_summary$min_rations[[1L]]>=1L,food_summary$max_rations[[1L]]>food_summary$min_rations[[1L]],food_summary$max_shelf[[1L]]>food_summary$min_shelf[[1L]])
+stopifnot(nrow(category_rows)==1L,mundane_count==100L,food_summary$n[[1L]]==100L,food_summary$min_rations[[1L]]>=1L,food_summary$max_rations[[1L]]>food_summary$min_rations[[1L]],food_summary$max_shelf[[1L]]>food_summary$min_shelf[[1L]],magic_summary$n[[1L]]==100L,magic_summary$weapon_effects[[1L]]==30L,magic_summary$armour_effects[[1L]]==30L)
 
 stopifnot(isTRUE(end_encounter_combat(1L)))
 ended_snapshot <- get_player_live_snapshot(1L, "1002")

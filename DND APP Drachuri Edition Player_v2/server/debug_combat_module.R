@@ -488,7 +488,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       target_char <- tryCatch(load_actor_for_combat(target_id, target_type), error = function(e) NULL)
       if (!is.null(target_char)) {
         target_char <- apply_unlocked_class_effects(validate_character(target_char))
-        immunities <- tolower(as.character(target_char$combat_profile$condition_immunities %||% character()))
+        immunities <- unique(c(tolower(as.character(target_char$combat_profile$condition_immunities %||% character())),equipped_magical_traits(target_char)$condition_immunities))
         if (tolower(as.character(condition)) %in% immunities) {
           log_safe(paste0("🛡️ ", get_actor_display_name(target_id), " is immune to ", condition, "."))
           return(FALSE)
@@ -1933,10 +1933,12 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       prof3 <- char$meta$combat_profile %||% list()
       
       get_vec <- function(name) {
+        equipment<-equipped_magical_traits(char)
         out <- c(
           prof1[[name]] %||% character(0),
           prof2[[name]] %||% character(0),
-          prof3[[name]] %||% character(0)
+          prof3[[name]] %||% character(0),
+          equipment[[name]] %||% character(0)
         )
         unique(normalize_damage_type(out))
       }
