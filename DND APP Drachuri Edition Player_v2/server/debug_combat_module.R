@@ -1038,19 +1038,38 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       affected_names <- character()
       if (spell_id %in% c("grasping_vines", "wasting_sickness")) {
         enemies <- snapshot_data()$enemies %||% data.frame()
-        enemy_actors <- actors[as.character(actors$actor_type) == "enemy", , drop = FALSE]
+        affected_actors <- if (identical(spell_id, "wasting_sickness")) {
+          actors[as.character(actors$actor_id) != caster_id, , drop = FALSE]
+        } else {
+          actors[as.character(actors$actor_type) == "enemy", , drop = FALSE]
+        }
         save_ability <- as.character(spell$resolution$ability %||% "con")
         save_dc <- class_spell_save_dc(char, spell)
         condition <- if (identical(spell_id, "grasping_vines")) "restrained" else "poisoned"
-        for (i in seq_len(nrow(enemy_actors))) {
-          actor <- enemy_actors[i, , drop = FALSE]
+        for (i in seq_len(nrow(affected_actors))) {
+          actor <- affected_actors[i, , drop = FALSE]
           dx <- abs(as.integer(actor$x[1]) - center_x)
           dy <- abs(as.integer(actor$y[1]) - center_y)
           if (is.na(dx) || is.na(dy) || max(dx, dy) * 5L > radius) next
-          enemy_id <- as.character(actor$actor_id[1])
-          enemy <- enemies[as.character(enemies$enemy_uuid %||% "") == enemy_id, , drop = FALSE]
-          save_col <- paste0(save_ability, "_save")
-          save_mod <- if (nrow(enemy) && save_col %in% names(enemy)) as.integer(enemy[[save_col]][1] %||% 0L) else 0L
+          target_id <- as.character(actor$actor_id[1])
+          target_type <- as.character(actor$actor_type[1] %||% "enemy")
+          save_mod <- 0L
+          if (identical(target_type, "player")) {
+            target_char <- tryCatch(load_character_from_db(target_id), error = function(e) NULL)
+            if (!is.null(target_char)) {
+              save_mod <- get_character_ability_mod(target_char, save_ability)
+              if (isTRUE(target_char$prof$saves[[save_ability]] %||% FALSE)) {
+                save_mod <- save_mod + get_character_prof_bonus(target_char)
+              }
+            }
+          } else if (identical(target_type, "enemy")) {
+            enemy <- enemies[as.character(enemies$enemy_uuid %||% "") == target_id, , drop = FALSE]
+            if (nrow(enemy)) {
+              abilities <- decode_effect_payload(enemy$abilities[[1]] %||% list())
+              score <- suppressWarnings(as.integer(abilities[[save_ability]] %||% 10L))
+              if (!is.na(score)) save_mod <- floor((score - 10L) / 2L)
+            }
+          }
           save_disadvantage <- convergence || isTRUE(spell$resolved_upgrade$save_disadvantage %||% FALSE)
           rolls <- sample.int(20L, if (save_disadvantage) 2L else 1L)
           save_roll <- if (length(rolls) > 1L) min(rolls) else rolls[[1L]]
@@ -1060,7 +1079,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
               payload = list(condition = condition, save_ability = save_ability,
                              save_dc = save_dc, repeat_save = spell$resolved_upgrade$repeat_save %||%
                                spell$effects[[length(spell$effects)]]$repeat_save %||% "end_of_turn"),
-              target_actor_type = "enemy", target_actor_id = enemy_id,
+              target_actor_type = target_type, target_actor_id = target_id,
               starts_round = round_number, ends_round = round_number + 10L,
               concentration = TRUE
             )

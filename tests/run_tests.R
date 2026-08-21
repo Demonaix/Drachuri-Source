@@ -904,6 +904,8 @@ test("class features receive tags and explicit combat actions", {
   actions <- test_env$get_unlocked_combat_actions(character, class_defs)
   stopifnot(length(actions) == 1L)
   stopifnot(identical(actions[[1L]]$action$name, "Improved Water Channeler"))
+  stopifnot(identical(actions[[1L]]$action$damage$mode, "dice"))
+  stopifnot(identical(actions[[1L]]$action$damage$value, "2d8"))
   stopifnot(all(c("ability", "combat", "spell") %in% actions[[1L]]$tags))
 })
 
@@ -995,6 +997,13 @@ test("all Natural Magic specialties retain their homebrew combat contracts", {
   disease <- spells$wasting_sickness
   stopifnot(identical(disease$resolution$ability, "con"))
   stopifnot(identical(disease$effects[[1L]]$value, "poisoned"))
+  stopifnot(identical(disease$target$origin, "self"))
+  stopifnot(identical(disease$target$affects, "all_other_creatures"))
+
+  hand <- test_env$CLASS_SPELL_DEFINITIONS$flesh_witherers_hand
+  stopifnot(identical(hand$damage$dice, "2d8"))
+  stopifnot(identical(hand$damage$scaling[["11"]], "3d8"))
+  stopifnot(identical(hand$damage$scaling[["17"]], "4d8"))
 })
 
 test("blood magic uses Blood Strength save DC and multiclass proficiency", {

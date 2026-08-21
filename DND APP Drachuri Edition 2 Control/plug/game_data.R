@@ -1305,7 +1305,7 @@ CLASSES <- list(
         
         water_channeler = list(
           name = "Water Channeler",
-          desc = "Drain water from creatures or objects via touch. Costs 10 Sindre. Deals 10% max HP damage or extracts 1000ml water."
+          desc = "Drain water from creatures or objects via touch. Costs 10 Sindre. Deals 1d8 necrotic damage or extracts 1000ml water."
         )
       )
     ),
@@ -1389,7 +1389,7 @@ CLASSES <- list(
         
         improved_channeling = list(
           name = "Improved Water Channeler",
-          desc = "Now drains 20% max HP or 2000ml water for same cost."
+          desc = "Water Channeler now deals 2d8 necrotic damage or extracts 2000ml water for the same cost."
         )
       )
     ),

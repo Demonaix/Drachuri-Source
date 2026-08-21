@@ -38,7 +38,7 @@ CLASS_FEATURE_INTEGRATION <- list(
     status = "working", note = "Survival Expertise is derived automatically."
   ),
   "Na'Haran Sorcerer::1::water_channeler" = list(
-    status = "working", note = "Combat targeting, Sindre cost and percentage damage are automated."
+    status = "working", note = "Combat targeting, Sindre cost and dice-based damage are automated."
   ),
   "Rogue::2::cunning_action" = list(
     status = "working", note = "Dash, Disengage and Hide use the character's bonus action and reset at the start of each turn."
@@ -197,7 +197,7 @@ CLASS_SPELL_DEFINITIONS <- list(
     name = "Wasting Sickness", class = "Hanianol Sorcerer", level = 2L,
     choice = c(natural_specialty = "Disease"), tags = c("spell", "combat", "condition"),
     action_type = "action", cost = 20L, range_ft = 0L,
-    target = list(type = "area", shape = "radius", size_ft = 60L, origin = "self", affects = "enemies"),
+    target = list(type = "area", shape = "radius", size_ft = 60L, origin = "self", affects = "all_other_creatures"),
     resolution = list(type = "saving_throw", ability = "con", on_success = "no_effect"),
     effects = list(list(type = "condition", value = "poisoned", duration = "1_minute",
                         repeat_save = "end_of_turn")),
@@ -206,7 +206,7 @@ CLASS_SPELL_DEFINITIONS <- list(
       `11` = list(radius_ft = 60L, repeat_save = "end_of_turn_disadvantage"),
       `15` = list(radius_ft = 90L, repeat_save = "end_of_turn_disadvantage", healing_received = "half")
     ),
-    description = "Enemies within 60 feet make a Constitution save or become poisoned for up to 1 minute, repeating the save at the end of each turn."
+    description = "Sickness emanates 60 feet from you. Every other creature in the area, including allies, makes a Constitution save or becomes poisoned for up to 1 minute, repeating the save at the end of each turn."
   ),
   mind_bender = list(
     name = "Mind Bender", class = "Na'Haran Sorcerer", level = 2L,
@@ -304,9 +304,9 @@ CLASS_SPELL_DEFINITIONS <- list(
     cost = 25L, range_ft = 0L,
     target = list(type = "area", shape = "radius", size_ft = 10L, origin = "self", affects = "enemies"),
     resolution = list(type = "saving_throw", ability = "con", on_success = "half_damage"),
-    damage = list(dice = "3d8", type = "necrotic", scaling = list(`11` = "4d8", `17` = "5d8")),
+    damage = list(dice = "2d8", type = "necrotic", scaling = list(`11` = "3d8", `17` = "4d8")),
     duration = "instantaneous", concentration = FALSE,
-    description = "Pulse decay through enemies within 10 feet as a bonus action. A Constitution save halves the necrotic damage."
+    description = "Pulse 2d8 necrotic decay through enemies within 10 feet as a bonus action. A Constitution save halves the damage. Damage becomes 3d8 at level 11 and 4d8 at level 17."
   ),
   lightbringers_sword = list(
     name = "Lightbringer's Sword", class = "Na'Haran Sorcerer",
@@ -500,7 +500,7 @@ CLASS_FEATURE_MECHANICS <- list(
       group = "water_channeler",
       target = "enemy",
       action_type = "action",
-      damage = list(mode = "percent_max_hp", value = 0.10, type = "necrotic"),
+      damage = list(mode = "dice", value = "1d8", type = "necrotic"),
       resource = list(name = "sindre", cost = 10L)
     )
   ),
@@ -511,7 +511,7 @@ CLASS_FEATURE_MECHANICS <- list(
       group = "water_channeler",
       target = "enemy",
       action_type = "action",
-      damage = list(mode = "percent_max_hp", value = 0.20, type = "necrotic"),
+      damage = list(mode = "dice", value = "2d8", type = "necrotic"),
       resource = list(name = "sindre", cost = 10L)
     )
   )
