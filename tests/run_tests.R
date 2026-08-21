@@ -45,7 +45,8 @@ load_functions(global_file, c(
   "starting_character_hp", "camp_gathering_yield", "consume_heart_sindre",
   "character_subclass_names", "magical_identity_labels", "skill_identity_labels",
   "character_magic_types", "bloodlust_bite_required", "merchant_haggle_terms",
-  "food_item_meta", "food_rations_available", "consume_food_ration", "spoil_character_food"
+  "food_item_meta", "food_rations_available", "consume_food_ration", "spoil_character_food",
+  "camp_foraging_reward"
 ))
 load_functions(relational_inventory_file, c("equipment_material_is_eligible", "inventory_item_category"))
 load_functions(enemy_generator_file, c("resolve_layered_damage_traits", "enemy_is_animal", "roll_enemy_mundane_loot", "roll_enemy_food_loot"))
@@ -115,6 +116,12 @@ test("higher-level character creation calculates class HP", {
 
 test("camp gathering checks map to bounded supply yields", {
   stopifnot(identical(vapply(c(1L,9L,10L,14L,15L,19L,20L,24L,25L,40L),test_env$camp_gathering_yield,integer(1)),c(0L,0L,1L,1L,2L,2L,3L,3L,4L,4L)))
+})
+
+test("foraging checks turn their yield into named perishable food", {
+  low<-test_env$camp_foraging_reward(9L,1L);mushrooms<-test_env$camp_foraging_reward(12L,1L);rabbit<-test_env$camp_foraging_reward(25L,1L)
+  stopifnot(is.null(low),mushrooms$name=="Bluecap Mushrooms",mushrooms$meta$ration_value==1L,mushrooms$meta$shelf_life_days==2L)
+  stopifnot(rabbit$name=="Trapped Rabbit",rabbit$meta$ration_value==4L,rabbit$meta$shelf_life_days==2L)
 })
 
 test("heart consumption grants predictable temporary Sindre", {

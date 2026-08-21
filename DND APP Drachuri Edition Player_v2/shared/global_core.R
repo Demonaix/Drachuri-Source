@@ -2469,6 +2469,22 @@ camp_gathering_yield <- function(total) {
   total<-suppressWarnings(as.integer(total));if(is.na(total)||total<10L)0L else if(total<15L)1L else if(total<20L)2L else if(total<25L)3L else 4L
 }
 
+camp_foraging_reward <- function(total, choice_override=NULL) {
+  portions<-camp_gathering_yield(total);if(portions<1L)return(NULL)
+  tiers<-list(
+    `1`=list(c("Bluecap Mushrooms",2L,.4),c("Wild Blackberries",2L,.5),c("Wood Sorrel Bundle",1L,.3)),
+    `2`=list(c("Chanterelle Basket",3L,1),c("Wild Apple Bundle",6L,1.5),c("River Mussels",1L,2)),
+    `3`=list(c("Fresh River Trout",1L,2),c("Snared Grouse",2L,2.5),c("Wild Honeycomb",30L,1)),
+    `4`=list(c("Trapped Rabbit",2L,4),c("Venison Haunch",2L,6),c("Forager's Bounty",4L,5))
+  )
+  choices<-tiers[[as.character(portions)]];index<-if(is.null(choice_override))sample(seq_along(choices),1L)else max(1L,min(length(choices),as.integer(choice_override)))
+  picked<-choices[[index]];list(id=paste0("forage_",gsub("_+$","",gsub("[^a-z0-9]+","_",tolower(picked[[1L]])))),name=picked[[1L]],type="consumable",desc=paste0("Fresh food gathered on a Survival check of ",as.integer(total),"."),value=0,weight=as.numeric(picked[[3L]]),qty=1,meta=list(category="food",ration_value=portions,shelf_life_days=as.integer(picked[[2L]]),foraged=TRUE))
+}
+
+add_foraged_food <- function(x,reward,current_day=NULL) {
+  x<-validate_character(x);if(is.null(reward))return(x);day<-as.integer(current_day%||%x$meta$day%||%1L);reward$meta<-food_item_meta(reward$meta%||%list(),reward$qty%||%1,day);reward$id<-paste0(reward$id%||%"forage_food","_",day,"_",sample(1000:9999,1));row<-enemy_loot_to_inventory_row(reward,reward$id);x$inventory$items<-inventory_normalize(rbind(inventory_normalize(x$inventory$items),row));x
+}
+
 character_skill_modifier <- function(char,skill,skill_defs=NULL) {
   char<-validate_character(char);skill<-as.character(skill%||%"");key<-gsub(" ","_",tolower(skill))
   if(is.null(skill_defs))skill_defs<-if(exists("SKILLS_LIST",inherits=TRUE))get("SKILLS_LIST",inherits=TRUE)else data.frame()
