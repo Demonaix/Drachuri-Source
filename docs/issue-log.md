@@ -65,14 +65,16 @@ This is the authoritative issue register for the player and control apps. The or
 
 ### REST-001 — Unlit rest-fire image is missing
 
-- **Status:** Open
+- **Status:** Fixed — awaiting retest
 - **Priority:** Low
 - **Area:** Rest UI / assets
 - **Reported:** 2026-08-17
 - **Original report:** The rest fire has a missing image when the fire is not lit.
-- **Test notes:** Record the missing asset URL from the browser console if available.
-- **Fix/checkpoint:** —
-- **Retest:** Not started.
+- **Cause:** Both Rest modules referenced `embers.png`, but that asset was absent from both app packages.
+- **Fix (2026-08-21):** The unlit state now reuses the shipped `fire.png` with a dark grayscale/low-opacity treatment, while the lit state retains the full image. Both states include accessible alternative text. This avoids adding another duplicated asset that could drift between Player and Control.
+- **Automated test:** Confirms both app packages contain the referenced fire image, neither Rest module requests the missing `embers.png`, and the unlit state is labelled. Both modules parse and all 58 rule tests pass.
+- **Fix/checkpoint:** `3cd3a0f`
+- **Retest:** Open Rest with no fire and confirm a dark, unlit campfire appears without a broken-image icon. Spend one wood to light it and confirm it changes to the full-colour fire image.
 
 ### PARTY-001 — Wood, water, and rations are not party-synchronised
 
