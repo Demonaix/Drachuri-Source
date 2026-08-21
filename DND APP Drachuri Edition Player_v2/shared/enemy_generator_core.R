@@ -100,6 +100,20 @@ enemy_characteristic_labels <- function() {
 
 enemy_loot_records <- function(ids) unname(enemy_loot_catalog()[unique(intersect(as.character(ids),names(enemy_loot_catalog())))])
 
+enemy_is_animal <- function(enemy_type="", characteristics=character()) {
+  identical(tolower(trimws(as.character(enemy_type%||%""))),"animal") ||
+    any(tolower(as.character(characteristics%||%character()))=="animal")
+}
+
+roll_enemy_mundane_loot <- function(catalogue, enemy_type="", characteristics=character(), count=NULL) {
+  if(enemy_is_animal(enemy_type,characteristics)||!length(catalogue))return(character())
+  mundane<-names(Filter(function(x)identical(as.character((x$meta%||%list())$category%||%""),"mundane_loot"),catalogue))
+  if(!length(mundane))return(character())
+  if(is.null(count))count<-sample(1:3,1,prob=c(.5,.35,.15))
+  count<-max(0L,min(length(mundane),as.integer(count%||%0L)))
+  if(!count)character()else sample(mundane,count,replace=FALSE)
+}
+
 resolve_enemy_blueprint <- function(enemy_type="Custom", characteristics=character()) {
   types<-enemy_generator_types(); mods<-enemy_generator_characteristics(); type<-if(enemy_type%in%names(types))enemy_type else "Custom"; out<-types[[type]]
   out$enemy_type<-type; out$characteristics<-unique(intersect(as.character(characteristics),names(mods))); out$attack_ids<-as.character(out$attack_ids%||%character()); out$loot_ids<-as.character(out$loot_ids%||%character())

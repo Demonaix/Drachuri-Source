@@ -47,7 +47,7 @@ load_functions(global_file, c(
   "character_magic_types", "bloodlust_bite_required", "merchant_haggle_terms"
 ))
 load_functions(relational_inventory_file, c("equipment_material_is_eligible", "inventory_item_category"))
-load_functions(enemy_generator_file, c("resolve_layered_damage_traits"))
+load_functions(enemy_generator_file, c("resolve_layered_damage_traits", "enemy_is_animal", "roll_enemy_mundane_loot"))
 load_functions(
   session_file,
   c(
@@ -1170,6 +1170,19 @@ test("ordinary non-equipment loot receives an authoritative category", {
   stopifnot(identical(test_env$inventory_item_category(mundane), "mundane_loot"))
   stopifnot(identical(test_env$inventory_item_category(crafting), "crafting"))
   stopifnot(identical(test_env$inventory_item_category(potion), "consumable"))
+})
+
+test("non-animal NPCs receive a small universal mundane loot roll", {
+  catalogue<-list(
+    spoon=list(meta=list(category="mundane_loot")),
+    rope=list(meta=list(category="mundane_loot")),
+    torch=list(meta=list(category="mundane_loot")),
+    sword=list(meta=list(category="weapon"))
+  )
+  humanoid<-test_env$roll_enemy_mundane_loot(catalogue,"Bandit",character(),count=2L)
+  stopifnot(length(humanoid)==2L,all(humanoid%in%c("spoon","rope","torch")))
+  stopifnot(!length(test_env$roll_enemy_mundane_loot(catalogue,"Animal",character(),count=2L)))
+  stopifnot(!length(test_env$roll_enemy_mundane_loot(catalogue,"Bandit","Animal",count=2L)))
 })
 
 test("merchant temperament and haggling produce bounded buy and sell prices", {
