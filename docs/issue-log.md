@@ -147,14 +147,16 @@ This is the authoritative issue register for the player and control apps. The or
 
 ### REST-003 — Starvation/rest calculation can reduce HP to 0/0 incorrectly
 
-- **Status:** Open
+- **Status:** Fixed — awaiting retest
 - **Priority:** Critical
 - **Area:** Rest / survival / HP
 - **Reported:** 2026-08-17
 - **Original report:** While starving at exhaustion level 4, drinking the required blood, eating, drinking, and lighting the fire still resulted in HP becoming 0/0.
-- **Test notes:** Preserve the affected character if possible. Audit maximum-HP calculation, exhaustion penalties, consumption ordering, starvation clearing, and save synchronisation before changing rules.
-- **Fix/checkpoint:** —
-- **Retest:** Not started.
+- **Cause:** At exhaustion level 4, `validate_character()` permanently halved the stored maximum HP on every read. Repeated Shiny validation could therefore cascade `10 → 5 → 2 → 1 → 0`. Long-rest day processing could also read stale character state while applying survival damage.
+- **Fix:** Exhaustion now derives an effective maximum without mutating canonical HP. Long rest publishes prepared state before day processing, advances the day, then heals to the resulting effective maximum. Invalid saved maximum HP now stops healing rather than writing zero.
+- **Fix/checkpoint:** `21eb8cc`
+- **Automated test:** Added repeated-read regression coverage; all 50 tests pass.
+- **Retest:** In the real player app, use a character with a known non-zero maximum at exhaustion 4. Open several modules, long rest after meeting food/water/blood needs, and confirm the stored maximum never shrinks across refresh/relaunch. A character already corrupted to maximum 0 requires separate repair because the original value is no longer recoverable from that field.
 
 ### MAGIC-002 — Sorcerer magic branches need corrected availability
 
@@ -248,4 +250,3 @@ This is the authoritative issue register for the player and control apps. The or
 ## Verified issues
 
 No issues from this testing log have been verified yet.
-
