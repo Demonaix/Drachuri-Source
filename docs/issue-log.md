@@ -83,6 +83,19 @@ This is the authoritative issue register for the player and control apps. The or
 - **Fix/checkpoint:** `35d1852`
 - **Retest:** Open Rest on two player clients in the same session. Add or consume each resource on one client and confirm the other updates within 2.5 seconds. With one unit remaining, click consume nearly simultaneously and confirm only one succeeds. Confirm eating/drinking changes only the acting character's daily survival status. Launch offline and confirm local supplies still work.
 
+### PARTY-002 — Camp gathering ignores character skill and has no assistance workflow
+
+- **Status:** Implemented — awaiting real two-player retest
+- **Priority:** High
+- **Area:** Rest / party supplies / skills
+- **Reported:** 2026-08-21
+- **Original report:** Foraging should use the acting player's values, allow another player to assist through an accept/decline prompt, benefit from two capable participants, and restrict every character to one daily choice among food, water or firewood gathering.
+- **Rules implemented:** Food foraging, water gathering and firewood gathering use Survival with Blood Strength, including saved proficiency or Expertise. A solo attempt rolls once. On an accepted assistance request both characters roll and the better total determines a bounded yield: below 10 yields 0, then 1/2/3/4 units at DC 10/15/20/25. This models assistance as advantage while allowing the more capable helper's modifier to matter.
+- **Fix (2026-08-21):** Migration 013 adds durable assistance requests and a unique session/day/character gathering-action ledger. The acting player chooses solo or an active party helper in a modal. The helper receives an accept/decline prompt; accepting atomically reserves both daily actions, resolves both checks and updates shared supplies. Declining consumes neither action, allowing a solo retry or another helper. Requests and results survive client refresh, and the requester receives the final total/yield notification. Offline gathering uses the same skill/yield rules with a local daily marker.
+- **Automated test:** 55 rule tests pass, including all yield thresholds. The 13-migration integration suite covers pending request delivery, assisted resolution, supply yield bounds, duplicate-action rejection, decline-without-consumption and retry. Migration 013 is applied to live Supabase.
+- **Fix/checkpoint:** `8ba3561`
+- **Retest:** On player one, choose each gathering type and inspect the solo/assistant modal. Ask player two to help; decline once and confirm both can still act, then retry and accept. Confirm the better of both displayed Survival totals determines 0–4 shared supplies. After resolution, verify neither participant can forage, gather water or gather wood again until the next shared day, while an uninvolved third player still can.
+
 ### MAGIC-001 — Natural magic spell rules need an intent audit
 
 - **Status:** Open
