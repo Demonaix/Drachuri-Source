@@ -128,6 +128,18 @@ This is the authoritative issue register for the player and control apps. The or
 - **Fix/checkpoint:** `86bd80c`
 - **Retest:** With a Hanianol character for each saved specialty, cast its unlocked spell in combat and confirm the displayed description, 20-Sindre cost, action spend, area/summon creation and combat effect. At Hanianol levels 11 and 15, confirm the displayed/created radius and specialty upgrade match the canonical definition. Repeat one cast on Mandred convergence and confirm the cost is 10.
 
+### BALANCE-001 — Early homebrew combat outliers
+
+- **Status:** Fixed — awaiting combat retest
+- **Priority:** High
+- **Area:** Class balance / combat / magic
+- **Reported:** 2026-08-21
+- **Original report:** The class/archetype review identified boss-scaling Water Channeler damage, a consequence-free enemy-only Wasting Sickness aura, and excessive bonus-action damage from Flesh Witherer's Hand. Heart economy, Ancestor power, Na'Haran durability and later-level abilities are intentionally unchanged for now.
+- **Fix (2026-08-21):** Water Channeler now deals `1d8` necrotic damage for 10 Sindre and its level-11 Improved Water Channeler deals `2d8`, replacing 10%/20% maximum-HP damage. Wasting Sickness remains a 60-foot emanation centred on its caster but now forces saves from every other creature in range, including allied players and friendly summons; the caster is immune to their own emanation. Player saving throws include Constitution and save proficiency, while enemies use their Constitution score. Flesh Witherer's Hand now deals `2d8`, scaling to `3d8` at level 11 and `4d8` at level 17. The ordinary action-based Flesh Witherer remains `3d8`, scaling to `4d8`/`5d8`.
+- **Automated test:** Confirms dice-based Improved Water Channeler, indiscriminate self-origin Wasting Sickness, and the complete Flesh Witherer's Hand damage progression. All affected files parse and all 59 rule tests pass.
+- **Fix/checkpoint:** `74d5a8b`
+- **Retest:** Use Water Channeler below and above Na'Haran level 11 and confirm `1d8` then `2d8`, with no dependency on target maximum HP. Cast Wasting Sickness beside an enemy, another player and a friendly summon; confirm all three save while the caster does not. Use Flesh Witherer's Hand at levels 6, 11 and 17 and confirm `2d8`, `3d8` and `4d8` respectively.
+
 ### MAP-001 — Ravine tile missing from Control map builder
 
 - **Status:** Open
