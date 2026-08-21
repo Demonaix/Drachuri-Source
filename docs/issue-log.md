@@ -72,14 +72,16 @@ This is the authoritative issue register for the player and control apps. The or
 
 ### PARTY-001 — Wood, water, and rations are not party-synchronised
 
-- **Status:** Open
+- **Status:** Fixed — awaiting real multi-player retest
 - **Priority:** High
 - **Area:** Party resources / database synchronisation
 - **Reported:** 2026-08-17
 - **Original report:** Wood, water, and rations need to be shared consistently across the player party.
-- **Test notes:** Decide whether resources belong to the session, camp, or individual characters before migration.
-- **Fix/checkpoint:** —
-- **Retest:** Not started.
+- **Decision:** While connected to a session, wood, water and rations belong to that session's shared camp. Personal survival flags such as ate/drank/foraged today remain character-owned. Offline play retains local supplies.
+- **Fix (2026-08-21):** Migration 012 adds one bounded supply ledger per session. Every rest-screen supply action now uses a row lock and atomic update, preventing two clients from spending the same final ration, water or wood. Gathering, forage, additions, removals, consumption, fire-lighting and water refill all update the shared ledger. Player clients refresh the same totals every 2.5 seconds and mirror them into their character state for compatibility and offline continuity. The first connected character seeds a new session ledger from existing saved values; subsequent character blobs cannot overwrite it.
+- **Automated test:** Fresh migration 001–012 and the full integration suite pass. Integration coverage confirms shared visibility, atomic decrement, zero-floor protection and refill-to-session-maximum. Migration 012 is applied to live Supabase.
+- **Fix/checkpoint:** `35d1852`
+- **Retest:** Open Rest on two player clients in the same session. Add or consume each resource on one client and confirm the other updates within 2.5 seconds. With one unit remaining, click consume nearly simultaneously and confirm only one succeeds. Confirm eating/drinking changes only the acting character's daily survival status. Launch offline and confirm local supplies still work.
 
 ### MAGIC-001 — Natural magic spell rules need an intent audit
 
