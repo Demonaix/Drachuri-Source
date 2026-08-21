@@ -117,14 +117,16 @@ This is the authoritative issue register for the player and control apps. The or
 
 ### MAGIC-001 — Natural magic spell rules need an intent audit
 
-- **Status:** Open
+- **Status:** Implemented — awaiting combat retest
 - **Priority:** Medium
 - **Area:** Magic / rules audit
 - **Reported:** 2026-08-17
 - **Original report:** Natural magic spells need checking against their originally intended behaviour.
-- **Test notes:** Requires the original homebrew descriptions or a confirmed replacement specification.
-- **Fix/checkpoint:** —
-- **Retest:** Not started.
+- **Intent audit (2026-08-21):** Compared the original `deep_magic` source descriptions with the canonical spell definitions, unlock choices, scaling and executable Player combat workflow. The four branches remain distinct and consistent: Plants creates difficult terrain and can restrain on a Strength save; Rain weakens fire and strengthens cold/lightning; Animals summons a friendly scaling beast; Disease poisons enemies on a Constitution save. All cost 20 Sindre, use an action and concentration, use Blood Strength for saves, and apply the previously established level 11/15 improvements. Mandred convergence correctly halves cost and worsens affected enemy saves.
+- **Protection added:** Added a complete four-specialty contract test covering specialty selection, cost/action/concentration, Vine terrain and restraint, Rain modifiers, Beast CR scaling, and Disease save/condition. This preserves the accepted homebrew rules during future combat refactors.
+- **Automated test:** All 59 rule tests pass.
+- **Fix/checkpoint:** `86bd80c`
+- **Retest:** With a Hanianol character for each saved specialty, cast its unlocked spell in combat and confirm the displayed description, 20-Sindre cost, action spend, area/summon creation and combat effect. At Hanianol levels 11 and 15, confirm the displayed/created radius and specialty upgrade match the canonical definition. Repeat one cast on Mandred convergence and confirm the cost is 10.
 
 ### MAP-001 — Ravine tile missing from Control map builder
 
