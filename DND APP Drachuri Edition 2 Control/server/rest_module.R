@@ -455,7 +455,10 @@ restTabServer <- function(
     # ----------------------------
     # BLOOD WARNING MODAL (RESTORED)
     # ----------------------------
-    show_blood_addiction_modal <- function() {
+    show_blood_addiction_modal <- function(action = c("advance_day", "long_rest")) {
+      action <- match.arg(action)
+      confirm_id <- if (identical(action, "long_rest")) "force_long_rest" else "force_advance_day"
+      confirm_label <- if (identical(action, "long_rest")) "⚠️ Rest Anyway" else "⚠️ Advance Anyway"
       showModal(modalDialog(
         title = "🩸 Blood Required",
         tags$p(
@@ -465,7 +468,7 @@ restTabServer <- function(
         ),
         footer = tagList(
           modalButton("Cancel"),
-          actionButton(session$ns("force_advance_day"), "⚠️ Advance Anyway", class="btn-warning")
+          actionButton(session$ns(confirm_id), confirm_label, class="btn-warning")
         ),
         easyClose = TRUE
       ))
@@ -669,7 +672,7 @@ restTabServer <- function(
       req <- required_intake(a)
       
       if (is_tylwyth() && intake < req) {
-        show_blood_addiction_modal()
+        show_blood_addiction_modal("advance_day")
         return()
       }
       
@@ -691,7 +694,7 @@ restTabServer <- function(
     # ----------------------------
     # LONG REST
     # ----------------------------
-    observeEvent(input$long_rest, {
+    perform_long_rest <- function() {
       x <- validate_character(state$char)
       max_hp <- as.integer(x$resources$hp$max %||% 0)
       
@@ -713,7 +716,20 @@ restTabServer <- function(
       
       
       log_safe("🌙 Long Rest complete. A new day begins.", TRUE, "gold")
+    }
+    observeEvent(input$long_rest, {
+      x <- validate_character(state$char)
+      addiction <- (x$resources$blood %||% list())$addiction %||% list()
+      if (is_tylwyth() && as.numeric(addiction$current_day_intake %||% 0) < required_intake(addiction)) {
+        show_blood_addiction_modal("long_rest")
+        return()
+      }
+      perform_long_rest()
     })
+    observeEvent(input$force_long_rest, {
+      removeModal()
+      perform_long_rest()
+    }, ignoreInit = TRUE)
     
     # ----------------------------
     # SHORT REST

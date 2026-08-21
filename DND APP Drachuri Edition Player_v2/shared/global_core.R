@@ -726,6 +726,28 @@ skill_identity_labels <- function(top_skills, top_scores = numeric()) {
        title = paste(Filter(nzchar, c(modifier, core, aspect)), collapse = " "))
 }
 
+character_magic_types <- function(x) {
+  build <- x$build %||% list()
+  classes <- build$classes %||% list()
+  if (!length(classes) && nzchar(as.character(build$class %||% ""))) {
+    classes <- list(list(class = build$class, level = build$level %||% 1L))
+  }
+  class_names <- vapply(classes, function(entry) as.character(entry$class %||% ""), character(1))
+  levels <- vapply(classes, function(entry) as.integer(entry$level %||% 1L), integer(1))
+  out <- if (any(grepl("Sorcerer", class_names, fixed = TRUE))) "Mechanical" else character()
+  if (sum(levels[class_names == "Hanianol Sorcerer"], na.rm = TRUE) >= 2L) out <- c(out, "Natural")
+  choices <- build$level_choices %||% list()
+  thermal <- unique(unlist(lapply(names(choices), function(class_name) {
+    if (!grepl("Sorcerer", class_name, fixed = TRUE)) return(character())
+    unlist(lapply(choices[[class_name]] %||% list(), function(level_choice) {
+      as.character(level_choice$thermal_path %||% "")
+    }), use.names = FALSE)
+  }), use.names = FALSE))
+  if ("Exothermic" %in% thermal) out <- c(out, "Fire")
+  if ("Endothermic" %in% thermal) out <- c(out, "Cold")
+  unique(out)
+}
+
 reset_class_uses_for_rest <- function(char, rest_type = c("short_rest", "long_rest")) {
   rest_type <- match.arg(rest_type)
   char <- validate_character(char)

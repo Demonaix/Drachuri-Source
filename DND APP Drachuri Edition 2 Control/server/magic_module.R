@@ -192,10 +192,7 @@ magicTabServer <- function(
     output$magic_types_ui <- renderUI({
       x <- validate_character(state$char)
       
-      selected <- character(0)
-      if (is.list(x$magic) && !is.null(x$magic$types)) {
-        selected <- x$magic$types
-      }
+      selected <- character_magic_types(x)
       all_types <- MAGIC_TYPES
       
       tags$div(
@@ -208,47 +205,12 @@ magicTabServer <- function(
           tags$div(
             class = paste("pill", if (active) "active" else ""),
             
-            style = paste0(
-              "cursor:pointer;",
-              if (active) "background:#d4af37; color:black;" else ""
-            ),
-            
-            onclick = sprintf(
-              "Shiny.setInputValue('%s', '%s', {priority: 'event'})",
-              session$ns("toggle_magic_type"),
-              type
-            ),
+            style = if (active) "background:#d4af37; color:black;" else "opacity:.35;",
             
             tags$span(class="mono", type)
           )
         })
       )
-    })
-    
-    observeEvent(input$toggle_magic_type, {
-      if (isTRUE(restoring())) return()
-      
-      type <- input$toggle_magic_type
-      
-      x <- validate_character(state$char)
-      
-      current <- x$magic$types %||% character(0)
-      
-      if (type %in% current) {
-        # REMOVE
-        current <- setdiff(current, type)
-        log_safe(paste0("❌ Removed ", type, " magic"))
-      } else {
-        # ADD
-        current <- c(current, type)
-        log_safe(paste0("✨ Learned ", type, " magic"), flash = "gold")
-      }
-      
-      if (is.null(x$magic) || !is.list(x$magic)) {
-        x$magic <- list()
-      }
-      x$magic$types <- current
-      state$char <- x
     })
     
     # -------------------------
@@ -728,11 +690,7 @@ magicTabServer <- function(
     # -------------------------
     magic_types <- reactive({
       x <- validate_character(state$char)
-      types <- NULL
-      if (is.list(x$magic) && !is.null(x$magic$types)) types <- x$magic$types
-      if (is.null(types) && !is.null(x$magic_types)) types <- x$magic_types
-      if (is.null(types)) types <- c("Thermal Magic", "Mechanical Magic") # placeholder
-      types <- unique(as.character(types))
+      types <- character_magic_types(x)
       types[nzchar(types)]
     })
     

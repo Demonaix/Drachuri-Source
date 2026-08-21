@@ -43,7 +43,8 @@ load_functions(global_file, c(
   "character_save_payload", "restore_sindre", "reset_class_uses_for_rest",
   "calc_auto_ac_for_char", "get_effective_max_hp", "get_weapon_hit_bonus",
   "starting_character_hp", "camp_gathering_yield", "consume_heart_sindre",
-  "character_subclass_names", "magical_identity_labels", "skill_identity_labels"
+  "character_subclass_names", "magical_identity_labels", "skill_identity_labels",
+  "character_magic_types"
 ))
 load_functions(relational_inventory_file, c("equipment_material_is_eligible"))
 load_functions(enemy_generator_file, c("resolve_layered_damage_traits"))
@@ -145,6 +146,23 @@ test("character identities use current subclasses and every skill family", {
   stopifnot(all(vapply(all_skills, function(skill) {
     test_env$skill_identity_labels(c(skill, skill), c(5, 4))$core != "Wanderer"
   }, logical(1))))
+})
+
+test("magic schools derive from sorcerer progression rather than manual toggles", {
+  hanianol <- list(build = list(classes = list(
+    list(class = "Hanianol Sorcerer", level = 5L, subclass = "Heart Eater")
+  ), level_choices = list("Hanianol Sorcerer" = list(
+    "5" = list(thermal_path = "Exothermic")
+  ))))
+  stopifnot(identical(test_env$character_magic_types(hanianol), c("Mechanical", "Natural", "Fire")))
+  naharan <- list(build = list(classes = list(
+    list(class = "Na'Haran Sorcerer", level = 5L, subclass = "Path of the Prophet")
+  ), level_choices = list("Na'Haran Sorcerer" = list(
+    "5" = list(thermal_path = "Endothermic")
+  ))))
+  stopifnot(identical(test_env$character_magic_types(naharan), c("Mechanical", "Cold")))
+  rogue <- list(build = list(classes = list(list(class = "Rogue", level = 5L))))
+  stopifnot(length(test_env$character_magic_types(rogue)) == 0L)
 })
 
 test("rest fire visuals only reference assets shipped with each app", {
