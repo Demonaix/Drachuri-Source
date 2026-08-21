@@ -240,6 +240,17 @@ This is the authoritative issue register for the player and control apps. The or
 - **Automated test:** 53 tests pass, including duplicate-resistance escalation and resistance/vulnerability conflict resolution. The fresh-database integration suite applies all ten migrations and passes character, combat, enemy generation, reinforcement, loot, provenance, trade and reconnection checks.
 - **Retest:** In Control, leave the creator and feature editor open for several polling cycles and confirm no panels flash. Generate a pool with guaranteed Padded Armour and Shortbow and confirm both are carried/lootable, the armour affects AC, and Shortbow appears as an attack without appearing in the natural/special attack designer. Add the same resistance once at pool level and once through a feature and confirm the generated NPC has immunity.
 
+### NPC-UI-003 — Custom features missing and NPC weapon provenance is opaque
+
+- **Status:** Fixed — awaiting manual control UI retest
+- **Priority:** High
+- **Area:** Control / NPC creator / feature equipment
+- **Reported:** 2026-08-21
+- **Original report:** Newly saved features did not appear in the creator. NPC weapons worked as attacks but were not directly visible/editable, repeated spear examples appeared to be Iron, and weapon build quality could not be seen.
+- **Cause:** The creator's characteristic control still used the built-in static labels instead of the saved feature catalogue. Weapons were mixed into generic loot, while a legacy unlocked catalogue entry was still named “Iron Spear” even though its material roll was random.
+- **Fix/checkpoint (2026-08-21):** The creator now builds its feature choices and descriptions from saved feature records, including custom additions. Carried weapons have a dedicated selector and per-template material/build-quality override; they remain automatic attacks and loot. Unlocked legacy material prefixes are removed for display, random rolls use the database drop weights, and generated template tables show material and build quality. Feature inventory rules can specify random or fixed material and quality and show a fully rolled example. Identical feature constraints combine; conflicting constraints safely fall back to a random roll, while a direct creator override wins. Material and quality attack/damage modifiers are copied into the generated NPC weapon attack.
+- **Retest:** Select both newly created Barbarian features in the creator. Generate the spear at least ten times with both overrides set to Random and confirm the result column shows mixed eligible materials and build qualities. Then force one material and quality, save, and confirm its equipment and attack columns show them and combat uses the adjusted hit/damage values.
+
 ### LOOT-002 — Mundane loot needs an authoritative category
 
 - **Status:** Open
