@@ -1,6 +1,11 @@
 enemy_damage_types <- function() c("slashing","piercing","bludgeoning","fire","cold","lightning","acid","poison","necrotic","radiant","psychic","force","thunder","iron","silver")
 enemy_materials <- function() c("natural","wood","stone","bronze","iron","steel","silver","bone","magic")
 enemy_conditions <- function() c("blinded","charmed","deafened","frightened","grappled","incapacitated","paralysed","petrified","poisoned","prone","restrained","stunned","unconscious")
+resolve_layered_damage_traits <- function(layers=list()) {
+  layers<-Filter(is.list,layers);res_layers<-lapply(layers,function(x)unique(tolower(as.character(x$resistances%||%character()))));imm<-unique(unlist(lapply(layers,function(x)tolower(as.character(x$immunities%||%character())))));vul<-unique(unlist(lapply(layers,function(x)tolower(as.character(x$vulnerabilities%||%character())))))
+  all_res<-unlist(res_layers);if(length(all_res)){counts<-table(all_res);imm<-unique(c(imm,names(counts[counts>=2L])))};res<-setdiff(unique(all_res),imm);both<-intersect(res,vul);res<-setdiff(res,both);vul<-setdiff(vul,c(both,imm));conditions<-unique(unlist(lapply(layers,function(x)tolower(as.character(x$condition_immunities%||%character())))))
+  list(resistances=res,immunities=imm,vulnerabilities=vul,condition_immunities=conditions)
+}
 
 enemy_attack_catalog <- function() list(
   unarmed=list(name="Unarmed Strike",hit=2L,dmg="1d4",type="bludgeoning",material="natural"),

@@ -228,6 +228,18 @@ This is the authoritative issue register for the player and control apps. The or
 - **Fix/checkpoint (2026-08-21):** Replaced the current-rules dropdown with a complete non-paginated table. Removal uses the selected table row, and Roll Example prints the actual item names produced. NPC weapon attacks are derived from the shared weapon inventory definition, including custom control weapons; the attack editor/picker remains for natural and special attacks only.
 - **Retest:** Both apps parse, the full integration suite passes, and one control plus two players start together. Manually add/update/remove grouped and independent feature rules and verify the printed sample roll.
 
+### NPC-UI-002 — NPC rule editors flash and generated attacks lose carried weapons
+
+- **Status:** Fixed — awaiting manual control UI retest
+- **Priority:** High
+- **Area:** Control / NPC creator / pools / features / attacks
+- **Reported:** 2026-08-21
+- **Original report:** Automatically adding armour caused the loot and AC panels to flash; the feature inventory table also flashed; generated examples showed only Unarmed Strike; pool statistics and damage traits could not be edited; and catalogue weapons such as Shortbow still appeared in the special-attack editor.
+- **Cause:** Polling recreated equivalent inventory data frames and repeatedly invalidated dependent controls. Generated attacks were assembled separately from rolled inventory, while pool and feature records did not expose all of the fields needed for layered generation.
+- **Fix/checkpoint (2026-08-21):** Inventory-backed controls now refresh only when their data signature changes, and the armour selector only updates loot after a real selection change. Pool records can edit exact ability scores and damage traits. Feature records can add damage and condition traits, natural attacks, movement/HP/AC changes and inventory rules. Generated weapon attacks now come from the NPC's actual rolled inventory; the natural/special attack designer filters out weapon-backed definitions. Layered trait resolution unions distinct traits, promotes a repeated resistance from separate pool/feature layers to immunity, lets explicit immunity win, and cancels a resistance/vulnerability conflict to normal damage.
+- **Automated test:** 53 tests pass, including duplicate-resistance escalation and resistance/vulnerability conflict resolution. The fresh-database integration suite applies all ten migrations and passes character, combat, enemy generation, reinforcement, loot, provenance, trade and reconnection checks.
+- **Retest:** In Control, leave the creator and feature editor open for several polling cycles and confirm no panels flash. Generate a pool with guaranteed Padded Armour and Shortbow and confirm both are carried/lootable, the armour affects AC, and Shortbow appears as an attack without appearing in the natural/special attack designer. Add the same resistance once at pool level and once through a feature and confirm the generated NPC has immunity.
+
 ### LOOT-002 — Mundane loot needs an authoritative category
 
 - **Status:** Open

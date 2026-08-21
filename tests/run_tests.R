@@ -22,6 +22,7 @@ relational_inventory_file <- file.path(
   project_dir,
   "DND APP Drachuri Edition Player_v2", "shared", "relational_inventory_core.R"
 )
+enemy_generator_file <- file.path(project_dir,"DND APP Drachuri Edition Player_v2","shared","enemy_generator_core.R")
 
 test_env <- new.env(parent = baseenv())
 test_env$`%||%` <- function(a, b) if (!is.null(a)) a else b
@@ -43,6 +44,7 @@ load_functions(global_file, c(
   "calc_auto_ac_for_char", "get_effective_max_hp", "get_weapon_hit_bonus"
 ))
 load_functions(relational_inventory_file, c("equipment_material_is_eligible"))
+load_functions(enemy_generator_file, c("resolve_layered_damage_traits"))
 load_functions(
   session_file,
   c(
@@ -1022,6 +1024,16 @@ test("material eligibility enforces Fae and Boss loot rules", {
   postgres_boss <- data.frame(excluded_enemy_types = "{}", required_characteristics = "{Boss}")
   stopifnot(!test_env$equipment_material_is_eligible(postgres_iron, "Fae", character()))
   stopifnot(test_env$equipment_material_is_eligible(postgres_boss, "Bandit", "Boss"))
+})
+
+test("layered NPC damage traits escalate duplicates and resolve conflicts", {
+  traits <- test_env$resolve_layered_damage_traits(list(
+    list(resistances=c("fire","cold"),vulnerabilities="acid"),
+    list(resistances=c("fire","acid"),immunities="poison",condition_immunities="frightened")
+  ))
+  stopifnot("fire"%in%traits$immunities,"poison"%in%traits$immunities)
+  stopifnot("cold"%in%traits$resistances,!"acid"%in%traits$resistances,!"acid"%in%traits$vulnerabilities)
+  stopifnot("frightened"%in%traits$condition_immunities)
 })
 
 cat("\n", tests_run, " tests passed.\n", sep = "")
