@@ -127,14 +127,16 @@ This is the authoritative issue register for the player and control apps. The or
 
 ### REST-002 — Long rests can become unsynchronised across the party
 
-- **Status:** Open
+- **Status:** Fixed — awaiting real multi-player retest
 - **Priority:** High
 - **Area:** Rest / party synchronisation
 - **Reported:** 2026-08-17
 - **Original report:** A party long rest should be coordinated so different players do not advance independently.
-- **Test notes:** Likely needs one session-level rest event initiated or approved by Control.
-- **Fix/checkpoint:** —
-- **Retest:** Not started.
+- **Cause:** Long Rest advanced only the local character blob. There was no session record identifying the campaign day being rested into, nor any idempotency guard against the same character completing it twice.
+- **Fix (2026-08-21):** Migration 011 adds a session-level long-rest cycle and per-character completion ledger. The first active character opens the next campaign day; all other active party members join that same cycle. Repeat clicks by a completed character do nothing, and a later day cannot open until every active session character has completed the current rest. Character state is saved before its completion marker. Offline play retains the existing local rest behaviour. Character IDs are stored format-neutrally so both the UUID-based live database and numeric isolated database are supported.
+- **Automated test:** A ten-character integration test confirms shared cycle/day identity, repeat-click idempotency, incomplete-party locking, and next-cycle release after all active characters complete. Fresh migration 001–011 and the full integration suite pass. Migration 011 is applied to live Supabase.
+- **Fix/checkpoint:** `0af71a1`
+- **Retest:** With two active player clients in one session, click Long Rest on the first and note `1/2`; click it again and confirm no second day is created. Complete Long Rest on the second and confirm `2/2` with both characters on the same day. Start the following rest and confirm both join the next shared day. Characters intentionally absent for a rest must be marked inactive in the session or they will correctly keep the next day locked.
 
 ### BLOOD-003 — Tylwyth Teg blood reminder is not appearing
 
