@@ -287,6 +287,10 @@ armouryTabServer <- function(id, state, restoring, add_log, char_rev) {
               column(6, textInput(ns(paste0(p, "damage2")), "Damage 2", value = meta$damage2)),
               column(6, textInput(ns(paste0(p, "dmg_type2")), "Damage Type 2", value = meta$dmg_type2))
             ),
+            fluidRow(
+              column(6, selectInput(ns(paste0(p, "material")), "Material", c("Copper","Iron","Steel","Titanium Copper","Wood"), selected = meta$material %||% "Steel")),
+              column(6, selectInput(ns(paste0(p, "build_quality")), "Build quality", c("Very-Poorly-Crafted","Poorly-Crafted","Passably-Crafted","Bog-Standard","Well-Crafted","Master-Crafted"), selected = meta$build_quality %||% "Bog-Standard"))
+            ),
             checkboxInput(ns(paste0(p, "proficient")), "Proficient", value = isTRUE(meta$proficient)),
             div(
               style = "display:flex; gap:8px; flex-wrap:wrap;",
@@ -311,6 +315,7 @@ armouryTabServer <- function(id, state, restoring, add_log, char_rev) {
                 " • Stat: ", toupper(meta$stat),
                 " • Damage: ", meta$damage1,
                 if (nzchar(meta$damage2)) paste0(" + ", meta$damage2) else "",
+                if (nzchar(as.character(meta$material %||% ""))) paste0(" • ", meta$material, " / ", meta$build_quality %||% "Unrated") else "",
                 " • Qty: ", w$qty[[1]] %||% 1,
                 " • ", w$weight[[1]] %||% 0, " lbs",
                 " • ", w$value[[1]] %||% 0, "g"
@@ -553,6 +558,8 @@ armouryTabServer <- function(id, state, restoring, add_log, char_rev) {
               meta$dmg_type1 <- as.character(input[[paste0(p, "dmg_type1")]] %||% "Slashing")
               meta$damage2 <- as.character(input[[paste0(p, "damage2")]] %||% "")
               meta$dmg_type2 <- as.character(input[[paste0(p, "dmg_type2")]] %||% "Other")
+              meta$material <- as.character(input[[paste0(p, "material")]] %||% "Steel")
+              meta$build_quality <- as.character(input[[paste0(p, "build_quality")]] %||% "Bog-Standard")
               meta$proficient <- isTRUE(input[[paste0(p, "proficient")]])
             }
             

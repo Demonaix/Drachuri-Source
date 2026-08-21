@@ -22,6 +22,11 @@ controlInventoryUI <- function(id) {
                    column(4, textInput(ns("damage_2"), "Extra damage", placeholder = "e.g. 1d4")),
                    column(4, selectInput(ns("damage_type_2"), "Extra damage type", choices = c(enemy_damage_types(), "other")))
                  ),
+                 checkboxInput(ns("lock_provenance"), "Lock this weapon to one material and build quality", FALSE),
+                 fluidRow(
+                   column(6, selectInput(ns("locked_material"), "Locked material", c("Copper","Iron","Steel","Titanium Copper","Wood"))),
+                   column(6, selectInput(ns("locked_quality"), "Locked build quality", c("Very-Poorly-Crafted","Poorly-Crafted","Passably-Crafted","Bog-Standard","Well-Crafted","Master-Crafted")))
+                 ),
                  actionButton(ns("save_item"), "Add to Catalogue", class="btn btn-primary"),
                  actionButton(ns("update_item"), "Update Selected", class="btn btn-default")))
     ),
@@ -45,6 +50,7 @@ controlInventoryServer <- function(id, ctrl, players_tbl = NULL, bump_refresh = 
     })
     catalogue <- reactiveVal({
       saved <- if (file.exists(store_path)) tryCatch(readRDS(store_path), error=function(e) list()) else list()
+      saved <- lapply(saved,function(x){if((x$type%||%"")=="weapon"&&!isTRUE(x$meta$lock_provenance)){x$name<-sub("^(Titanium Copper|Steel|Iron|Copper)[[:space:]]+","",x$name,ignore.case=TRUE);x$desc<-gsub("\\b(steel|iron|copper)[- ]?(headed|bladed)?[[:space:]]*","",x$desc,ignore.case=TRUE);x$meta$material<-NULL;x$meta$build_quality<-NULL};x})
       existing <- vapply(saved, function(x) as.character(x$id %||% ""), character(1))
       c(saved, Filter(function(x) !x$id %in% existing, seed))
     })
@@ -58,7 +64,7 @@ controlInventoryServer <- function(id, ctrl, players_tbl = NULL, bump_refresh = 
     })
     selected <- reactive({ found<-Filter(function(x) identical(x$id, input$item_id %||% ""), catalogue()); if(length(found)) found[[1]] else NULL })
     output$item_preview <- renderUI({ x<-selected(); if(is.null(x)) return(NULL); tagList(h4(x$name), p(x$desc), tags$strong(paste(x$type,"•",x$value,"gold •",x$weight,"lb")), p(paste("Pools:",paste(x$pools%||%"none",collapse=", ")))) })
-    observeEvent(input$item_id, { x<-selected(); if(is.null(x))return(); updateTextInput(session,"name",value=x$name);updateSelectInput(session,"type",selected=x$type);updateTextInput(session,"pools",value=paste(x$pools%||%character(),collapse=", "));updateTextInput(session,"desc",value=x$desc);updateNumericInput(session,"value",value=x$value);updateNumericInput(session,"weight",value=x$weight); updateTextInput(session,"damage",value=as.character(x$meta$damage1%||%x$meta$base_ac%||%"")); updateSelectInput(session,"stat",selected=as.character(x$meta$stat%||%x$meta$type%||%"str"));updateSelectInput(session,"damage_type_1",selected=tolower(as.character(x$meta$dmg_type1%||%"other")));updateTextInput(session,"damage_2",value=as.character(x$meta$damage2%||%""));updateSelectInput(session,"damage_type_2",selected=tolower(as.character(x$meta$dmg_type2%||%"other"))) },ignoreInit=TRUE)
+    observeEvent(input$item_id, { x<-selected(); if(is.null(x))return(); updateTextInput(session,"name",value=x$name);updateSelectInput(session,"type",selected=x$type);updateTextInput(session,"pools",value=paste(x$pools%||%character(),collapse=", "));updateTextInput(session,"desc",value=x$desc);updateNumericInput(session,"value",value=x$value);updateNumericInput(session,"weight",value=x$weight); updateTextInput(session,"damage",value=as.character(x$meta$damage1%||%x$meta$base_ac%||%"")); updateSelectInput(session,"stat",selected=as.character(x$meta$stat%||%x$meta$type%||%"str"));updateSelectInput(session,"damage_type_1",selected=tolower(as.character(x$meta$dmg_type1%||%"other")));updateTextInput(session,"damage_2",value=as.character(x$meta$damage2%||%""));updateSelectInput(session,"damage_type_2",selected=tolower(as.character(x$meta$dmg_type2%||%"other")));updateCheckboxInput(session,"lock_provenance",value=isTRUE(x$meta$lock_provenance));updateSelectInput(session,"locked_material",selected=as.character(x$meta$material%||%"Steel"));updateSelectInput(session,"locked_quality",selected=as.character(x$meta$build_quality%||%"Bog-Standard")) },ignoreInit=TRUE)
     observe({
       p <- if (is.reactive(players_tbl)) players_tbl() else data.frame()
       if(!is.data.frame(p)||!nrow(p)) return(updateSelectInput(session,"player_id",choices=character()))
@@ -68,14 +74,14 @@ controlInventoryServer <- function(id, ctrl, players_tbl = NULL, bump_refresh = 
     observeEvent(input$save_item, {
       nm<-trimws(input$name%||%""); if(!nzchar(nm)) return(showNotification("Enter an item name.",type="error"))
       typ<-input$type%||%"item"; raw<-trimws(input$damage%||%""); meta<-list()
-      if(typ=="weapon") meta<-list(stat=input$stat%||%"str",adv="Normal",to_hit_bonus=0,damage1=if(nzchar(raw))raw else "1d4",dmg_type1=input$damage_type_1%||%"other",damage2=trimws(input$damage_2%||%""),dmg_type2=input$damage_type_2%||%"other",proficient=TRUE)
+      if(typ=="weapon") meta<-list(stat=input$stat%||%"str",adv="Normal",to_hit_bonus=0,damage1=if(nzchar(raw))raw else "1d4",dmg_type1=input$damage_type_1%||%"other",damage2=trimws(input$damage_2%||%""),dmg_type2=input$damage_type_2%||%"other",proficient=TRUE,lock_provenance=isTRUE(input$lock_provenance),material=if(isTRUE(input$lock_provenance))input$locked_material else NULL,build_quality=if(isTRUE(input$lock_provenance))input$locked_quality else NULL)
       if(typ=="armor") { ac<-suppressWarnings(as.numeric(raw)); if(is.na(ac)) ac<-11; meta<-list(base_ac=ac,type=input$stat%||%"Light",custom_max_dex=if((input$stat%||%"")=="Medium")2 else 0,proficient=TRUE) }
       x<-list(id=paste0("custom_",format(Sys.time(),"%Y%m%d%H%M%S")),name=nm,type=typ,desc=input$desc%||%"",value=as.numeric(input$value%||%0),weight=as.numeric(input$weight%||%0),qty=1,meta=meta,pools=trimws(strsplit(input$pools%||%"",",",fixed=TRUE)[[1]])); x$pools<-x$pools[nzchar(x$pools)]
       items<-c(catalogue(),list(x)); catalogue(items); local_ok<-save_store(items); db_ok<-save_control_catalogue_definition(x); if(!local_ok||!db_ok)return(showNotification("The catalogue item could not be saved everywhere.",type="error")); showNotification("Added to control catalogue.")
     })
     observeEvent(input$update_item, {
       old<-selected(); if(is.null(old))return(); typ<-input$type%||%old$type; raw<-trimws(input$damage%||%""); meta<-old$meta%||%list()
-      if(typ=="weapon"){meta$stat<-input$stat%||%"str";meta$damage1<-if(nzchar(raw))raw else "1d4";meta$dmg_type1<-input$damage_type_1%||%"other";meta$damage2<-trimws(input$damage_2%||%"");meta$dmg_type2<-input$damage_type_2%||%"other"}
+      if(typ=="weapon"){meta$stat<-input$stat%||%"str";meta$damage1<-if(nzchar(raw))raw else "1d4";meta$dmg_type1<-input$damage_type_1%||%"other";meta$damage2<-trimws(input$damage_2%||%"");meta$dmg_type2<-input$damage_type_2%||%"other";meta$lock_provenance<-isTRUE(input$lock_provenance);meta$material<-if(isTRUE(input$lock_provenance))input$locked_material else NULL;meta$build_quality<-if(isTRUE(input$lock_provenance))input$locked_quality else NULL}
       if(typ=="armor"){ac<-suppressWarnings(as.numeric(raw));if(!is.na(ac))meta$base_ac<-ac;meta$type<-input$stat%||%"Light"}
       old$name<-trimws(input$name%||%old$name);old$type<-typ;old$pools<-trimws(strsplit(input$pools%||%"",",",fixed=TRUE)[[1]]);old$pools<-old$pools[nzchar(old$pools)];old$desc<-input$desc%||%"";old$value<-as.numeric(input$value%||%0);old$weight<-as.numeric(input$weight%||%0);old$meta<-meta
       items<-catalogue();idx<-which(vapply(items,function(x)identical(x$id,old$id),logical(1)))[1];items[[idx]]<-old;catalogue(items);local_ok<-save_store(items);db_ok<-save_control_catalogue_definition(old);if(!local_ok||!db_ok)return(showNotification("The catalogue item could not be updated everywhere.",type="error"));showNotification("Catalogue item updated.")
@@ -86,6 +92,7 @@ controlInventoryServer <- function(id, ctrl, players_tbl = NULL, bump_refresh = 
       char<-validate_character(char); row<-enemy_loot_to_inventory_row(x,id=paste0("gift_",as.integer(Sys.time()),"_",sample(1000:9999,1)))
       char$inventory$items<-inventory_normalize(rbind(inventory_normalize(char$inventory$items),row))
       if(is.null(save_character_to_db(char,cid))) return(showNotification("Could not save gift.",type="error"))
+      if((x$type%||%"")%in%c("weapon","armor","armour")&&is.null(roll_equipment_assignment(cid,row$id[[1]],"control")))return(showNotification("The gift was added, but its material/build roll failed.",type="warning"))
       if(is.function(bump_refresh)) bump_refresh(); showNotification(paste("Gave",x$name,"to",char$meta$name%||%"player"),type="message")
     })
   })

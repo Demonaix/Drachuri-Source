@@ -171,7 +171,7 @@ This is the authoritative issue register for the player and control apps. The or
 
 ### DATA-001 — Inventory definitions are still stored primarily inside blobs
 
-- **Status:** Investigating
+- **Status:** In progress — live dual-write compatibility active
 - **Priority:** Critical
 - **Area:** Database / inventory foundation
 - **Reported:** 2026-08-20
@@ -181,7 +181,7 @@ This is the authoritative issue register for the player and control apps. The or
 - **Migration safety:** Do not make the new tables authoritative or remove blob fields until definition backfill, dual-read compatibility, and rollback tests pass.
 - **Fix/checkpoint (2026-08-21):** Applied migration `007_relational_inventory`. Added lowercase `item_materials` and `item_conditions`, copied all legacy modifier rows, added default material/condition foreign keys to all three definition tables, and added relational `character_wallets`, `character_inventory_items`, and `inventory_pool_rules`. Owned items use real foreign keys through separate weapon/armour/item columns and retain quantity, equipped state, bag state, per-instance modifiers and approved JSON properties. Live backfill created six wallet rows and 44 owned-item rows (17 weapons, six armour pieces and 21 other items), including party-specific/homebrew definitions. Existing character blobs were not altered. Re-ran the backfill idempotently and confirmed the same totals.
 - **Compatibility checkpoint (2026-08-21):** Character loads now hydrate wallet and equipment provenance from relational rows, with the blob as fallback. Character saves update the blob and relational wallet/ownership rows in one database transaction. Control-to-player gifts use that common save path. Player trade creation, acceptance and decline hydrate and mirror both sides so material/build quality travels with the specific item rather than being rerolled. Fresh-database migration support was corrected and verified locally; live migration checksums were reconciled only after the expected tables were checked.
-- **Retest:** Live ledger confirms 001–008 applied and clean. Fresh isolated database builds all eight migrations. Full integration test passes character load/save/sync, HP, movement, turns, enemy generation, reinforcement/loot and reconnection. 52 automated tests pass. Remaining before authority switch: compare blob and relational representations during normal multi-client play, migrate the control catalogue/pool editors themselves away from local RDS, then test rollback before retiring inventory fields inside character blobs.
+- **Retest:** Live ledger confirms 001–009 applied and clean. Fresh isolated database builds all nine migrations. Full integration test passes character load/save/sync, equipment assignment, HP, movement, turns, enemy generation, reinforcement/loot, provenance-preserving trade and reconnection. 52 automated tests pass. Remaining before authority switch: compare blob and relational representations during normal multi-client play, migrate the remaining control pool editors away from local RDS, then test rollback before retiring inventory fields inside character blobs.
 
 ### DATA-002 — Control item editor lacks complete damage-type support
 
@@ -203,7 +203,8 @@ This is the authoritative issue register for the player and control apps. The or
 - **Original report:** Armour and weapons should have an appropriate material or condition. These definitions provide modifiers, and conditions include a drop rate, but the new tables are not integrated.
 - **Test notes:** Clarify whether “condition” means item quality/durability, combat condition, or a separate equipment-condition concept. Avoid naming collision with combat conditions.
 - **Fix/checkpoint (2026-08-21):** Added neutral `Wood` (all modifiers zero). Migrated weapons without provenance prompt their owning player once per session to roll permanent material and build quality; bows have forced Wood and only roll build quality. Results are written to the owned-item row and an immutable assignment log, hydrated into inventory metadata, retained through gifts/trades, and applied to attack, damage and armour calculations. Newly saved NPC equipment rolls eligible provenance when the template is saved, so later loot already carries its make and quality.
-- **Retest:** Live pending-assignment read identifies Dewydd's six migrated weapons and correctly fixes Shortbow to Wood. Roll mutation was intentionally left for the player to perform in-app. Isolated schema/integration tests and 52 automated tests pass.
+- **Regression fix (2026-08-21):** The first fresh test environment contained Wood but no build-quality rows, causing “material/build quality could not be saved”. Migration 009 now seeds the complete canonical material and build-quality definitions everywhere. A dedicated flag limits prompts to imported legacy weapons. Fresh player-created weapons instead expose manual Material and Build Quality fields. Control/NPC equipment rolls automatically unless its catalogue entry has “Lock this weapon to one material and build quality” enabled. Removed material adjectives from unlocked standard catalogue names/descriptions.
+- **Retest:** The integration test now recreates a migrated weapon, successfully rolls and persists both values, verifies a fresh manually specified weapon does not prompt, generates random NPC equipment, loots it, and trades it without losing provenance. Isolated schema/integration tests and 52 automated tests pass.
 
 ### LOOT-001 — Loot restrictions need data-driven rules
 

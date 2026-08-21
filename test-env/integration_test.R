@@ -37,6 +37,38 @@ stopifnot(identical(
   "Multiplayer regression save marker"
 ))
 
+# Equipment provenance: only explicitly migrated weapons prompt; fresh weapons
+# are filled manually and do not enter the migration queue.
+migrated_weapon <- enemy_loot_to_inventory_row(
+  enemy_loot_catalog()$dagger, id = "qa_migrated_weapon"
+)
+reloaded_character$inventory$items <- inventory_normalize(rbind(
+  inventory_normalize(reloaded_character$inventory$items), migrated_weapon
+))
+stopifnot(identical(save_character_to_db(reloaded_character, 1001L), "1001"))
+con <- get_db_connection()
+DBI::dbExecute(con, paste(
+  "UPDATE character_inventory_items SET source='character_backfill',needs_provenance_roll=TRUE",
+  "WHERE character_id=$1 AND instance_id=$2"
+), params=list("1001", "qa_migrated_weapon"))
+release_db_connection(con)
+pending_make <- pending_equipment_assignments("1001")
+stopifnot(any(pending_make$instance_id == "qa_migrated_weapon"))
+rolled_make <- roll_equipment_assignment("1001", "qa_migrated_weapon")
+stopifnot(!is.null(rolled_make), nzchar(rolled_make$material[[1L]]), nzchar(rolled_make$build_quality[[1L]]))
+
+fresh_weapon <- enemy_loot_to_inventory_row(
+  enemy_loot_catalog()$dagger, id = "qa_fresh_manual_weapon"
+)
+fresh_weapon$meta[[1L]]$material <- "Steel"
+fresh_weapon$meta[[1L]]$build_quality <- "Bog-Standard"
+with_fresh_weapon <- load_character_from_db(1001L)
+with_fresh_weapon$inventory$items <- inventory_normalize(rbind(
+  inventory_normalize(with_fresh_weapon$inventory$items), fresh_weapon
+))
+stopifnot(identical(save_character_to_db(with_fresh_weapon, 1001L), "1001"))
+stopifnot(!"qa_fresh_manual_weapon" %in% pending_equipment_assignments("1001")$instance_id)
+
 damage <- damage_session_player(1L, "1002", 3L)
 stopifnot(identical(damage$hp_before, 60L))
 stopifnot(identical(damage$hp_after, 57L))
@@ -140,7 +172,7 @@ offer<-create_trade_offer(1L,"1001","1002","item",item_id="qa_loot")
 stopifnot(is.list(offer),!"qa_loot"%in%offer$sender$inventory$items$id)
 pending<-get_pending_trade_offers("1002");stopifnot(nrow(pending)==1L,pending$summary[[1]]!="")
 accepted<-resolve_trade_offer(offer$offer_id,"1002",TRUE);stopifnot(accepted$status=="accepted")
-received<-accepted$character$inventory$items;stopifnot(any(received$name==loot_row$name),identical(Filter(function(x)length(x$material)>0,received$meta)[[1]]$material,"steel"))
+received<-accepted$character$inventory$items;received_meta<-Filter(function(x)nzchar(as.character(x$material%||%""))&&nzchar(as.character(x$build_quality%||%"")),received$meta);stopifnot(any(received$name==loot_row$name),length(received_meta)>=1L)
 gold_offer<-create_trade_offer(1L,"1001","1002","gold",gold_amount=5L);stopifnot(gold_offer$sender$inventory$gold==15)
 declined<-resolve_trade_offer(gold_offer$offer_id,"1002",FALSE);stopifnot(declined$status=="declined",declined$character$inventory$gold==20)
 note_id<-send_private_note(1L,"1001","1002","Meet me beside the old standing stone.")

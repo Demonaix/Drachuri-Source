@@ -1018,6 +1018,10 @@ test("material eligibility enforces Fae and Boss loot rules", {
   stopifnot(test_env$equipment_material_is_eligible(iron, "Bandit", character()))
   stopifnot(!test_env$equipment_material_is_eligible(titanium, "Bandit", character()))
   stopifnot(test_env$equipment_material_is_eligible(titanium, "Bandit", "Boss"))
+  postgres_iron <- data.frame(excluded_enemy_types = "{Fae}", required_characteristics = "{}")
+  postgres_boss <- data.frame(excluded_enemy_types = "{}", required_characteristics = "{Boss}")
+  stopifnot(!test_env$equipment_material_is_eligible(postgres_iron, "Fae", character()))
+  stopifnot(test_env$equipment_material_is_eligible(postgres_boss, "Bandit", "Boss"))
 })
 
 cat("\n", tests_run, " tests passed.\n", sep = "")

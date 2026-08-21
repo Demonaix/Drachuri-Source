@@ -131,14 +131,23 @@ sync_character_inventory_relational <- function(con, char, character_id) {
     )
     meta <- item$meta[[1L]]; if (!is.list(meta)) meta <- list()
     meta$legacy_type <- as.character(item$type[[1L]])
+    material_id <- suppressWarnings(as.numeric(meta$material_id %||% NA))
+    if (is.na(material_id) && nzchar(as.character(meta$material %||% ""))) {
+      found <- DBI::dbGetQuery(con,"SELECT id FROM item_materials WHERE lower(name)=lower($1) LIMIT 1",params=list(as.character(meta$material)))
+      if(nrow(found)) material_id <- as.numeric(found$id[[1L]])
+    }
+    condition_id <- suppressWarnings(as.numeric(meta$condition_id %||% NA))
+    if (is.na(condition_id) && nzchar(as.character(meta$build_quality %||% ""))) {
+      found <- DBI::dbGetQuery(con,"SELECT id FROM item_conditions WHERE lower(name)=lower($1) LIMIT 1",params=list(as.character(meta$build_quality)))
+      if(nrow(found)) condition_id <- as.numeric(found$id[[1L]])
+    }
     DBI::dbExecute(con, paste(
       "INSERT INTO character_inventory_items(character_id,instance_id,weapon_id,armour_id,item_id,quantity,equipped,in_bag,material_id,condition_id,custom_name,custom_description,custom_value,custom_weight,properties,source,updated_at)",
       "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,'dual_write',now())",
       "ON CONFLICT(character_id,instance_id) DO UPDATE SET weapon_id=EXCLUDED.weapon_id,armour_id=EXCLUDED.armour_id,item_id=EXCLUDED.item_id,quantity=EXCLUDED.quantity,equipped=EXCLUDED.equipped,in_bag=EXCLUDED.in_bag,material_id=COALESCE(EXCLUDED.material_id,character_inventory_items.material_id),condition_id=COALESCE(EXCLUDED.condition_id,character_inventory_items.condition_id),custom_name=EXCLUDED.custom_name,custom_description=EXCLUDED.custom_description,custom_value=EXCLUDED.custom_value,custom_weight=EXCLUDED.custom_weight,properties=EXCLUDED.properties,source='dual_write',updated_at=now()"
     ), params = c(list(as.character(character_id), instance_id), refs, list(
       as.numeric(item$qty[[1L]]), isTRUE(item$equipped[[1L]]), isTRUE(item$in_bag[[1L]]),
-      suppressWarnings(as.numeric(meta$material_id %||% NA)),
-      suppressWarnings(as.numeric(meta$condition_id %||% NA)),
+      material_id, condition_id,
       as.character(item$name[[1L]]), as.character(item$desc[[1L]]), as.numeric(item$value[[1L]]),
       as.numeric(item$weight[[1L]]), inventory_json(meta)
     )))
@@ -198,7 +207,7 @@ pending_equipment_assignments <- function(character_id) {
     "SELECT ci.instance_id,COALESCE(ci.custom_name,w.name) AS weapon_name,ci.material_id,ci.condition_id,w.default_material_id,",
     "m.name AS default_material FROM character_inventory_items ci JOIN weapons w ON w.id=ci.weapon_id",
     "LEFT JOIN item_materials m ON m.id=w.default_material_id WHERE ci.character_id=$1",
-    "AND (ci.material_id IS NULL OR ci.condition_id IS NULL) ORDER BY weapon_name,ci.instance_id"
+    "AND ci.needs_provenance_roll AND (ci.material_id IS NULL OR ci.condition_id IS NULL) ORDER BY weapon_name,ci.instance_id"
   ), params = list(as.character(character_id))), error = function(e) data.frame())
 }
 
@@ -210,8 +219,17 @@ weighted_equipment_choice <- function(rows) {
 }
 
 equipment_material_is_eligible <- function(row, enemy_type = "", characteristics = character()) {
-  excluded <- tolower(as.character(row$excluded_enemy_types[[1L]] %||% character()))
-  required <- tolower(as.character(row$required_characteristics[[1L]] %||% character()))
+  rule_values <- function(x) {
+    x <- as.character(x %||% character())
+    if (length(x) == 1L && grepl("^\\{.*\\}$", x)) {
+      x <- sub("^\\{", "", sub("\\}$", "", x))
+      if (!nzchar(x)) return(character())
+      x <- strsplit(x, ",", fixed=TRUE)[[1L]]
+    }
+    trimws(gsub('^"|"$', '', x))
+  }
+  excluded <- tolower(rule_values(row$excluded_enemy_types[[1L]] %||% character()))
+  required <- tolower(rule_values(row$required_characteristics[[1L]] %||% character()))
   type_ok <- !tolower(as.character(enemy_type %||% "")) %in% excluded
   characteristic_ok <- !length(required) || all(required %in% tolower(as.character(characteristics)))
   type_ok && characteristic_ok
@@ -228,9 +246,11 @@ roll_loot_equipment_provenance <- function(loot, enemy_type = "", characteristic
     kind <- inventory_definition_kind(entry$type %||% "item")
     if (!kind %in% c("weapon", "armour")) next
     meta <- entry$meta %||% list(); if (!is.list(meta)) meta <- list()
+    if (isTRUE(meta$provenance_assigned) && !is.null(meta$material_id) && !is.null(meta$condition_id)) next
     name <- tolower(as.character(entry$name %||% ""))
     forced_wood <- grepl("shortbow|longbow|crossbow|quarterstaff|wooden club", name)
-    requested <- tolower(as.character(meta$material %||% ""))
+    locked <- isTRUE(meta$lock_provenance)
+    requested <- if (locked) tolower(as.character(meta$material %||% "")) else ""
     candidates <- materials[vapply(seq_len(nrow(materials)), function(j) {
       equipment_material_is_eligible(materials[j, , drop=FALSE], enemy_type, characteristics)
     }, logical(1)), , drop=FALSE]
@@ -244,7 +264,9 @@ roll_loot_equipment_provenance <- function(loot, enemy_type = "", characteristic
       if (!nrow(weighted)) weighted <- candidates
       material <- weighted_equipment_choice(weighted)$row
     }
-    quality <- weighted_equipment_choice(qualities)$row
+    requested_quality <- if (locked) tolower(as.character(meta$build_quality %||% "")) else ""
+    quality <- qualities[tolower(qualities$name) == requested_quality, , drop=FALSE]
+    if (!nrow(quality)) quality <- weighted_equipment_choice(qualities)$row
     meta$material_id <- as.numeric(material$id[[1L]]); meta$material <- as.character(material$name[[1L]])
     meta$is_iron <- isTRUE(material$is_iron[[1L]]); meta$is_wood <- isTRUE(material$is_wood[[1L]])
     meta$material_attack_bonus <- as.numeric(material$attack_bonus[[1L]] %||% 0)
@@ -253,12 +275,14 @@ roll_loot_equipment_provenance <- function(loot, enemy_type = "", characteristic
     meta$quality_attack_bonus <- as.numeric(quality$attack_bonus[[1L]] %||% 0)
     meta$quality_damage_modifier <- as.numeric(quality$damage_modifier[[1L]] %||% 0)
     meta$quality_armour_modifier <- as.numeric(quality$armour_modifier[[1L]] %||% 0)
+    meta$provenance_assigned <- TRUE
     entry$meta <- meta; loot[[i]] <- entry
   }
   loot
 }
 
-roll_equipment_assignment <- function(character_id, instance_id) {
+roll_equipment_assignment <- function(character_id, instance_id, assignment_source = "player_roll") {
+  assignment_source <- match.arg(assignment_source, c("player_roll", "control", "loot_roll"))
   con <- get_db_connection(); if (is.null(con)) return(NULL); on.exit(release_db_connection(con), add = TRUE)
   tryCatch(DBI::dbWithTransaction(con, {
     item <- DBI::dbGetQuery(con, paste(
@@ -271,11 +295,11 @@ roll_equipment_assignment <- function(character_id, instance_id) {
     if (is.na(item$material_id[[1L]])) {
       if (!is.na(item$default_material_id[[1L]])) {
         material <- DBI::dbGetQuery(con, "SELECT * FROM item_materials WHERE id=$1", params = list(item$default_material_id[[1L]]))
-        source <- if (isTRUE(material$is_wood[[1L]])) "forced_wood" else "migration"
+        source <- if (isTRUE(material$is_wood[[1L]])) "forced_wood" else assignment_source
         roll <- NA_real_; weights <- list()
       } else {
         choices <- DBI::dbGetQuery(con, "SELECT * FROM item_materials WHERE NOT is_wood AND COALESCE(drop_rate,0)>0 ORDER BY id")
-        picked <- weighted_equipment_choice(choices); material <- picked$row; source <- "player_roll"; roll <- picked$roll; weights <- as.list(picked$weights)
+        picked <- weighted_equipment_choice(choices); material <- picked$row; source <- assignment_source; roll <- picked$roll; weights <- as.list(picked$weights)
       }
       DBI::dbExecute(con, "UPDATE character_inventory_items SET material_id=$3,material_assignment=$4,updated_at=now() WHERE character_id=$1 AND instance_id=$2", params = list(as.character(character_id),as.character(instance_id),material$id[[1L]],source))
       DBI::dbExecute(con, "INSERT INTO equipment_assignment_log(character_id,instance_id,assignment_type,definition_id,roll_value,eligible_weights,assignment_source) VALUES($1,$2,'material',$3,$4,$5::jsonb,$6)", params = list(as.character(character_id),as.character(instance_id),material$id[[1L]],roll,inventory_json(weights),source))
@@ -283,8 +307,8 @@ roll_equipment_assignment <- function(character_id, instance_id) {
     if (is.na(item$condition_id[[1L]])) {
       choices <- DBI::dbGetQuery(con, "SELECT * FROM item_conditions WHERE COALESCE(drop_rate,0)>0 ORDER BY id")
       picked <- weighted_equipment_choice(choices); quality <- picked$row
-      DBI::dbExecute(con, "UPDATE character_inventory_items SET condition_id=$3,condition_assignment='player_roll',updated_at=now() WHERE character_id=$1 AND instance_id=$2", params = list(as.character(character_id),as.character(instance_id),quality$id[[1L]]))
-      DBI::dbExecute(con, "INSERT INTO equipment_assignment_log(character_id,instance_id,assignment_type,definition_id,roll_value,eligible_weights,assignment_source) VALUES($1,$2,'build_quality',$3,$4,$5::jsonb,'player_roll')", params = list(as.character(character_id),as.character(instance_id),quality$id[[1L]],picked$roll,inventory_json(as.list(picked$weights))))
+      DBI::dbExecute(con, "UPDATE character_inventory_items SET condition_id=$3,condition_assignment=$4,updated_at=now() WHERE character_id=$1 AND instance_id=$2", params = list(as.character(character_id),as.character(instance_id),quality$id[[1L]],assignment_source))
+      DBI::dbExecute(con, "INSERT INTO equipment_assignment_log(character_id,instance_id,assignment_type,definition_id,roll_value,eligible_weights,assignment_source) VALUES($1,$2,'build_quality',$3,$4,$5::jsonb,$6)", params = list(as.character(character_id),as.character(instance_id),quality$id[[1L]],picked$roll,inventory_json(as.list(picked$weights)),assignment_source))
     }
     final <- DBI::dbGetQuery(con, paste(
       "SELECT m.name AS material,q.name AS build_quality,m.attack_bonus+q.attack_bonus AS attack_bonus,",
@@ -292,6 +316,7 @@ roll_equipment_assignment <- function(character_id, instance_id) {
       "JOIN item_materials m ON m.id=ci.material_id JOIN item_conditions q ON q.id=ci.condition_id",
       "WHERE ci.character_id=$1 AND ci.instance_id=$2"
     ), params = list(as.character(character_id),as.character(instance_id)))
+    DBI::dbExecute(con, "UPDATE character_inventory_items SET needs_provenance_roll=FALSE,updated_at=now() WHERE character_id=$1 AND instance_id=$2", params=list(as.character(character_id),as.character(instance_id)))
     if (nrow(final)) as.list(final[1, , drop = FALSE]) else NULL
   }), error = function(e) { message("roll_equipment_assignment failed: ", e$message); NULL })
 }

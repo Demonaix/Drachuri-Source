@@ -901,6 +901,13 @@ add_encounter_enemy <- function(
     immunities = character(), vulnerabilities = character(), condition_immunities = character(), gold_min = 0L, gold_max = 0L
 ) {
   `%||%` <- get("%||%", inherits = TRUE)
+  loot <- roll_loot_equipment_provenance(loot, enemy_type, unlist(characteristics %||% list()))
+  for (i in seq_along(attacks)) {
+    loot_id <- as.character(attacks[[i]]$loot_id %||% "")
+    loot_name <- if (nzchar(loot_id) && loot_id %in% names(enemy_loot_catalog())) enemy_loot_catalog()[[loot_id]]$name %||% "" else ""
+    matched <- Filter(function(x) identical(as.character(x$name %||% ""), as.character(loot_name)), loot)
+    if (length(matched)) attacks[[i]]$material <- as.character(matched[[1]]$meta$material %||% "")
+  }
   
   con <- get_db_connection()
   if (is.null(con)) return(NULL)
