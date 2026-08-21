@@ -19,6 +19,7 @@ function terrainColor(terrain) {
     swamp: "#6d8a57",
     water: "#6da7d9",
     wall: "#555555",
+    ravine: "#111015",
     road: "#c8b58a"
   }[terrain] || "#d9d4c7";
 }

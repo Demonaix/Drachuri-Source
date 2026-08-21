@@ -170,7 +170,7 @@ controlMapBuilderUI <- function(id) {
               selectInput(
                 ns("paint_terrain"),
                 "Terrain",
-                choices = c("grass", "stone", "forest", "swamp", "water", "wall", "road", "mandred_convergence"),
+                choices = c("grass", "stone", "forest", "swamp", "water", "wall", "ravine", "road", "mandred_convergence"),
                 selected = "grass",
                 width = "150px"
               ),
@@ -235,6 +235,12 @@ controlMapBuilderUI <- function(id) {
 
 controlMapBuilderServer <- function(id, ctrl, session_tbl = NULL, players_tbl = NULL, positions_tbl = NULL, bump_refresh) {
   moduleServer(id, function(input, output, session) {
+    observeEvent(input$paint_terrain, {
+      if (!identical(input$paint_terrain, "ravine")) return()
+      updateCheckboxInput(session, "paint_blocks_movement", value = TRUE)
+      updateCheckboxInput(session, "paint_blocks_vision", value = FALSE)
+      updateNumericInput(session, "paint_move_cost", value = 1)
+    }, ignoreInit = TRUE)
     
     `%||%` <- get("%||%", inherits = TRUE)
     ns <- session$ns

@@ -44,9 +44,9 @@ load_functions(global_file, c(
   "calc_auto_ac_for_char", "get_effective_max_hp", "get_weapon_hit_bonus",
   "starting_character_hp", "camp_gathering_yield", "consume_heart_sindre",
   "character_subclass_names", "magical_identity_labels", "skill_identity_labels",
-  "character_magic_types"
+  "character_magic_types", "bloodlust_bite_required"
 ))
-load_functions(relational_inventory_file, c("equipment_material_is_eligible"))
+load_functions(relational_inventory_file, c("equipment_material_is_eligible", "inventory_item_category"))
 load_functions(enemy_generator_file, c("resolve_layered_damage_traits"))
 load_functions(
   session_file,
@@ -165,6 +165,17 @@ test("magic schools derive from sorcerer progression rather than manual toggles"
   stopifnot(length(test_env$character_magic_types(rogue)) == 0L)
 })
 
+test("bloodlust triggers a bite on stage-three fumbles and stage-four turns", {
+  make_char <- function(stage, active=TRUE) list(
+    resources=list(blood=list(addiction=list(stage=stage))), status=list(bloodlust=active)
+  )
+  test_env$validate_character <- identity
+  stopifnot(test_env$bloodlust_bite_required(make_char(3L), 1L, FALSE))
+  stopifnot(!test_env$bloodlust_bite_required(make_char(3L), 2L, FALSE))
+  stopifnot(test_env$bloodlust_bite_required(make_char(4L), NA, TRUE))
+  stopifnot(!test_env$bloodlust_bite_required(make_char(4L, FALSE), NA, TRUE))
+})
+
 test("rest fire visuals only reference assets shipped with each app", {
   app_dirs <- c(
     file.path(project_dir, "DND APP Drachuri Edition Player_v2"),
@@ -176,6 +187,15 @@ test("rest fire visuals only reference assets shipped with each app", {
     stopifnot(!grepl('src = "embers.png"', module_text, fixed = TRUE))
     stopifnot(grepl('alt = "Unlit campfire"', module_text, fixed = TRUE))
   }
+})
+
+test("Control map builder exposes Ravine as a movement-blocking sight line", {
+  builder <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition 2 Control", "control_app", "modules", "control_map_builder_module.R"), warn=FALSE), collapse="\n")
+  colours <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition 2 Control", "www", "js", "mapBuilder2d.js"), warn=FALSE), collapse="\n")
+  stopifnot(grepl('"ravine"', builder, fixed=TRUE))
+  stopifnot(grepl('paint_blocks_movement", value = TRUE', builder, fixed=TRUE))
+  stopifnot(grepl('paint_blocks_vision", value = FALSE', builder, fixed=TRUE))
+  stopifnot(grepl('ravine: "#111015"', colours, fixed=TRUE))
 })
 
 test("temporary HP absorbs damage before current HP", {
@@ -1141,6 +1161,15 @@ test("material eligibility enforces Fae and Boss loot rules", {
   postgres_boss <- data.frame(excluded_enemy_types = "{}", required_characteristics = "{Boss}")
   stopifnot(!test_env$equipment_material_is_eligible(postgres_iron, "Fae", character()))
   stopifnot(test_env$equipment_material_is_eligible(postgres_boss, "Bandit", "Boss"))
+})
+
+test("ordinary non-equipment loot receives an authoritative category", {
+  mundane <- data.frame(type = "item", meta = I(list(list())))
+  crafting <- data.frame(type = "item", meta = I(list(list(category = "crafting"))))
+  potion <- data.frame(type = "consumable", meta = I(list(list())))
+  stopifnot(identical(test_env$inventory_item_category(mundane), "mundane_loot"))
+  stopifnot(identical(test_env$inventory_item_category(crafting), "crafting"))
+  stopifnot(identical(test_env$inventory_item_category(potion), "consumable"))
 })
 
 test("layered NPC damage traits escalate duplicates and resolve conflicts", {

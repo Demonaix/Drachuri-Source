@@ -230,6 +230,18 @@ stopifnot(!is.null(note_id));notes<-get_private_notes("1002",TRUE);stopifnot(any
 stopifnot(mark_private_note(note_id,"1002","read"));stopifnot(!note_id%in%get_private_notes("1002",TRUE)$id)
 reply_id<-send_private_note(1L,"1002","1001","I will be there.",reply_to_id=note_id);stopifnot(!is.null(reply_id));stopifnot(mark_private_note(note_id,"1002","acknowledged"))
 
+blood_event<-record_blood_consumption("1001",1L,3L,"blood","QA Stag",1.5,12)
+heart_event<-record_blood_consumption("1001",1L,3L,"heart","QA Bandit",1,25)
+stopifnot(nrow(blood_event)==1L,nrow(heart_event)==1L)
+blood_history<-get_blood_consumption_history("1001",10L)
+stopifnot(nrow(blood_history)==2L,all(blood_history$campaign_day==3L))
+stopifnot(setequal(as.character(blood_history$consumption_type),c("blood","heart")))
+con<-get_db_connection()
+DBI::dbExecute(con,"INSERT INTO items(id,name,item_type,category) VALUES('qa_mundane','QA Rope','item','mundane_loot')")
+category_rows<-DBI::dbGetQuery(con,"SELECT category FROM items WHERE category='mundane_loot' LIMIT 1")
+release_db_connection(con)
+stopifnot(nrow(category_rows)==1L)
+
 stopifnot(isTRUE(end_encounter_combat(1L)))
 ended_snapshot <- get_player_live_snapshot(1L, "1002")
 ended_combat <- get_combat_state(1L)

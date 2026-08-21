@@ -748,6 +748,17 @@ character_magic_types <- function(x) {
   unique(out)
 }
 
+bloodlust_bite_required <- function(x, attack_roll = NA_integer_, start_of_turn = FALSE) {
+  x <- validate_character(x)
+  addiction <- (x$resources$blood %||% list())$addiction %||% list()
+  stage <- suppressWarnings(as.integer(addiction$stage %||% 1L))
+  if (is.na(stage)) stage <- 1L
+  if (!isTRUE(x$status$bloodlust %||% FALSE) || stage < 3L) return(FALSE)
+  if (stage >= 4L && isTRUE(start_of_turn)) return(TRUE)
+  roll <- suppressWarnings(as.integer(attack_roll))
+  stage == 3L && !is.na(roll) && roll == 1L
+}
+
 reset_class_uses_for_rest <- function(char, rest_type = c("short_rest", "long_rest")) {
   rest_type <- match.arg(rest_type)
   char <- validate_character(char)

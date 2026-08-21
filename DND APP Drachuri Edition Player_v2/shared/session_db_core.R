@@ -1398,6 +1398,30 @@ build_snapshot_encounter_actors <- function(snapshot) {
   actors
 }
 
+record_blood_consumption <- function(character_id, session_id = NULL, campaign_day = 1L,
+                                     consumption_type = "blood", source = "Unknown source",
+                                     quantity = 1, sindre_value = 0) {
+  con <- get_db_connection(); if (is.null(con)) return(NULL); on.exit(release_db_connection(con), add = TRUE)
+  sid <- suppressWarnings(as.integer(session_id %||% NA_integer_))
+  if (is.na(sid) || sid < 1L) sid <- NA_integer_
+  tryCatch(DBI::dbGetQuery(con, paste(
+    "INSERT INTO blood_consumption_events(character_id,session_id,campaign_day,consumption_type,source,quantity,sindre_value)",
+    "VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *"
+  ), params = list(as.character(character_id), sid,
+    max(1L, as.integer(campaign_day %||% 1L)), as.character(consumption_type),
+    as.character(source %||% "Unknown source"), as.numeric(quantity), as.numeric(sindre_value))),
+  error = function(e) { message("record_blood_consumption failed: ", e$message); NULL })
+}
+
+get_blood_consumption_history <- function(character_id, limit = 30L) {
+  con <- get_db_connection(); if (is.null(con)) return(data.frame()); on.exit(release_db_connection(con), add = TRUE)
+  tryCatch(DBI::dbGetQuery(con, paste(
+    "SELECT id,campaign_day,consumption_type,source,quantity,sindre_value,created_at",
+    "FROM blood_consumption_events WHERE character_id=$1 ORDER BY campaign_day DESC,created_at DESC LIMIT $2"
+  ), params = list(as.character(character_id), max(1L, as.integer(limit)))),
+  error = function(e) data.frame())
+}
+
 get_player_live_snapshot <- function(session_id, character_id = NULL,
                                      encounter_id = NULL, event_limit = 20L,
                                      connection_factory = get_db_connection,

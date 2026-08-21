@@ -148,7 +148,8 @@ bloodTabUI <- function(id) {
           column(6, strong(textOutput(ns("blood_intake_today")))),
           column(6, strong(textOutput(ns("blood_intake_required"))))
         )
-      )
+      ),
+      div(class = "card", h4("📜 Consumption History"), uiOutput(ns("blood_history_ui")))
     )
   )
 }
@@ -234,6 +235,8 @@ bloodTabServer <- function(
       x <- ensure_blood_state(state$char)
       x$inventory$items <- inventory_normalize(df)
       write_core(x)
+      record_blood_consumption(state$char_id, state$active_session_id, x$meta$day,
+                               "blood", source, drink_pints, sindre_gain)
     }
     
     get_hp_state <- function() {
@@ -773,6 +776,8 @@ bloodTabServer <- function(
             
             x$inventory$items <- inventory_normalize(df)
             write_core(x)
+            record_blood_consumption(state$char_id, state$active_session_id, x$meta$day,
+                                     "heart", source, 1, sindre)
             
             log_safe(
               paste0(
@@ -814,6 +819,19 @@ bloodTabServer <- function(
       )
       
       paste0("Addiction Stage ", stage, " (", as.integer(a$days_at_stage %||% 0), " days): ", desc)
+    })
+
+    output$blood_history_ui <- renderUI({
+      char_rev()
+      rows <- get_blood_consumption_history(state$char_id, 30L)
+      if (!is.data.frame(rows) || !nrow(rows)) return(tags$div(style="opacity:.75;", "No recorded consumption yet."))
+      tags$div(lapply(seq_len(nrow(rows)), function(i) {
+        kind <- if (rows$consumption_type[[i]] == "heart") "🫀 Heart" else "🩸 Blood"
+        tags$div(class="confirm-note", paste0("Day ", rows$campaign_day[[i]], " — ", kind,
+          " from ", rows$source[[i]], ": ", rows$quantity[[i]],
+          if (rows$consumption_type[[i]] == "blood") " pint(s)" else "",
+          " · ", rows$sindre_value[[i]], " Sindre"))
+      }))
     })
     
     required_intake_local <- function(a) {

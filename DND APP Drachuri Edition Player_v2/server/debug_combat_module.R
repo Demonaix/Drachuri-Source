@@ -242,6 +242,55 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       )
     })
 
+    bloodlust_turn_handled <- reactiveVal("")
+    perform_forced_bloodlust_bite <- function(reason = "bloodlust") {
+      char <- validate_character(core$state$char)
+      actors <- encounter_actors_tbl()
+      caster_id <- as.character(core$state$char_id %||% "")
+      caster <- actors[as.character(actors$actor_id) == caster_id, , drop=FALSE]
+      candidates <- actors[as.character(actors$actor_id) != caster_id &
+        as.character(actors$actor_type) %in% c("player","enemy") &
+        as.integer(actors$current_hp %||% 0L) > 0L, , drop=FALSE]
+      if (!nrow(caster) || !nrow(candidates)) {
+        log_safe("🩸 Bloodlust surges, but there is nobody close enough to bite.")
+        return(FALSE)
+      }
+      candidates$distance <- pmax(abs(as.integer(candidates$x)-as.integer(caster$x[1])),
+                                  abs(as.integer(candidates$y)-as.integer(caster$y[1]))) * 5L
+      adjacent <- candidates[!is.na(candidates$distance) & candidates$distance <= 5L,,drop=FALSE]
+      if (!nrow(adjacent)) {
+        log_safe("🩸 Bloodlust demands a bite, but no creature is adjacent.")
+        return(FALSE)
+      }
+      adjacent$enemy_priority <- as.integer(as.character(adjacent$actor_type)!="enemy")
+      adjacent <- adjacent[order(adjacent$distance,adjacent$enemy_priority,as.character(adjacent$actor_id)),,drop=FALSE]
+      target <- adjacent[1,,drop=FALSE]
+      target_id <- as.character(target$actor_id[1]); target_type <- as.character(target$actor_type[1])
+      target_char <- load_actor_for_combat(target_id,target_type)
+      attack_roll <- sample.int(20L,1L)
+      attack_total <- attack_roll + get_character_ability_mod(char,"str") + get_character_prof_bonus(char)
+      target_ac <- get_effective_actor_ac(target_id,target_type,target_char)
+      hit <- attack_roll == 20L || attack_total >= target_ac
+      damage <- 0L
+      if (hit) {
+        damage <- roll_dice_expr("1d8")$total + get_character_ability_mod(char,"str")
+        if (attack_roll == 20L) damage <- damage + roll_dice_expr("1d8")$total
+        damage <- max(0L,as.integer(damage))
+        if (target_type=="player") damage_player_in_encounter(current_encounter_id(),target_id,damage)
+        else damage_encounter_enemy(current_encounter_id(),target_id,damage)
+        addiction <- (char$resources$blood%||%list())$addiction%||%list()
+        addiction$current_day_intake <- as.numeric(addiction$current_day_intake%||%0)+0.5
+        char$resources$blood$addiction <- addiction
+        core$state$char <- char
+      }
+      log_game_event(current_encounter_id(),"bloodlust_bite","player",caster_id,target_id,
+        payload=list(reason=reason,target_name=as.character(target$display_name[1]),attack_roll=attack_roll,
+                     attack_total=attack_total,target_ac=target_ac,hit=hit,damage=damage))
+      log_safe(paste0("🩸 Bloodlust forces a bite at ",target$display_name[1],": ",
+        attack_total," vs AC ",target_ac,if(hit)paste0(" — ",damage," damage.")else" — miss."))
+      bump_refresh(); TRUE
+    }
+
     observe({
       key <- current_turn_key()
       if (!identical(as.character(turn_budget()$key %||% ""), key)) {
@@ -257,6 +306,10 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         updateCheckboxInput(session, "dash_move", value = FALSE)
         if (identical(as.character(active_actor_id() %||% ""), as.character(core$state$char_id %||% ""))) {
           player_reaction_available(TRUE)
+          if (!identical(bloodlust_turn_handled(),key) && bloodlust_bite_required(core$state$char,start_of_turn=TRUE)) {
+            bloodlust_turn_handled(key)
+            if (perform_forced_bloodlust_bite("stage_4_start_of_turn")) spend_action_safe("action","Forced Bloodlust Bite")
+          }
         }
       }
     })
@@ -4561,6 +4614,9 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
           " with ", preview$weapon_name,
           " (", preview$attack_total, " vs ", ac_hint, ")."
         ))
+      }
+      if (bloodlust_bite_required(core$state$char, preview$attack_roll, FALSE)) {
+        perform_forced_bloodlust_bite("stage_3_natural_1")
       }
       
       pending_attack(NULL)

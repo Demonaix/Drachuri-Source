@@ -40,6 +40,20 @@ inventory_definition_kind <- function(type) {
   "item"
 }
 
+inventory_item_category <- function(item) {
+  type <- tolower(trimws(as.character(item$type[[1L]] %||% "item")))
+  meta <- if (is.list(item$meta[[1L]])) item$meta[[1L]] else list()
+  explicit <- tolower(as.character(meta$category %||% ""))
+  allowed <- c("mundane_loot", "consumable", "crafting", "tool", "treasure", "quest")
+  if (explicit %in% allowed) return(explicit)
+  if (type %in% c("consumable", "potion", "food", "drink")) return("consumable")
+  if (type %in% c("crafting", "material", "ingredient")) return("crafting")
+  if (type %in% c("tool", "tools")) return("tool")
+  if (type %in% c("treasure", "valuable")) return("treasure")
+  if (type %in% c("quest", "quest_item")) return("quest")
+  "mundane_loot"
+}
+
 inventory_definition_id <- function(con, kind, item) {
   table <- c(weapon = "weapons", armour = "armour", item = "items")[[kind]]
   name <- trimws(as.character(item$name[[1L]] %||% "Unnamed item"))
@@ -78,10 +92,10 @@ inventory_definition_id <- function(con, kind, item) {
       isTRUE(meta$proficient %||% TRUE)))
   } else {
     DBI::dbExecute(con, paste(
-      "INSERT INTO items(id,name,item_type,description,value,weight,effect,effect_amount)",
-      "VALUES($1,$2,'item',$3,$4,$5,$6,$7) ON CONFLICT(id) DO NOTHING"
+      "INSERT INTO items(id,name,item_type,description,value,weight,effect,effect_amount,category)",
+      "VALUES($1,$2,'item',$3,$4,$5,$6,$7,$8) ON CONFLICT(id) DO NOTHING"
     ), params = list(id, name, desc, value, weight, as.character(meta$effect %||% ""),
-      as.character(meta$effect_amount %||% "")))
+      as.character(meta$effect_amount %||% ""), inventory_item_category(item)))
   }
   id
 }
@@ -108,9 +122,9 @@ save_control_catalogue_definition <- function(entry) {
       ), params=list(id,name,desc,value,weight,as.integer(meta$base_ac%||%10L),armour_type,as.integer(meta$custom_max_dex%||%0L),isTRUE(meta$proficient%||%TRUE),enemy_pg_array(pools)))
     } else {
       DBI::dbExecute(con, paste(
-        "INSERT INTO items(id,name,item_type,description,value,weight,effect,effect_amount,pools,updated_at)",
-        "VALUES($1,$2,'item',$3,$4,$5,$6,$7,$8::text[],now()) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,description=EXCLUDED.description,value=EXCLUDED.value,weight=EXCLUDED.weight,effect=EXCLUDED.effect,effect_amount=EXCLUDED.effect_amount,pools=EXCLUDED.pools,updated_at=now()"
-      ), params=list(id,name,desc,value,weight,as.character(meta$effect%||%""),as.character(meta$effect_amount%||%""),enemy_pg_array(pools)))
+        "INSERT INTO items(id,name,item_type,description,value,weight,effect,effect_amount,pools,category,updated_at)",
+        "VALUES($1,$2,'item',$3,$4,$5,$6,$7,$8::text[],$9,now()) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,description=EXCLUDED.description,value=EXCLUDED.value,weight=EXCLUDED.weight,effect=EXCLUDED.effect,effect_amount=EXCLUDED.effect_amount,pools=EXCLUDED.pools,category=EXCLUDED.category,updated_at=now()"
+      ), params=list(id,name,desc,value,weight,as.character(meta$effect%||%""),as.character(meta$effect_amount%||%""),enemy_pg_array(pools),inventory_item_category(data.frame(type=entry$type%||%"item",meta=I(list(meta))))))
     }
     TRUE
   }, error=function(e){message("save_control_catalogue_definition failed: ",e$message);FALSE})
