@@ -46,7 +46,7 @@ load_functions(global_file, c(
   "character_subclass_names", "magical_identity_labels", "skill_identity_labels",
   "character_magic_types", "bloodlust_bite_required", "merchant_haggle_terms",
   "food_item_meta", "food_rations_available", "consume_food_ration", "spoil_character_food",
-  "camp_foraging_reward"
+  "camp_foraging_reward", "merchant_stock_category", "merchant_select_stock"
 ))
 load_functions(relational_inventory_file, c("equipment_material_is_eligible", "inventory_item_category"))
 load_functions(enemy_generator_file, c("resolve_layered_damage_traits", "enemy_is_animal", "roll_enemy_mundane_loot", "roll_enemy_food_loot"))
@@ -1215,6 +1215,13 @@ test("merchant temperament and haggling produce bounded buy and sell prices", {
   stopifnot(hard_win$success, hard_win$price < hard_fail$price)
   stopifnot(generous_sell$success, generous_sell$price >= 75)
   stopifnot(rejected_once$dc == 15L, !rejected_once$success)
+})
+
+test("general merchants draw a balanced mix instead of armour-heavy stock", {
+  make<-function(id,type="item",category="mundane_loot")list(id=id,name=id,type=type,meta=list(category=category))
+  catalogue<-c(lapply(1:20,function(i)make(paste0("armour",i),"armor","")),lapply(1:20,function(i)make(paste0("general",i))),lapply(1:20,function(i)make(paste0("food",i),"consumable","food")),lapply(1:10,function(i)make(paste0("weapon",i),"weapon","")))
+  stock<-test_env$merchant_select_stock(catalogue,14L,"general");categories<-vapply(stock,test_env$merchant_stock_category,character(1))
+  stopifnot(length(stock)==14L,sum(categories=="armour")<=3L,any(categories=="general"),any(categories=="food"),any(categories=="weapon"))
 })
 
 test("layered NPC damage traits escalate duplicates and resolve conflicts", {

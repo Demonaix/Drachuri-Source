@@ -89,10 +89,20 @@ mark_private_note <- function(note_id,recipient_id,status=c("read","acknowledged
 
 create_merchant <- function(session_id,name,wealth_class="moderate",specialty="general",temperament="fair",gold=50,stock=list()) {
   con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE)
-  wealth_class<-match.arg(as.character(wealth_class),c("poor","moderate","rich"));specialty<-match.arg(as.character(specialty),c("general","food","weapons","armour","hunter"));temperament<-match.arg(as.character(temperament),c("hard","fair","generous"))
+  wealth_class<-match.arg(as.character(wealth_class),c("poor","moderate","rich"));specialty<-match.arg(as.character(specialty),c("general","provisions","food","weapons","armour","hunter","apothecary","arcane","outfitter","luxury","smith","materials"));temperament<-match.arg(as.character(temperament),c("hard","fair","generous"))
   tryCatch(DBI::dbWithTransaction(con,{m<-DBI::dbGetQuery(con,"INSERT INTO merchants(session_id,name,wealth_class,specialty,temperament,gold) VALUES($1,$2,$3,$4,$5,$6) RETURNING *",params=list(as.integer(session_id),trimws(as.character(name)),wealth_class,specialty,temperament,max(0,as.numeric(gold))))
     for(item in stock){qty<-max(1L,as.integer(item$qty%||%1L));base<-max(0,as.numeric(item$value%||%0));DBI::dbExecute(con,"INSERT INTO merchant_stock(merchant_id,catalogue_id,item_json,quantity,base_value) VALUES($1,$2,$3::jsonb,$4,$5)",params=list(m$id[[1L]],as.character(item$catalogue_id%||%item$id%||%""),enemy_json(item),qty,base))};m[1,,drop=FALSE]
   }),error=function(e){message("create_merchant failed: ",e$message);NULL})
+}
+
+queue_character_refresh <- function(character_id,update_kind="inventory",message="Your character was updated.") {
+  con<-get_db_connection();if(is.null(con))return(FALSE);on.exit(release_db_connection(con),add=TRUE)
+  tryCatch(DBI::dbExecute(con,"INSERT INTO character_refresh_notifications(character_id,update_kind,message) VALUES($1,$2,$3)",params=list(as.character(character_id),as.character(update_kind),as.character(message)))>0L,error=function(e){message("queue_character_refresh failed: ",e$message);FALSE})
+}
+
+consume_character_refresh <- function(character_id) {
+  con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE)
+  tryCatch(DBI::dbWithTransaction(con,{updates<-DBI::dbGetQuery(con,"SELECT id,update_kind,message FROM character_refresh_notifications WHERE character_id=$1 AND seen=FALSE ORDER BY created_at FOR UPDATE",params=list(as.character(character_id)));if(!nrow(updates))NULL else{DBI::dbExecute(con,"UPDATE character_refresh_notifications SET seen=TRUE,seen_at=now() WHERE id=ANY($1::bigint[])",params=list(enemy_pg_array(updates$id)));row<-DBI::dbGetQuery(con,"SELECT state_blob FROM character_blobs WHERE id::text=$1",params=list(as.character(character_id)));if(!nrow(row))NULL else{char<-validate_character(unserialize(row$state_blob[[1L]]));char<-hydrate_character_inventory_relational(con,char,as.character(character_id));list(character=char,messages=as.character(updates$message),kinds=as.character(updates$update_kind))}}}),error=function(e){message("consume_character_refresh failed: ",e$message);NULL})
 }
 
 list_session_merchants <- function(session_id,open_only=FALSE) {
@@ -1736,7 +1746,7 @@ get_finished_camp_gather_requests <- function(requester_id) {
 
 resolve_camp_gather_request <- function(request_id,responder_id,accept=TRUE,helper_bonus=0L) {
   con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE)
-  tryCatch(DBI::dbWithTransaction(con,{
+  result<-tryCatch(DBI::dbWithTransaction(con,{
     r<-DBI::dbGetQuery(con,"SELECT * FROM camp_gather_requests WHERE id=$1 FOR UPDATE",params=list(as.integer(request_id)))
     if(!nrow(r)||r$status[[1L]]!="pending")stop("Gathering request is no longer pending.")
     responder_id<-as.character(responder_id);helper<-as.character(r$helper_character_id[[1L]]%||%"")
@@ -1750,12 +1760,16 @@ resolve_camp_gather_request <- function(request_id,responder_id,accept=TRUE,help
       if(nrow(used))stop("A participant has already used today's camp gathering action.")
       requester_roll<-sample.int(20L,1L)+as.integer(r$requester_bonus[[1L]]);helper_roll<-if(nzchar(helper))sample.int(20L,1L)+as.integer(helper_bonus)else NA_integer_;total<-max(c(requester_roll,helper_roll),na.rm=TRUE);amount<-camp_gathering_yield(total);resource<-as.character(r$resource[[1L]]);reward<-if(resource=="rations")camp_foraging_reward(total)else NULL
       for(actor in actors)DBI::dbExecute(con,"INSERT INTO camp_gather_actions(session_id,day_number,character_id,resource,request_id) VALUES($1,$2,$3,$4,$5)",params=list(r$session_id[[1L]],r$day_number[[1L]],actor,r$resource[[1L]],r$id[[1L]]))
-      if(resource=="rations"&&amount>0L){cid<-as.character(r$requester_character_id[[1L]]);blob<-DBI::dbGetQuery(con,"SELECT state_blob FROM character_blobs WHERE id::text=$1 FOR UPDATE",params=list(cid));if(!nrow(blob))stop("Foraging character not found.");char<-validate_character(unserialize(blob$state_blob[[1L]]));char<-hydrate_character_inventory_relational(con,char,cid);char<-add_foraged_food(char,reward,r$day_number[[1L]]);DBI::dbExecute(con,"UPDATE character_blobs SET state_blob=$1,char_name=$2,updated_at=now() WHERE id::text=$3",params=list(list(serialize(char,NULL)),char$meta$name,cid));sync_character_inventory_relational(con,char,cid)
-      }else if(resource!="rations"){DBI::dbExecute(con,"INSERT INTO session_supplies(session_id) VALUES($1) ON CONFLICT DO NOTHING",params=list(r$session_id[[1L]]));sql<-paste0("UPDATE session_supplies SET ",resource,"=LEAST(",resource,"_max,",resource,"+$2),updated_at=now() WHERE session_id=$1");DBI::dbExecute(con,sql,params=list(r$session_id[[1L]],amount))}
+      if(resource!="rations"){DBI::dbExecute(con,"INSERT INTO session_supplies(session_id) VALUES($1) ON CONFLICT DO NOTHING",params=list(r$session_id[[1L]]));sql<-paste0("UPDATE session_supplies SET ",resource,"=LEAST(",resource,"_max,",resource,"+$2),updated_at=now() WHERE session_id=$1");DBI::dbExecute(con,sql,params=list(r$session_id[[1L]],amount))}
       DBI::dbExecute(con,"UPDATE camp_gather_requests SET status='resolved',helper_bonus=$2,requester_roll=$3,helper_roll=$4,result_total=$5,yield_amount=$6,reward_json=$7::jsonb,resolved_at=now() WHERE id=$1",params=list(r$id[[1L]],if(nzchar(helper))as.integer(helper_bonus)else NA_integer_,requester_roll,helper_roll,total,amount,enemy_json(reward%||%list())))
-      list(status="resolved",resource=resource,amount=amount,total=total,requester_roll=requester_roll,helper_roll=helper_roll,assisted=nzchar(helper),requester_id=as.character(r$requester_character_id[[1L]]),reward=reward)
+      list(status="resolved",resource=resource,amount=amount,total=total,requester_roll=requester_roll,helper_roll=helper_roll,assisted=nzchar(helper),requester_id=as.character(r$requester_character_id[[1L]]),day_number=as.integer(r$day_number[[1L]]),reward=reward)
     }
   }),error=function(e){message("resolve_camp_gather_request failed: ",e$message);NULL})
+  if(!is.null(result)&&identical(result$status,"resolved")&&identical(result$resource,"rations")&&result$amount>0L){
+    granted<-tryCatch(DBI::dbWithTransaction(con,{cid<-result$requester_id;blob<-DBI::dbGetQuery(con,"SELECT state_blob FROM character_blobs WHERE id::text=$1 FOR UPDATE",params=list(cid));if(!nrow(blob))stop("Foraging character not found.");char<-validate_character(unserialize(blob$state_blob[[1L]]));char<-hydrate_character_inventory_relational(con,char,cid);char<-add_foraged_food(char,result$reward,result$day_number);DBI::dbExecute(con,"UPDATE character_blobs SET state_blob=$1,char_name=$2,updated_at=now() WHERE id::text=$3",params=list(list(serialize(char,NULL)),char$meta$name,cid));sync_character_inventory_relational(con,char,cid);TRUE}),error=function(e){message("foraged food grant failed: ",e$message);FALSE})
+    if(!isTRUE(granted))return(NULL)
+  }
+  result
 }
 
 create_party_skill_check <- function(session_id,skill,ability,context,requester_id,requester_modifier,scope="party") {

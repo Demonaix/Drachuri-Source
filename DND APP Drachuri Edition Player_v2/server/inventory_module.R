@@ -158,6 +158,7 @@ inventoryTabServer <- function(id, state, restoring, add_log, char_rev, session_
 
     observe({
       invalidateLater(3000,session);cid<-current_trade_character();if(!nzchar(cid)||isTRUE(state$offline_mode))return()
+      external_update<-consume_character_refresh(cid);if(!is.null(external_update)&&is.list(external_update$character)){state$char<-external_update$character;load_from_state();showNotification(paste(unique(external_update$messages),collapse="\n"),type="message",duration=8)}
       sender_update<-consume_trade_sender_update(cid);if(!is.null(sender_update)&&is.list(sender_update$character)){state$char<-sender_update$character;load_from_state();showNotification("A trade was resolved; your inventory and purse have been refreshed.",type="message")}
       if(!is.null(session$userData$pending_merchant_id)||!is.null(session$userData$pending_trade_id)||!is.null(session$userData$pending_note_id)||!is.null(session$userData$pending_opportunity))return()
       offers<-get_pending_trade_offers(cid);if(!nrow(offers))return();fresh<-offers[!offers$id%in%shown_trade_ids(),,drop=FALSE];if(!nrow(fresh))return();o<-fresh[1,,drop=FALSE];shown_trade_ids(unique(c(shown_trade_ids(),o$id)))

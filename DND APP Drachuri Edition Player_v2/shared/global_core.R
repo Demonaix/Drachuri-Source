@@ -2505,6 +2505,18 @@ merchant_haggle_terms <- function(base_value,direction=c("buy","sell"),temperame
   list(base=base,dc=dc,roll=roll,success=success,multiplier=multiplier,price=max(if(base>0)1 else 0,round(base*multiplier)))
 }
 
+merchant_stock_category <- function(item) {
+  type<-tolower(as.character(item$type%||%"item"));category<-tolower(as.character((item$meta%||%list())$category%||%""))
+  if(type=="weapon")"weapon"else if(type%in%c("armor","armour"))"armour"else if(category=="food")"food"else if(category%in%c("mundane_loot","tool"))"general"else if(category%in%c("consumable","crafting","magical_item","treasure","quest"))category else"general"
+}
+
+merchant_select_stock <- function(items,n,specialty="general") {
+  if(!length(items)||n<1L)return(list());n<-min(as.integer(n),length(items));if(specialty!="general")return(sample(items,n,replace=FALSE))
+  groups<-split(items,vapply(items,merchant_stock_category,character(1)));targets<-c(general=.35,food=.25,consumable=.10,weapon=.10,armour=.10,crafting=.05,magical_item=.03,treasure=.02);chosen<-list()
+  for(category in names(targets)){pool<-groups[[category]]%||%list();take<-min(length(pool),max(if(category%in%c("general","food"))1L else 0L,as.integer(round(n*targets[[category]]))));if(take>0L)chosen<-c(chosen,sample(pool,take,replace=FALSE))}
+  used<-vapply(chosen,function(x)as.character(x$id%||%""),character(1));remaining<-Filter(function(x)!as.character(x$id%||%"")%in%used,items);if(length(chosen)<n&&length(remaining))chosen<-c(chosen,sample(remaining,min(n-length(chosen),length(remaining)),replace=FALSE));chosen[seq_len(min(n,length(chosen)))]
+}
+
 new_character <- function() {
   list(
     save_version = APP_SAVE_VERSION,

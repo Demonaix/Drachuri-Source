@@ -51,6 +51,8 @@ stopifnot(get_session_supplies(1L)$water[[1L]]==0L,!adjust_session_supply(1L,"wa
 refilled<-adjust_session_supply(1L,"water",fill=TRUE)
 stopifnot(refilled$after==5L,get_session_supplies(1L)$water[[1L]]==5L)
 
+gift_target<-load_character_from_db("1005");gift_row<-enemy_loot_to_inventory_row(list(name="QA Control Gift",type="item",desc="Gift refresh test",value=1,weight=.1,qty=1,meta=list(category="mundane_loot")),"qa_control_gift");gift_target$inventory$items<-inventory_normalize(rbind(gift_target$inventory$items,gift_row));stopifnot(!is.null(save_character_to_db(gift_target,"1005")));stopifnot(queue_character_refresh("1005","control_gift","The DM gave you QA Control Gift."));gift_update<-consume_character_refresh("1005");stopifnot(is.list(gift_update),any(gift_update$character$inventory$items$id=="qa_control_gift"),grepl("QA Control Gift",gift_update$messages[[1L]],fixed=TRUE));stopifnot(is.null(consume_character_refresh("1005")))
+
 gather_request<-create_camp_gather_request(1L,50L,"1001","rations",3L,"1002")
 stopifnot(is.data.frame(gather_request),nrow(gather_request)==1L)
 pending_gather<-get_pending_camp_gather_requests("1002")
