@@ -948,7 +948,8 @@ magicTabServer <- function(
       
       race <- x$meta$race %||% ""
       class <- x$build$class %||% ""
-      subclass <- x$build$subclass %||% ""
+      subclasses <- character_subclass_names(x)
+      subclass <- paste(subclasses, collapse = " ")
       
       total  <- as.integer(s$total %||% 0)
       flow   <- as.integer(s$flow  %||% 0)
@@ -1045,59 +1046,18 @@ magicTabServer <- function(
       # ---------------------
       # CORE (flow / total)
       # ---------------------
-      core <- "Unshaped"
-      
-      if (flow > total * 0.8) {
-        core <- "Tempest"
-      } else if (flow > total * 0.6) {
-        core <- "Storm"
-      } else if (flow > total * 0.4) {
-        core <- "Current"
-      } else if (flow < total * 0.2) {
-        core <- "Stillwater"
-      }
-      
-      if (total > 100) {
-        core <- "Abyss"
-      } else if (total > 80) {
-        core <- "Deepwell"
-      } else if (total > 60) {
-        core <- "Reservoir"
-      } else if (total < 30) {
-        core <- "Ember"
-      }
+      identity <- magical_identity_labels(total, flow, regen, locked, bound, subclasses)
+      core <- paste(identity$core, identity$expression)
       
       # ---------------------
       # ASPECT (subclass)
       # ---------------------
-      aspect <- "Channeler"
-      
-      if (grepl("heart eater", subclass)) {
-        aspect <- "Devourer"
-      } else if (grepl("ancestor", subclass)) {
-        aspect <- "Warden"
-      } else if (grepl("prophet", subclass)) {
-        aspect <- "Seer"
-      } else if (grepl("warrior", subclass)) {
-        aspect <- "Spellblade"
-      }
+      aspect <- identity$aspect
       
       # ---------------------
       # MODIFIER (state)
       # ---------------------
-      modifier <- NULL
-      
-      if (regen == 0 && flow > total * 0.5) {
-        modifier <- "Starved"
-      } else if (flow > total * 0.75) {
-        modifier <- "Unbound"
-      } else if (bound > 0) {
-        modifier <- "Bound"
-      } else if (locked > 0) {
-        modifier <- "Sealed"
-      } else if (regen > 10) {
-        modifier <- "Everflowing"
-      }
+      modifier <- identity$modifier
       
       # ---------------------
       # FINAL TITLE BUILD

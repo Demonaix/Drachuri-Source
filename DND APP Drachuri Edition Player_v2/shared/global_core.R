@@ -658,6 +658,74 @@ consume_heart_sindre <- function(current, maximum, temporary = 0,
   )
 }
 
+character_subclass_names <- function(x) {
+  build <- x$build %||% list()
+  classes <- build$classes %||% list()
+  from_classes <- unlist(lapply(classes, function(entry) {
+    as.character(entry$subclass %||% entry$path %||% "")
+  }), use.names = FALSE)
+  unique(Filter(nzchar, trimws(c(
+    as.character(build$subclass %||% ""),
+    as.character(build$path %||% ""),
+    from_classes
+  ))))
+}
+
+magical_identity_labels <- function(total, flow, regen, locked = 0, bound = 0,
+                                    subclasses = character()) {
+  total <- max(1, suppressWarnings(as.numeric(total %||% 0)))
+  flow <- max(0, suppressWarnings(as.numeric(flow %||% 0)))
+  regen <- max(0, suppressWarnings(as.numeric(regen %||% 0)))
+  locked <- max(0, suppressWarnings(as.numeric(locked %||% 0)))
+  bound <- max(0, suppressWarnings(as.numeric(bound %||% 0)))
+  values <- c(total, flow, regen, locked, bound)
+  values[is.na(values)] <- 0
+  total <- max(1, values[[1L]]); flow <- values[[2L]]; regen <- values[[3L]]
+  locked <- values[[4L]]; bound <- values[[5L]]
+  ratio <- flow / total
+
+  core <- if (total > 100) "Abyss" else if (total > 80) "Deepwell" else if (total > 60) "Reservoir" else if (total < 30) "Ember" else "Well"
+  expression <- if (ratio > .8) "Tempest" else if (ratio > .6) "Storm" else if (ratio > .4) "Current" else if (ratio < .2) "Stillwater" else "Tide"
+  subclass <- tolower(paste(subclasses, collapse = " "))
+  aspect <- if (grepl("heart eater", subclass)) "Devourer" else if (grepl("ancestor", subclass)) "Warden" else if (grepl("prophet", subclass)) "Seer" else if (grepl("warrior", subclass)) "Spellblade" else "Channeler"
+  modifier <- if (bound > 0) "Bound" else if (locked > 0) "Sealed" else if (regen == 0 && ratio > .5) "Starved" else if (ratio > .75) "Unbound" else if (regen > 10) "Everflowing" else NULL
+  list(core = core, expression = expression, aspect = aspect, modifier = modifier,
+       title = paste(Filter(nzchar, c(modifier, core, expression, aspect)), collapse = " "))
+}
+
+skill_identity_labels <- function(top_skills, top_scores = numeric()) {
+  skills <- tolower(trimws(as.character(top_skills %||% character())))
+  core_map <- c(
+    athletics="Brute", clutch="Grasp", wrestling="Grappler", throwing="Hurler", `dead lift`="Titan",
+    acrobatics="Acrobat", `sleight of hand`="Quickhand", stealth="Shadow", precision="Marksman",
+    endurance="Bulwark", tolerance="Ironblood", fortitude="Stalwart",
+    arcana="Arcanist", history="Chronicler", investigation="Investigator", nature="Naturalist", religion="Theologian", analysis="Strategist",
+    perception="Watcher", survival="Stalker", insight="Reader", medicine="Healer", `animal handling`="Beastfriend", `mandred connection`="Mandred-Touched",
+    deception="Trickster", intimidation="Menace", persuasion="Orator", performance="Virtuoso", presence="Luminary"
+  )
+  aspect_map <- c(
+    athletics="Enforcer", clutch="Binder", wrestling="Wrestler", throwing="Artillerist", `dead lift`="Bearer",
+    acrobatics="Daredevil", `sleight of hand`="Pilferer", stealth="Ghost", precision="Deadeye",
+    endurance="Survivor", tolerance="Resistant", fortitude="Guardian",
+    arcana="Seer", history="Lorekeeper", investigation="Inquisitor", nature="Warden", religion="Devotee", analysis="Tactician",
+    perception="Observer", survival="Hunter", insight="Empath", medicine="Physician", `animal handling`="Handler", `mandred connection`="Conduit",
+    deception="Liar", intimidation="Dread", persuasion="Diplomat", performance="Muse", presence="Leader"
+  )
+  first <- if (length(skills) >= 1L) skills[[1L]] else ""
+  second <- if (length(skills) >= 2L) skills[[2L]] else ""
+  core <- unname(core_map[[first]] %||% "Wanderer")
+  aspect <- unname(aspect_map[[second]] %||% "Operative")
+  scores <- suppressWarnings(as.numeric(top_scores))
+  scores <- scores[!is.na(scores)]
+  modifier <- NULL
+  if (length(scores)) {
+    avg <- mean(scores[seq_len(min(5L, length(scores)))])
+    if (scores[[1L]] > avg + 3) modifier <- "Elite" else if (scores[[1L]] > avg + 1) modifier <- "Cunning" else if (scores[[1L]] < 1) modifier <- "Unproven"
+  }
+  list(core = core, aspect = aspect, modifier = modifier,
+       title = paste(Filter(nzchar, c(modifier, core, aspect)), collapse = " "))
+}
+
 reset_class_uses_for_rest <- function(char, rest_type = c("short_rest", "long_rest")) {
   rest_type <- match.arg(rest_type)
   char <- validate_character(char)

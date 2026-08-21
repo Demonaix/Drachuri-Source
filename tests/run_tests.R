@@ -42,7 +42,8 @@ load_functions <- function(path, names) {
 load_functions(global_file, c(
   "character_save_payload", "restore_sindre", "reset_class_uses_for_rest",
   "calc_auto_ac_for_char", "get_effective_max_hp", "get_weapon_hit_bonus",
-  "starting_character_hp", "camp_gathering_yield", "consume_heart_sindre"
+  "starting_character_hp", "camp_gathering_yield", "consume_heart_sindre",
+  "character_subclass_names", "magical_identity_labels", "skill_identity_labels"
 ))
 load_functions(relational_inventory_file, c("equipment_material_is_eligible"))
 load_functions(enemy_generator_file, c("resolve_layered_damage_traits"))
@@ -124,6 +125,26 @@ test("heart consumption grants predictable temporary Sindre", {
   stopifnot(identical(heart_eater$current, 100L))
   stopifnot(identical(heart_eater$temporary, 28L))
   stopifnot(identical(heart_eater$temporary_gained, 25L))
+})
+
+test("character identities use current subclasses and every skill family", {
+  char <- list(build = list(classes = list(
+    list(class = "Rogue", subclass = "Thief"),
+    list(class = "Hanianol Sorcerer", subclass = "Heart Eater")
+  )))
+  stopifnot("Heart Eater" %in% test_env$character_subclass_names(char))
+  magic <- test_env$magical_identity_labels(110, 75, 0, 0, 0,
+                                            test_env$character_subclass_names(char))
+  stopifnot(identical(magic$aspect, "Devourer"))
+  stopifnot(grepl("Abyss Storm Devourer", magic$title, fixed = TRUE))
+
+  history <- test_env$skill_identity_labels(c("History", "Medicine"), c(8, 7, 2, 1))
+  stopifnot(identical(history$core, "Chronicler"))
+  stopifnot(identical(history$aspect, "Physician"))
+  all_skills <- c("Athletics","Clutch","Wrestling","Throwing","Dead Lift","Acrobatics","Sleight of Hand","Stealth","Precision","Endurance","Tolerance","Fortitude","Arcana","History","Investigation","Nature","Religion","Analysis","Perception","Survival","Insight","Medicine","Animal Handling","Mandred Connection","Deception","Intimidation","Persuasion","Performance","Presence")
+  stopifnot(all(vapply(all_skills, function(skill) {
+    test_env$skill_identity_labels(c(skill, skill), c(5, 4))$core != "Wanderer"
+  }, logical(1))))
 })
 
 test("temporary HP absorbs damage before current HP", {

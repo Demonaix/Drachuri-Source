@@ -220,39 +220,18 @@ skillsTabServer <- function(id, state, restoring, add_log, char_rev) {
       # =====================
       # CORE
       # =====================
-      core <- "Wanderer"
-      
-      if (grepl("stealth", s1)) core <- "Shadow"
-      else if (grepl("survival", s1)) core <- "Stalker"
-      else if (grepl("arcana", s1)) core <- "Arcanist"
-      else if (grepl("athletics", s1)) core <- "Brute"
-      else if (grepl("perception", s1)) core <- "Watcher"
-      else if (grepl("deception", s1)) core <- "Trickster"
-      else if (grepl("persuasion", s1)) core <- "Orator"
+      identity <- skill_identity_labels(top, sorted)
+      core <- identity$core
       
       # =====================
       # ASPECT
       # =====================
-      aspect <- "Operative"
-      
-      if (grepl("stealth", s2)) aspect <- "Ghost"
-      else if (grepl("survival", s2)) aspect <- "Hunter"
-      else if (grepl("arcana", s2)) aspect <- "Seer"
-      else if (grepl("athletics", s2)) aspect <- "Enforcer"
-      else if (grepl("perception", s2)) aspect <- "Observer"
-      else if (grepl("deception", s2)) aspect <- "Liar"
-      else if (grepl("persuasion", s2)) aspect <- "Diplomat"
+      aspect <- identity$aspect
       
       # =====================
       # MODIFIER
       # =====================
-      modifier <- NULL
-      
-      avg <- mean(sorted[1:min(5, length(sorted))])
-      
-      if (sorted[1] > avg + 3) modifier <- "Elite"
-      else if (sorted[1] > avg + 1) modifier <- "Cunning"
-      else if (sorted[1] < 1) modifier <- "Unproven"
+      modifier <- identity$modifier
       
       # =====================
       # TITLE
