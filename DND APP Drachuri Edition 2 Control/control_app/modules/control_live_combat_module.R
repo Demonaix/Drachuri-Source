@@ -353,6 +353,7 @@ controlLiveCombatUI <- function(id) {
             actionButton(ns("end_combat"), "End Combat", class = "btn btn-danger"),
             selectInput(ns("target_id"), "Target", choices = c(), width = "220px"),
             actionButton(ns("attack_btn"), "Attack", class = "btn btn-danger")
+            ,actionButton(ns("escape_grapple"), "Escape Grapple", class = "btn btn-default")
             ,checkboxInput(ns("movement_disengage"), "Disengage before moving", value = FALSE)
           )
         ),
@@ -1037,6 +1038,7 @@ limit 1
                "move_nw", "move_ne", "move_sw", "move_se"), function(id) {
         shinyjs::toggleState(id = id, condition = started)
       })
+      actor_id<-as.character(active_actor_id()%||%"");conditions<-if(started&&nzchar(actor_id))tryCatch(get_active_encounter_conditions(current_encounter_id(),actor_id),error=function(e)data.frame())else data.frame();grappled<-is.data.frame(conditions)&&nrow(conditions)&&any(tolower(as.character(conditions$condition%||%""))=="grappled");shinyjs::toggleState(id="escape_grapple",condition=started&&grappled)
     })
     
     encounter_events_r <- reactive({
@@ -2329,7 +2331,7 @@ limit 1
         tags$hr(),
         div(
           class = "live-combat-sub",
-          "This pass uses the encounter positions table as the runtime battlefield state."
+          "Click any empty tile in a straight or diagonal line to move the active combatant. Movement cost, blocking terrain, occupied tiles and grappled speed are checked automatically."
         )
       )
     })
@@ -2877,14 +2879,13 @@ limit 1
     # --------------------------------------------------
     # Movement
     # --------------------------------------------------
-    move_active_actor <- function(dx = 0L, dy = 0L) {
+    move_active_actor <- function(dx = 0L, dy = 0L, steps_override = NULL) {
       if (!isTRUE(combat_started())) {
         log_safe("Start combat and roll initiative before moving combatants.", type = "error")
         return(invisible(FALSE))
       }
-      steps <- suppressWarnings(as.integer(input$move_steps %||% 1L))
+      steps <- suppressWarnings(as.integer(steps_override %||% input$move_steps %||% 1L))
       if (is.na(steps) || steps < 1L) steps <- 1L
-      steps <- min(3L, steps)
       
       eid <- current_encounter_id()
       combat <- combat_state_r()
@@ -3024,6 +3025,17 @@ limit 1
     observeEvent(input$move_ne, { move_active_actor( 1L, -1L) }, ignoreInit = TRUE)
     observeEvent(input$move_sw, { move_active_actor(-1L,  1L) }, ignoreInit = TRUE)
     observeEvent(input$move_se, { move_active_actor( 1L,  1L) }, ignoreInit = TRUE)
+
+    observeEvent(input$escape_grapple, {
+      if (!isTRUE(combat_started())) return(log_safe("Start combat before using combat actions.",type="error"))
+      actor_id<-as.character(active_actor_id()%||%"");actor_type<-as.character(active_actor_type()%||%"")
+      conditions<-tryCatch(get_active_encounter_conditions(current_encounter_id(),actor_id),error=function(e)data.frame())
+      if(!is.data.frame(conditions)||!nrow(conditions)||!any(tolower(as.character(conditions$condition%||%""))=="grappled"))return(log_safe(paste0(get_actor_display_name(actor_id)," is not grappled."),type="warning"))
+      actor<-load_actor_for_combat(actor_id,actor_type);abilities<-actor$abilities%||%list();str_mod<-floor((as.integer(abilities$str%||%10L)-10L)/2L);dex_mod<-floor((as.integer(abilities$dex%||%10L)-10L)/2L);prof<-if(identical(actor_type,"player"))tryCatch(character_proficiency_bonus(actor),error=function(e)2L)else 2L
+      escape_total<-sample.int(20L,1L)+max(str_mod,dex_mod)+as.integer(prof);hold_total<-sample.int(20L,1L)+2L;escaped<-escape_total>=hold_total&&isTRUE(end_encounter_condition(current_encounter_id(),actor_id,"grappled"))
+      log_game_event(current_encounter_id(),"standard_action",actor_type,actor_id,payload=list(action="escape_grapple",escape_total=escape_total,hold_total=hold_total,success=escaped))
+      log_safe(paste0(if(escaped)"Escape succeeds" else "The grapple holds"," for ",get_actor_display_name(actor_id)," (",escape_total," vs ",hold_total,")."),type=if(escaped)"message"else"warning");if(escaped)bump_live()
+    },ignoreInit=TRUE)
     
     observeEvent(input$map_target_click, {
       actor_id <- as.character(input$map_target_click$actor_id %||% "")
@@ -3053,17 +3065,12 @@ limit 1
       dy_total <- target_y - old_y
       steps <- max(abs(dx_total), abs(dy_total))
       if (steps < 1L) return()
-      if (steps > 3L) {
-        log_safe("Use the 1x/2x/3x movement controls or click a nearer tile.", type = "error")
-        return()
-      }
       if (!(dx_total == 0L || dy_total == 0L || abs(dx_total) == abs(dy_total))) {
         log_safe("Click movement currently supports straight or diagonal movement only.", type = "error")
         return()
       }
       pending_move(list(x = target_x, y = target_y))
-      updateRadioButtons(session, "move_steps", selected = steps)
-      ok <- move_active_actor(dx = sign(dx_total), dy = sign(dy_total))
+      ok <- move_active_actor(dx = sign(dx_total), dy = sign(dy_total), steps_override = steps)
       pending_move(NULL)
       bump_map_visual()
       invisible(ok)

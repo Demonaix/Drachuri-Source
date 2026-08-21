@@ -220,7 +220,7 @@ This is the authoritative issue register for the player and control apps. The or
 
 ### NPC-UI-001 — Feature inventory rules and equipment/attack duplication
 
-- **Status:** Implemented — awaiting manual control UI retest
+- **Status:** Closed — user signed off 2026-08-21
 - **Priority:** High
 - **Area:** Control / NPC features / enemy generator
 - **Reported:** 2026-08-21
@@ -230,7 +230,7 @@ This is the authoritative issue register for the player and control apps. The or
 
 ### NPC-UI-002 — NPC rule editors flash and generated attacks lose carried weapons
 
-- **Status:** Fixed — awaiting manual control UI retest
+- **Status:** Closed — user signed off 2026-08-21
 - **Priority:** High
 - **Area:** Control / NPC creator / pools / features / attacks
 - **Reported:** 2026-08-21
@@ -242,7 +242,7 @@ This is the authoritative issue register for the player and control apps. The or
 
 ### NPC-UI-003 — Custom features missing and NPC weapon provenance is opaque
 
-- **Status:** Fixed — awaiting manual control UI retest
+- **Status:** Closed — user signed off 2026-08-21
 - **Priority:** High
 - **Area:** Control / NPC creator / feature equipment
 - **Reported:** 2026-08-21
@@ -250,6 +250,17 @@ This is the authoritative issue register for the player and control apps. The or
 - **Cause:** The creator's characteristic control still used the built-in static labels instead of the saved feature catalogue. Weapons were mixed into generic loot, while a legacy unlocked catalogue entry was still named “Iron Spear” even though its material roll was random.
 - **Fix/checkpoint (2026-08-21):** The creator now builds its feature choices and descriptions from saved feature records, including custom additions. Carried weapons have a dedicated selector and per-template material/build-quality override; they remain automatic attacks and loot. Unlocked legacy material prefixes are removed for display, random rolls use the database drop weights, and generated template tables show material and build quality. Feature inventory rules can specify random or fixed material and quality and show a fully rolled example. Identical feature constraints combine; conflicting constraints safely fall back to a random roll, while a direct creator override wins. Material and quality attack/damage modifiers are copied into the generated NPC weapon attack.
 - **Retest:** Select both newly created Barbarian features in the creator. Generate the spear at least ten times with both overrides set to Random and confirm the result column shows mixed eligible materials and build qualities. Then force one material and quality, save, and confirm its equipment and attack columns show them and combat uses the adjusted hit/damage values.
+
+### COMBAT-CTRL-001 — Control combat lacks player movement and grapple controls
+
+- **Status:** Fixed — awaiting manual control UI retest
+- **Priority:** High
+- **Area:** Control / live combat
+- **Reported:** 2026-08-21
+- **Original report:** The Control combat screen appeared to lack player-side features including Escape Grapple and click-to-move.
+- **Cause:** Control had a tile-click listener, but it wrote to a removed movement-step input. Every destination was therefore reduced to a single square and distant clicks appeared not to work. Control had condition overrides but no rules-based grapple escape action.
+- **Fix/checkpoint (2026-08-21):** Empty-tile clicks now pass the requested distance directly to the existing validated movement routine, allowing the full remaining straight/diagonal movement allowance while respecting terrain, occupancy, speed and grapple/restrained movement zero. The battlefield explains the gesture. Escape Grapple is enabled only when the active combatant is grappled, uses that actor's better Strength/Dexterity modifier and proficiency, removes the condition on success, and records the contested totals as a combat event.
+- **Retest:** Start combat, click a clear tile more than one square away and confirm the active actor moves the full legal distance. Confirm blocked, occupied and over-speed destinations stop correctly. Apply Grappled to an actor, confirm Escape Grapple enables only on that actor's turn, and verify both successful and failed attempts appear in the combat log.
 
 ### LOOT-002 — Mundane loot needs an authoritative category
 
