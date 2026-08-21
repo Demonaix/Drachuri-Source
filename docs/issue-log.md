@@ -26,14 +26,16 @@ This is the authoritative issue register for the player and control apps. The or
 
 ### CHAR-001 — Starting above level 1 leaves HP at 10
 
-- **Status:** Open
+- **Status:** Fixed — awaiting retest
 - **Priority:** High
 - **Area:** Character creation / levelling / HP
 - **Reported:** 2026-08-17
 - **Original report:** A character created at a level other than 1 remains at 10 HP and cannot be changed correctly.
-- **Test notes:** Capture class, starting level, CON, expected HP, displayed maximum HP, and saved maximum HP.
-- **Fix/checkpoint:** —
-- **Retest:** Not started.
+- **Cause:** Landing creation changed the saved class and level but retained `new_character()`'s generic 10/10 HP. The load-time repair path was also an unfinished placeholder that assigned every eligible character 12 HP regardless of class, level or Constitution.
+- **Fix (2026-08-21):** Added one authoritative starting-HP calculation: maximum class hit die plus Constitution modifier at level 1, then the fixed average hit-die gain plus Constitution modifier for every later level, with a minimum gain of one per level. Landing creation writes both current and maximum HP before the first save. The legacy repair path uses the same rule and only replaces the old 10/10 default for characters above level 1, so a legitimate level-one 10 HP character is not silently changed.
+- **Automated test:** Covers level-one Rogue, level-five Rogue, level-five Barbarian with Constitution 14, and a low-Constitution minimum-gain case.
+- **Fix/checkpoint:** `13896e1`
+- **Retest:** Create a level-five Rogue and confirm 28/28 HP at the creation default Constitution 10. Create a level-five Barbarian and confirm 40/40 HP. Reload each character and confirm HP remains unchanged.
 
 ### BLOOD-001 — Hearts do not grant expected temporary Sindre
 
