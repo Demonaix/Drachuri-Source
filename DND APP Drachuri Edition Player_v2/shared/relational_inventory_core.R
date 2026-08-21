@@ -44,7 +44,7 @@ inventory_item_category <- function(item) {
   type <- tolower(trimws(as.character(item$type[[1L]] %||% "item")))
   meta <- if (is.list(item$meta[[1L]])) item$meta[[1L]] else list()
   explicit <- tolower(as.character(meta$category %||% ""))
-  allowed <- c("mundane_loot", "consumable", "crafting", "tool", "treasure", "quest")
+  allowed <- c("mundane_loot", "food", "magical_item", "consumable", "crafting", "tool", "treasure", "quest")
   if (explicit %in% allowed) return(explicit)
   if (type %in% c("consumable", "potion", "food", "drink")) return("consumable")
   if (type %in% c("crafting", "material", "ingredient")) return("crafting")
@@ -128,6 +128,18 @@ save_control_catalogue_definition <- function(entry) {
     }
     TRUE
   }, error=function(e){message("save_control_catalogue_definition failed: ",e$message);FALSE})
+}
+
+get_control_catalogue_definitions <- function() {
+  con<-get_db_connection();if(is.null(con))return(list());on.exit(release_db_connection(con),add=TRUE)
+  tryCatch({
+    weapons<-DBI::dbGetQuery(con,"SELECT * FROM weapons ORDER BY lower(name)");armour<-DBI::dbGetQuery(con,"SELECT * FROM armour ORDER BY lower(name)");items<-DBI::dbGetQuery(con,"SELECT * FROM items ORDER BY lower(name)")
+    out<-list()
+    if(nrow(weapons))for(i in seq_len(nrow(weapons))){x<-weapons[i,,drop=FALSE];out[[length(out)+1L]]<-list(id=as.character(x$id[[1L]]),name=as.character(x$name[[1L]]),type="weapon",desc=as.character(x$description[[1L]]%||%""),value=as.numeric(x$value[[1L]]%||%0),weight=as.numeric(x$weight[[1L]]%||%0),qty=1,pools=enemy_db_values(x$pools[[1L]]%||%character()),meta=list(stat=as.character(x$stat[[1L]]%||%"str"),adv=as.character(x$advantage[[1L]]%||%"Normal"),to_hit_bonus=as.integer(x$to_hit_bonus[[1L]]%||%0L),damage1=as.character(x$damage_1[[1L]]%||%"1d4"),dmg_type1=as.character(x$damage_type_1[[1L]]%||%"other"),damage2=as.character(x$damage_2[[1L]]%||%""),dmg_type2=as.character(x$damage_type_2[[1L]]%||%"other"),proficient=isTRUE(x$proficient[[1L]])))}
+    if(nrow(armour))for(i in seq_len(nrow(armour))){x<-armour[i,,drop=FALSE];out[[length(out)+1L]]<-list(id=as.character(x$id[[1L]]),name=as.character(x$name[[1L]]),type="armor",desc=as.character(x$description[[1L]]%||%""),value=as.numeric(x$value[[1L]]%||%0),weight=as.numeric(x$weight[[1L]]%||%0),qty=1,pools=enemy_db_values(x$pools[[1L]]%||%character()),meta=list(base_ac=as.integer(x$base_ac[[1L]]%||%10L),type=as.character(x$armour_type[[1L]]%||%"Light"),custom_max_dex=as.integer(x$max_dex_bonus[[1L]]%||%0L),proficient=isTRUE(x$proficient[[1L]])))}
+    if(nrow(items))for(i in seq_len(nrow(items))){x<-items[i,,drop=FALSE];category<-as.character(x$category[[1L]]%||%"mundane_loot");out[[length(out)+1L]]<-list(id=as.character(x$id[[1L]]),name=as.character(x$name[[1L]]),type=if(category%in%c("food","consumable"))"consumable"else"item",desc=as.character(x$description[[1L]]%||%""),value=as.numeric(x$value[[1L]]%||%0),weight=as.numeric(x$weight[[1L]]%||%0),qty=1,pools=enemy_db_values(x$pools[[1L]]%||%character()),meta=list(category=category,effect=as.character(x$effect[[1L]]%||%""),effect_amount=as.character(x$effect_amount[[1L]]%||%"")))}
+    out
+  },error=function(e){message("get_control_catalogue_definitions failed: ",e$message);list()})
 }
 
 sync_character_inventory_relational <- function(con, char, character_id) {

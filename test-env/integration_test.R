@@ -243,6 +243,15 @@ quote2<-create_merchant_quote(merchant$id[[1L]],"1002","buy",stock_id=stock_id);
 quoted_buy<-merchant_trade(merchant$id[[1L]],"1002",quote_id=quote2$id[[1L]]);stopifnot(is.list(quoted_buy),any(quoted_buy$character$inventory$items$name=="QA Apple"))
 quote_status<-DBI::dbGetQuery(con,"SELECT status FROM merchant_quotes WHERE id=$1",params=list(quote2$id[[1L]]));stopifnot(quote_status$status[[1L]]=="accepted")
 
+critical_buyer<-load_character_from_db("1002");critical_buyer$inventory$gold<-100;save_character_to_db(critical_buyer,"1002")
+critical_stock<-qa_apple;critical_stock$qty<-2L;critical_merchant<-create_merchant(1L,"QA Critical Trader","rich","food","fair",100,list(critical_stock));critical_bundle<-get_merchant_bundle(critical_merchant$id[[1L]])
+critical_quote<-create_merchant_quote(critical_merchant$id[[1L]],"1002","buy",stock_id=critical_bundle$stock$id[[1L]],natural_roll_override=1L)
+stopifnot(nrow(critical_quote)==1L,critical_quote$natural_roll[[1L]]==1L,critical_quote$final_price[[1L]]==2*critical_quote$base_value[[1L]])
+critical_buy<-merchant_trade(critical_merchant$id[[1L]],"1002",quote_id=critical_quote$id[[1L]]);stopifnot(is.list(critical_buy),critical_buy$natural_roll==1L)
+con<-get_db_connection();DBI::dbExecute(con,"UPDATE merchants SET status='closed' WHERE id=$1",params=list(critical_merchant$id[[1L]]));release_db_connection(con)
+closed_quote<-create_merchant_quote(critical_merchant$id[[1L]],"1002","buy",stock_id=critical_bundle$stock$id[[1L]])
+stopifnot(merchant_action_failed(closed_quote),grepl("no longer open",merchant_error_message(closed_quote),fixed=TRUE))
+
 stopifnot(identical(get_session_fire(1L),FALSE),isTRUE(set_session_fire(1L,TRUE)),identical(get_session_fire(1L),TRUE))
 rest_cycle<-begin_session_long_rest(1L,"1001",1L);stopifnot(!is.null(rest_cycle),isTRUE(rest_cycle$can_apply))
 rest_progress<-complete_session_long_rest(rest_cycle$cycle_id,"1001","half");stopifnot(rest_progress$completed[[1L]]==1L)
@@ -261,8 +270,9 @@ stopifnot(setequal(as.character(blood_history$consumption_type),c("blood","heart
 con<-get_db_connection()
 DBI::dbExecute(con,"INSERT INTO items(id,name,item_type,category) VALUES('qa_mundane','QA Rope','item','mundane_loot')")
 category_rows<-DBI::dbGetQuery(con,"SELECT category FROM items WHERE category='mundane_loot' LIMIT 1")
+mundane_count<-DBI::dbGetQuery(con,"SELECT count(*) AS n FROM items WHERE id LIKE 'mundane\\_%' ESCAPE '\\'")$n[[1L]]
 release_db_connection(con)
-stopifnot(nrow(category_rows)==1L)
+stopifnot(nrow(category_rows)==1L,mundane_count==100L)
 
 stopifnot(isTRUE(end_encounter_combat(1L)))
 ended_snapshot <- get_player_live_snapshot(1L, "1002")
