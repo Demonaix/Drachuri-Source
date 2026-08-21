@@ -8,21 +8,9 @@ characterCoreServer <- function(input, output, session) {
   initialise_hp_if_needed <- function(x) {
     x <- validate_character(x)
     
-    # Decide what the character's intended starting HP should be.
-    # Replace this with your real rule.
-    #
-    # Example options:
-    # 1) fixed starting HP:
-    # target_max <- 12
-    #
-    # 2) from a field already stored somewhere:
-    # target_max <- as.integer(x$meta$starting_hp %||% 12)
-    #
-    # 3) from race / class / level / custom logic:
-    # target_max <- compute_starting_hp(x)
-    #
-    # For now, set your chosen default here:
-    target_max <- 12
+    target_max <- starting_character_hp(
+      x$build$class%||%"",x$build$level%||%1L,x$abilities$con%||%10L
+    )
     
     target_max <- suppressWarnings(as.integer(target_max))
     if (is.na(target_max) || target_max < 1) target_max <- 1
@@ -35,7 +23,8 @@ characterCoreServer <- function(input, output, session) {
     hp_legacy_default <- identical(as.integer(x$resources$hp$max %||% NA), 10L) &&
       identical(as.integer(x$resources$hp$cur %||% NA), 10L)
     
-    if (hp_missing || hp_legacy_default) {
+    repair_legacy_levelled_hp <- hp_legacy_default && as.integer(x$build$level%||%1L)>1L
+    if (hp_missing || repair_legacy_levelled_hp) {
       x$resources$hp$max <- target_max
       x$resources$hp$cur <- target_max
       x$resources$hp$temp <- as.integer(x$resources$hp$temp %||% 0)

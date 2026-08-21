@@ -375,6 +375,10 @@ landingTabServer <- function(
       x$build$class <- input$class %||% ""
       x$build$path  <- input$subclass %||% ""
       x$build$level <- as.integer(input$level %||% 1)
+      starting_hp <- starting_character_hp(x$build$class,x$build$level,x$abilities$con%||%10L)
+      x$resources$hp$max <- starting_hp
+      x$resources$hp$cur <- starting_hp
+      x$resources$hp$temp <- 0L
       
       state$char <- validate_character(x)
       state$char_id <- NULL

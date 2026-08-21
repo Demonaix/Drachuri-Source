@@ -2273,6 +2273,21 @@ combat_empty_armors <- function() data.frame(
 # ----------------------------
 # New character
 # ----------------------------
+starting_character_hp <- function(class_name, level = 1L, constitution = 10L,
+                                  class_defs = NULL) {
+  level <- suppressWarnings(as.integer(level)); if (is.na(level)) level <- 1L
+  level <- max(1L, min(20L, level))
+  constitution <- suppressWarnings(as.integer(constitution)); if (is.na(constitution)) constitution <- 10L
+  con_modifier <- floor((constitution - 10L) / 2L)
+  if (is.null(class_defs)) class_defs <- if (exists("CLASSES", inherits=TRUE)) get("CLASSES", inherits=TRUE) else list()
+  class_name <- as.character(class_name %||% "")
+  hit_die <- suppressWarnings(as.integer((class_defs[[class_name]] %||% list())$hit_die %||% 10L))
+  if (is.na(hit_die) || hit_die < 1L) hit_die <- 10L
+  first_level <- max(1L, hit_die + con_modifier)
+  later_level <- max(1L, floor(hit_die / 2L) + 1L + con_modifier)
+  as.integer(first_level + (level - 1L) * later_level)
+}
+
 new_character <- function() {
   list(
     save_version = APP_SAVE_VERSION,

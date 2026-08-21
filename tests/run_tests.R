@@ -41,7 +41,8 @@ load_functions <- function(path, names) {
 
 load_functions(global_file, c(
   "character_save_payload", "restore_sindre", "reset_class_uses_for_rest",
-  "calc_auto_ac_for_char", "get_effective_max_hp", "get_weapon_hit_bonus"
+  "calc_auto_ac_for_char", "get_effective_max_hp", "get_weapon_hit_bonus",
+  "starting_character_hp"
 ))
 load_functions(relational_inventory_file, c("equipment_material_is_eligible"))
 load_functions(enemy_generator_file, c("resolve_layered_damage_traits"))
@@ -99,6 +100,14 @@ test("character save payload round-trips without data loss", {
   payload <- test_env$character_save_payload(character)
   stopifnot(identical(payload$name, "Eira"))
   stopifnot(identical(unserialize(payload$state_blob), character))
+})
+
+test("higher-level character creation calculates class HP", {
+  classes<-list(Rogue=list(hit_die=8L),Barbarian=list(hit_die=12L))
+  stopifnot(identical(test_env$starting_character_hp("Rogue",1L,10L,classes),8L))
+  stopifnot(identical(test_env$starting_character_hp("Rogue",5L,10L,classes),28L))
+  stopifnot(identical(test_env$starting_character_hp("Barbarian",5L,14L,classes),50L))
+  stopifnot(identical(test_env$starting_character_hp("Rogue",3L,6L,classes),12L))
 })
 
 test("temporary HP absorbs damage before current HP", {
