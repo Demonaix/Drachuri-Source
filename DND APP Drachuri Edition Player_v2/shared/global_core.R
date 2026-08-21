@@ -1765,6 +1765,16 @@ weapon_meta_defaults_global <- function(meta = NULL) {
   meta$damage2 <- as.character(meta$damage2 %||% "")
   meta$dmg_type2 <- as.character(meta$dmg_type2 %||% "Other")
   meta$proficient <- isTRUE(meta$proficient)
+
+  meta$equipment_slot <- tolower(as.character(meta$equipment_slot %||%
+    if (identical(meta$type, "Shield")) "shield" else "body"))
+  if (!meta$equipment_slot %in% c("body", "shield", "head", "accessory")) {
+    meta$equipment_slot <- "body"
+  }
+
+  default_bonus <- if (identical(meta$equipment_slot, "shield")) meta$base_ac else 0
+  meta$ac_bonus <- suppressWarnings(as.numeric(meta$ac_bonus %||% default_bonus))
+  if (is.na(meta$ac_bonus)) meta$ac_bonus <- 0
   
   meta
 }
@@ -1858,12 +1868,22 @@ armor_meta_defaults_global <- function(meta = NULL) {
   if (is.na(meta$base_ac)) meta$base_ac <- 11
   
   meta$type <- as.character(meta$type %||% "Light")
-  if (!meta$type %in% COMBAT_ARMOR_TYPES) meta$type <- "Light"
+  if (!meta$type %in% c("Light", "Medium", "Heavy", "Custom", "Shield", "Unarmoured")) meta$type <- "Light"
   
   meta$custom_max_dex <- suppressWarnings(as.numeric(meta$custom_max_dex %||% 0))
   if (is.na(meta$custom_max_dex)) meta$custom_max_dex <- 0
   
   meta$proficient <- isTRUE(meta$proficient)
+
+  meta$equipment_slot <- tolower(as.character(meta$equipment_slot %||%
+    if (identical(meta$type, "Shield")) "shield" else "body"))
+  if (!meta$equipment_slot %in% c("body", "shield", "head", "accessory")) {
+    meta$equipment_slot <- "body"
+  }
+
+  default_bonus <- if (identical(meta$equipment_slot, "shield")) meta$base_ac else 0
+  meta$ac_bonus <- suppressWarnings(as.numeric(meta$ac_bonus %||% default_bonus))
+  if (is.na(meta$ac_bonus)) meta$ac_bonus <- 0
   
   meta
 }
@@ -1910,32 +1930,34 @@ calc_auto_ac_for_char <- function(char) {
   dex_mod <- get_character_ability_mod(char, "dex")
   pb <- get_character_prof_bonus(char)
   
-  if (nrow(arm) == 0) {
-    return(unarmoured_ac())
+  if (nrow(arm) == 0) return(unarmoured_ac())
+
+  metas <- lapply(arm$meta, function(meta) armor_meta_defaults_global(meta))
+  slots <- vapply(metas, function(meta) meta$equipment_slot, character(1))
+  body_index <- which(slots == "body")
+  body_worn <- length(body_index) > 0L
+  ac <- unarmoured_ac()
+
+  if (body_worn) {
+    meta <- metas[[body_index[[1L]]]]
+    type <- meta$type %||% "Light"
+    max_dex <- switch(type, Light = Inf, Medium = 2, Heavy = 0,
+      Custom = as.numeric(meta$custom_max_dex %||% 0), Inf)
+    equipment_bonus <- suppressWarnings(as.numeric(meta$material_armour_modifier %||% 0) +
+      as.numeric(meta$quality_armour_modifier %||% 0))
+    if (is.na(equipment_bonus)) equipment_bonus <- 0
+    ac <- as.integer(as.numeric(meta$base_ac %||% 10) + min(dex_mod, max_dex) +
+      (if (isTRUE(meta$proficient)) pb else 0L) + equipment_bonus)
   }
-  
-  row <- arm[1, , drop = FALSE]
-  meta <- armor_meta_defaults_global(row$meta[[1]])
-  
-  type <- meta$type %||% "Light"
-  base_ac <- as.numeric(meta$base_ac %||% 10)
-  prof <- isTRUE(meta$proficient)
-  
-  max_dex <- switch(
-    type,
-    "Light" = Inf,
-    "Medium" = 2,
-    "Heavy" = 0,
-    "Custom" = as.numeric(meta$custom_max_dex %||% 0),
-    Inf
-  )
-  
-  dex_add <- min(dex_mod, max_dex)
-  defence_bonus <- if (identical(fighting_style, "Defence")) 1L else 0L
-  equipment_bonus <- suppressWarnings(as.numeric(meta$material_armour_modifier %||% 0) +
-    as.numeric(meta$quality_armour_modifier %||% 0))
-  if (is.na(equipment_bonus)) equipment_bonus <- 0
-  as.integer(base_ac + dex_add + if (prof) pb else 0L + equipment_bonus) + defence_bonus
+
+  # Add only the best equipped item in each supplementary slot. This prevents
+  # two shields or several helms stacking while allowing body + shield + helm.
+  for (slot in c("shield", "head", "accessory")) {
+    bonuses <- vapply(metas[slots == slot], function(meta) as.numeric(meta$ac_bonus %||% 0), numeric(1))
+    if (length(bonuses)) ac <- ac + max(bonuses, na.rm = TRUE)
+  }
+  if (body_worn && identical(fighting_style, "Defence")) ac <- ac + 1L
+  as.integer(ac)
 }
 
 roll_dice_expr <- function(expr) {

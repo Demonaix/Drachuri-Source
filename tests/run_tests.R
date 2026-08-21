@@ -41,7 +41,7 @@ load_functions <- function(path, names) {
 
 load_functions(global_file, c(
   "character_save_payload", "restore_sindre", "reset_class_uses_for_rest",
-  "calc_auto_ac_for_char", "get_effective_max_hp", "get_weapon_hit_bonus",
+  "armor_meta_defaults_global", "calc_auto_ac_for_char", "get_effective_max_hp", "get_weapon_hit_bonus",
   "starting_character_hp", "camp_gathering_yield", "consume_heart_sindre",
   "character_subclass_names", "magical_identity_labels", "skill_identity_labels",
   "character_magic_types", "bloodlust_bite_required", "merchant_haggle_terms",
@@ -736,7 +736,6 @@ test("Defence Fighting Style adds one AC only while armoured", {
   test_env$get_character_ability_mod <- function(char, stat) 2L
   test_env$get_character_prof_bonus <- function(char) 2L
   test_env$inventory_normalize <- function(items) items
-  test_env$armor_meta_defaults_global <- identity
   armour <- data.frame(
     type = "armor", equipped = TRUE, in_bag = FALSE,
     stringsAsFactors = FALSE
@@ -753,6 +752,25 @@ test("Defence Fighting Style adds one AC only while armoured", {
   no_style$build$level_choices <- list()
   stopifnot(test_env$calc_auto_ac_for_char(fighter) == 15L)
   stopifnot(test_env$calc_auto_ac_for_char(no_style) == 14L)
+})
+
+test("Body armour, shield and helm use separate non-stacking slots", {
+  test_env$validate_character <- identity
+  test_env$get_character_ability_mod <- function(char, stat) 2L
+  test_env$get_character_prof_bonus <- function(char) 2L
+  test_env$inventory_normalize <- function(items) items
+  armour <- data.frame(type="armor", equipped=TRUE, in_bag=FALSE, stringsAsFactors=FALSE)
+  armour <- armour[rep(1,4),,drop=FALSE]
+  armour$meta <- I(list(
+    list(base_ac=12,type="Light",proficient=FALSE,equipment_slot="body"),
+    list(base_ac=2,type="Shield",proficient=FALSE,equipment_slot="shield",ac_bonus=2),
+    list(base_ac=0,type="Unarmoured",proficient=FALSE,equipment_slot="head",ac_bonus=1),
+    list(base_ac=0,type="Unarmoured",proficient=FALSE,equipment_slot="head",ac_bonus=1)
+  ))
+  char <- list(build=list(class="Fighter",level_choices=list()),abilities=list(dex=14L,con=12L),inventory=list(items=armour))
+  stopifnot(test_env$calc_auto_ac_for_char(char) == 17L)
+  char$inventory$items <- armour[-1,,drop=FALSE]
+  stopifnot(test_env$calc_auto_ac_for_char(char) == 15L)
 })
 
 test("Second Wind heals by die plus Fighter level and recharges on a short rest", {
