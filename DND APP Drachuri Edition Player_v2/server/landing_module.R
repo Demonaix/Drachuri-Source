@@ -223,22 +223,15 @@ landingTabServer <- function(
       if (is.null(chars) || !is.data.frame(chars) || nrow(chars) == 0) {
         updateSelectInput(session, "db_character", choices = character(0))
         log_safe("⚠️ Server unavailable or no saved characters found.")
-        return()
+      } else {
+        ids <- as.character(chars$character_id %||% "")
+        labels <- as.character(chars$name %||% "")
+        blank_idx <- is.na(labels) | !nzchar(labels)
+        labels[blank_idx] <- paste("Character", substr(ids[blank_idx], 1, 8))
+        keep <- nzchar(ids)
+        choices <- stats::setNames(ids[keep], labels[keep])
+        updateSelectInput(session, "db_character", choices = choices)
       }
-      
-      ids <- as.character(chars$character_id %||% "")
-      labels <- as.character(chars$name %||% "")
-      
-      blank_idx <- is.na(labels) | !nzchar(labels)
-      labels[blank_idx] <- paste("Character", substr(ids[blank_idx], 1, 8))
-      
-      keep <- nzchar(ids)
-      ids <- ids[keep]
-      labels <- labels[keep]
-      
-      choices <- stats::setNames(ids, labels)
-      
-      updateSelectInput(session, "db_character", choices = choices)
     })
     
     observeEvent(input$db_load, {

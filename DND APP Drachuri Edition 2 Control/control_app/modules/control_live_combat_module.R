@@ -2967,6 +2967,9 @@ limit 1
         return(invisible(FALSE))
       }
 
+      rune_entries<-tryCatch(trigger_rune_zone_entry(eid,actor_type,actor_id,old_x,old_y,cur_x,cur_y,as.integer(combat$round_number[[1L]]%||%1L)),error=function(e){append_control_audit("RUNE_ZONE_ERROR",conditionMessage(e));list()})
+      if(length(rune_entries))for(entry in rune_entries)log_safe(paste0(entry$name," strikes ",get_actor_display_name(actor_id)," for ",entry$damage," ",entry$damage_type," damage."),type="warning")
+
       if (identical(actor_type,"enemy") && !isTRUE(input$movement_disengage)) {
         attackers<-tryCatch(get_opportunity_attackers(eid,actor_id,actor_type,old_x,old_y,cur_x,cur_y),error=function(e)data.frame())
         append_control_audit(

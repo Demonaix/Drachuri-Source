@@ -28,6 +28,7 @@ window.combat2dState = {
   tileMap: {},
   tokenMap: {},
   currentTiles: [],
+  currentZones: [],
   fullscreenHandlerAttached: false,
   cssInjected: false,
   resizeHandlerAttached: false
@@ -191,6 +192,7 @@ function injectCombat2DCSS() {
     }
 
     .combat-2d-grid{
+      position:relative;
       display:grid;
       gap:2px;
       width:max-content;
@@ -201,6 +203,19 @@ function injectCombat2DCSS() {
       background:rgba(18,16,12,0.38);
       box-shadow:0 10px 30px rgba(0,0,0,0.18);
     }
+
+    .combat-glyph-zone{
+      position:absolute;
+      border:2px solid var(--zone-colour);
+      border-radius:50%;
+      background:color-mix(in srgb, var(--zone-colour) 25%, transparent);
+      box-shadow:inset 0 0 20px color-mix(in srgb, var(--zone-colour) 22%, transparent),0 0 9px color-mix(in srgb, var(--zone-colour) 40%, transparent);
+      pointer-events:none;
+      z-index:2;
+    }
+    .combat-glyph-zone.ward{border-style:dashed;background:color-mix(in srgb, var(--zone-colour) 18%, transparent)}
+    .combat-2d-terrain-label{position:relative;z-index:1}
+    .combat-2d-token{z-index:4}
 
     .combat-2d-tile{
       position:relative;
@@ -458,7 +473,7 @@ function injectCombat2DCSS() {
   state.cssInjected = true;
 }
 
-function renderCombat2D(containerId, mapData, inputIds = {}) {
+function renderCombat2D(containerId, mapData, inputIds = {}, zones = []) {
   injectCombat2DCSS();
 
   const state = window.combat2dState;
@@ -479,6 +494,7 @@ function renderCombat2D(containerId, mapData, inputIds = {}) {
   state.containerId = containerId;
   state.inputIds = inputIds || {};
   state.currentTiles = mapData;
+  state.currentZones = normaliseMapData2D(zones);
 
   const signature = getMapSignature2D(mapData);
   const mapChanged = state.mapSignature !== signature;
@@ -490,9 +506,31 @@ function renderCombat2D(containerId, mapData, inputIds = {}) {
   } else {
     updateCombat2DMap(mapData);
   }
+  renderGlyphZones2D(state.currentZones);
 
   setupFullscreen2DHandler();
   setupCombat2DResizeHandler();
+}
+
+function renderGlyphZones2D(zones) {
+  const state = window.combat2dState;
+  const grid = state.containerId ? document.getElementById(state.containerId)?.querySelector(".combat-2d-grid") : null;
+  if (!grid) return;
+  grid.querySelectorAll(".combat-glyph-zone").forEach(el => el.remove());
+  const minX = Number(grid.dataset.minX || 0), minY = Number(grid.dataset.minY || 0);
+  const pitch = 44, tileHalf = 21, padding = 8;
+  normaliseMapData2D(zones).forEach(zone => {
+    const radiusSquares = Math.max(1, Number(zone.area_ft || 5) / 5);
+    const radiusPx = radiusSquares * pitch;
+    const el = document.createElement("div");
+    el.className = `combat-glyph-zone ${safeText2D(zone.glyph_type).toLowerCase()}`;
+    el.style.setProperty("--zone-colour", safeText2D(zone.colour, "#3a78c2"));
+    el.style.width = `${radiusPx * 2}px`; el.style.height = `${radiusPx * 2}px`;
+    el.style.left = `${padding + (Number(zone.center_x) - minX) * pitch + tileHalf - radiusPx}px`;
+    el.style.top = `${padding + (Number(zone.center_y) - minY) * pitch + tileHalf - radiusPx}px`;
+    el.title = safeText2D(zone.tooltip, safeText2D(zone.name, "Glyph zone"));
+    grid.appendChild(el);
+  });
 }
 
 window.renderCombat2D = renderCombat2D;
@@ -720,6 +758,7 @@ function buildTileTip2D(tile) {
   if (tile.occupant_id) {
     parts.push(`Actor: ${safeText2D(tile.occupant_name || tile.display_name || tile.name || tile.occupant_id)}`);
   }
+  if (tile.zone_tooltip) parts.push(safeText2D(tile.zone_tooltip));
 
   return parts.join("\n");
 }
@@ -843,7 +882,8 @@ Shiny.addCustomMessageHandler("combat3d-init", function(message) {
     renderCombat2D(
       message.containerId,
       message.mapData,
-      message.inputIds || {}
+      message.inputIds || {},
+      message.zones || []
     );
   }
 

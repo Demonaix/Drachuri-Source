@@ -55,7 +55,7 @@ load_functions(global_file, c(
 ))
 load_functions(relational_inventory_file, c("equipment_material_is_eligible", "inventory_item_category", "equipment_adjusted_value"))
 load_functions(enemy_generator_file, c("resolve_layered_damage_traits", "enemy_is_animal", "roll_enemy_mundane_loot", "roll_enemy_food_loot"))
-load_functions(glyph_core_file,c("glyph_character_level","glyph_unlocked_ranks","glyph_mastery_level","glyph_material_requirement","glyph_counter_outcome","glyph_default_identity","normalize_weapon_enchantments"))
+load_functions(glyph_core_file,c("GLYPH_PHYSICAL_TYPES","glyph_character_level","glyph_unlocked_ranks","glyph_mastery_level","glyph_material_requirement","glyph_counter_outcome","glyph_default_identity","normalize_weapon_enchantments","validate_ward_resistances","glyph_zone_colour"))
 load_functions(
   session_file,
   c(
@@ -1289,6 +1289,12 @@ test("glyph rules cover rune, ward, and replenishable enhancement contracts", {
   stopifnot(identity$name=="Minor Fire Rune",grepl("1d6 Fire",identity$description,fixed=TRUE))
   stopifnot(test_env$glyph_mastery_level(list(build=list(level=1L)))==1L)
   stopifnot(identical(test_env$glyph_unlocked_ranks(list(build=list(level=10L))),c("Minor","Major","Arcane")))
+  stopifnot(identical(test_env$validate_ward_resistances("Minor","Fire"),"Fire"))
+  stopifnot(setequal(test_env$validate_ward_resistances("Major",c("Cold","Fire")),c("Cold","Fire")))
+  stopifnot(setequal(test_env$validate_ward_resistances("Arcane",c("Fire","Slashing")),c("Fire","Slashing")))
+  stopifnot(inherits(try(test_env$validate_ward_resistances("Minor","Slashing"),silent=TRUE),"try-error"))
+  stopifnot(inherits(try(test_env$validate_ward_resistances("Major",c("Fire","Slashing")),silent=TRUE),"try-error"))
+  stopifnot(test_env$glyph_zone_colour("Fire")=="#d63b2f",test_env$glyph_zone_colour("ward")=="#3a78c2")
 })
 
 cat("\n", tests_run, " tests passed.\n", sep = "")

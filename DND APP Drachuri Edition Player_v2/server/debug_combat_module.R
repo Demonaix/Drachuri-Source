@@ -30,6 +30,7 @@ debugCombatUI <- function(id) {
               actionButton(ns("override_action_budget"), "Override Action", class = "btn btn-default"),
               actionButton(ns("open_standard_actions"), "Combat Actions", class = "btn btn-default"),
               uiOutput(ns("combat_runes_ui")),
+              uiOutput(ns("combat_wards_ui")),
               actionButton(ns("open_loot"), "Loot Defeated", class = "btn btn-success"),
               uiOutput(ns("level_two_actions_ui")),
               uiOutput(ns("level_three_actions_ui")),
@@ -351,6 +352,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       inv<-inventory_normalize(validate_character(core$state$char)$inventory$items);keep<-inv$type=="glyph"&vapply(inv$meta,function(m)identical(as.character((m%||%list())$glyph_type%||%""),"rune")&&identical(as.character((m%||%list())$status%||%""),"ready"),logical(1));inv[keep,,drop=FALSE]
     })
     rune_targeting<-reactiveVal(NULL)
+    ward_targeting<-reactiveVal(NULL)
     output$combat_runes_ui<-renderUI({r<-combat_runes();if(!nrow(r))return(NULL);actionButton(session$ns("open_combat_rune"),paste0("Runes (",nrow(r),")"),class="btn btn-danger")})
     observeEvent(input$open_combat_rune,{
       if(!isTRUE(is_players_turn()))return();r<-combat_runes();if(!nrow(r))return();showModal(modalDialog(title="Choose a crafted rune",selectInput(session$ns("combat_rune_id"),"Available rune",choices=setNames(vapply(r$meta,function(m)as.character(m$glyph_id),character(1)),vapply(seq_len(nrow(r)),function(i){m<-r$meta[[i]];paste0(r$name[[i]]," · ",m$damage," ",m$damage_type," · ",m$area_ft,"ft · ",m$duration_rounds%||%1L," round(s) · ",m$rank)},character(1)))),p("Next, click any map tile or token to place the centre. Releasing the rune uses your bonus action and its area may affect allies."),footer=tagList(modalButton("Cancel"),actionButton(session$ns("confirm_combat_rune"),"Choose Centre on Map",class="btn btn-danger"))))
@@ -358,7 +360,15 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     observeEvent(input$confirm_combat_rune,{
       req(input$combat_rune_id);rune_targeting(list(glyph_id=as.integer(input$combat_rune_id)));removeModal();showNotification("Click a map tile or token to centre the rune. No action is spent until you click.",type="message",duration=10)
     },ignoreInit=TRUE)
-    release_rune_at_map_point<-function(x,y,target_id=NULL){pending<-rune_targeting();if(is.null(pending))return(FALSE);rune_targeting(NULL);if(!spend_action_safe("bonus_action","Release Rune"))return(TRUE);res<-release_crafted_rune_at(as.character(core$state$char_id),pending$glyph_id,current_encounter_id(),x,y,target_id);if(length(res$error%||%character())){showNotification(res$error,type="error");return(TRUE)};if(!is.null(res$character))core$state$char<-validate_character(res$character);if(is.function(core$bump_char_rev))core$bump_char_rev();refresh_key(refresh_key()+1L);events_key(events_key()+1L);if(isTRUE(res$unstable))showNotification(paste("Rune instability!",res$instability_damage,"damage."),type="error",duration=10)else showNotification(paste0(res$damage_total," ",res$damage_type," damage; affected: ",paste(res$affected,collapse=", "),if(res$glyph$active_duration_rounds[[1L]]>1)paste0(". The area persists for ",res$glyph$active_duration_rounds[[1L]]," rounds.")else""),type="message",duration=10);TRUE}
+    release_rune_at_map_point<-function(x,y,target_id=NULL){pending<-rune_targeting();if(is.null(pending))return(FALSE);rune_targeting(NULL);if(!spend_action_safe("bonus_action","Release Rune"))return(TRUE);res<-release_crafted_rune_at(as.character(core$state$char_id),pending$glyph_id,current_encounter_id(),x,y,target_id);if(length(res$error%||%character())){showNotification(res$error,type="error");return(TRUE)};if(!is.null(res$character))core$state$char<-validate_character(res$character);if(is.function(core$bump_char_rev))core$bump_char_rev();refresh_key(refresh_key()+1L);events_key(events_key()+1L);bump_map_visual();if(isTRUE(res$unstable))showNotification(paste("Rune instability!",res$instability_damage,"damage."),type="error",duration=10)else showNotification(paste0(res$damage_total," ",res$damage_type," damage; affected: ",paste(res$affected,collapse=", "),if(res$glyph$active_duration_rounds[[1L]]>1)paste0(". The area persists for ",res$glyph$active_duration_rounds[[1L]]," rounds.")else""),type="message",duration=10);TRUE}
+
+    combat_wards<-reactive({inv<-inventory_normalize(validate_character(core$state$char)$inventory$items);keep<-inv$type=="glyph"&vapply(inv$meta,function(m)identical(as.character((m%||%list())$glyph_type%||%""),"ward")&&identical(as.character((m%||%list())$status%||%""),"ready"),logical(1));inv[keep,,drop=FALSE]})
+    output$combat_wards_ui<-renderUI({w<-combat_wards();zones<-get_active_glyph_zones(current_encounter_id());zones<-zones[zones$glyph_type=="ward",,drop=FALSE];tagList(if(nrow(w))actionButton(session$ns("open_combat_ward"),paste0("Wards (",nrow(w),")"),class="btn btn-info")else NULL,if(nrow(zones))actionButton(session$ns("open_disrupt_ward"),"Disrupt Ward",class="btn btn-default")else NULL)})
+    observeEvent(input$open_combat_ward,{if(!isTRUE(is_players_turn()))return();w<-combat_wards();if(!nrow(w))return();showModal(modalDialog(title="Place a crafted ward",selectInput(session$ns("combat_ward_id"),"Available ward",choices=setNames(vapply(w$meta,function(m)as.character(m$glyph_id),character(1)),vapply(seq_len(nrow(w)),function(i){m<-w$meta[[i]];paste0(w$name[[i]]," · ",m$area_ft,"ft · resists ",paste(m$resistance_types,collapse=", ")," · Arcane Score ",m$arcane_score)},character(1)))),p("Placing the ward uses your action. It then persists until disrupted."),footer=tagList(modalButton("Cancel"),actionButton(session$ns("confirm_combat_ward"),"Choose Centre on Map",class="btn btn-info"))))},ignoreInit=TRUE)
+    observeEvent(input$confirm_combat_ward,{req(input$combat_ward_id);ward_targeting(list(glyph_id=as.integer(input$combat_ward_id)));removeModal();showNotification("Click a map tile or token to place the ward. No action is spent until you click.",type="message",duration=10)},ignoreInit=TRUE)
+    place_ward_at_map_point<-function(x,y){pending<-ward_targeting();if(is.null(pending))return(FALSE);ward_targeting(NULL);if(!spend_action_safe("action","Place Ward"))return(TRUE);res<-place_crafted_ward_at(as.character(core$state$char_id),pending$glyph_id,current_encounter_id(),x,y);if(length(res$error%||%character())){showNotification(res$error,type="error");return(TRUE)};core$state$char<-validate_character(res$character);if(is.function(core$bump_char_rev))core$bump_char_rev();refresh_key(refresh_key()+1L);events_key(events_key()+1L);bump_map_visual();showNotification(paste0("Ward placed: ",res$area_ft,"ft radius; resistance to ",paste(res$resistance_types,collapse=", "),"."),type="message",duration=10);TRUE}
+    observeEvent(input$open_disrupt_ward,{if(!isTRUE(is_players_turn()))return();z<-get_active_glyph_zones(current_encounter_id());z<-z[z$glyph_type=="ward",,drop=FALSE];if(!nrow(z))return(showNotification("No active ward remains.",type="warning"));showModal(modalDialog(title="Disrupt a ward",selectInput(session$ns("disrupt_ward_id"),"Active ward",choices=setNames(z$id,paste0(z$name," · Arcane Score ",z$arcane_score))),p("This uses your action and rolls Arcana against the ward's Arcane Score."),footer=tagList(modalButton("Cancel"),actionButton(session$ns("confirm_disrupt_ward"),"Roll Arcana",class="btn btn-danger"))))},ignoreInit=TRUE)
+    observeEvent(input$confirm_disrupt_ward,{if(!spend_action_safe("action","Disrupt Ward"))return();removeModal();bonus<-glyph_arcana_bonus(validate_character(core$state$char));res<-disrupt_glyph_ward(current_encounter_id(),input$disrupt_ward_id,"player",core$state$char_id,bonus);if(length(res$error%||%character()))return(showNotification(res$error,type="error"));refresh_key(refresh_key()+1L);events_key(events_key()+1L);bump_map_visual();showNotification(paste0("Arcana ",res$total," vs ",res$arcane_score,": ",if(res$success)paste(res$name,"breaks.")else"the ward holds."),type=if(res$success)"message"else"warning",duration=10)},ignoreInit=TRUE)
 
     output$turn_actions_ui <- renderUI({
       budget <- turn_budget()
@@ -1547,7 +1557,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       df <- snapshot_data()$combat %||% data.frame()
       if (!is.data.frame(df)) data.frame() else df
     })
-    observeEvent({x<-combat_tbl();if(!nrow(x))return(NULL);c(current_encounter_id(),as.integer(x$round_number[[1L]]%||%1L))},{x<-combat_tbl();ticks<-tick_active_rune_zones(current_encounter_id(),as.integer(x$round_number[[1L]]%||%1L));if(length(ticks)){refresh_key(refresh_key()+1L);events_key(events_key()+1L)}},ignoreInit=FALSE)
+    observeEvent({x<-combat_tbl();if(!nrow(x))return(NULL);c(current_encounter_id(),as.integer(x$round_number[[1L]]%||%1L))},{x<-combat_tbl();ticks<-tick_active_rune_zones(current_encounter_id(),as.integer(x$round_number[[1L]]%||%1L));if(length(ticks)){refresh_key(refresh_key()+1L);events_key(events_key()+1L);bump_map_visual()}},ignoreInit=FALSE)
     
     events_tbl <- reactive({
       events_key()
@@ -1974,6 +1984,12 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         vulnerabilities = get_vec("vulnerabilities")
       )
     }
+
+    add_active_ward_traits <- function(traits,target_id) {
+      pos<-positions_tbl();row<-pos[as.character(pos$actor_id)==as.character(target_id),,drop=FALSE];if(!nrow(row))return(traits)
+      ward<-tryCatch(ward_resistances_at_point(current_encounter_id(),row$x[[1L]],row$y[[1L]]),error=function(e)character())
+      traits$resistances<-unique(c(traits$resistances%||%character(),ward));traits
+    }
     
     get_class_level <- function(char, class_name) {
       char <- validate_character(char)
@@ -2285,7 +2301,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         sneak_reason = as.character(sneak_check$reason %||% ""),
         sneak_expr = as.character(sneak_expr %||% ""),
         sneak_part = sneak_part,
-        target_traits = get_character_damage_traits(target_char),
+        target_traits = add_active_ward_traits(get_character_damage_traits(target_char),target_id),
         primary_damage_type = as.character(weapon_row$dmg_type1[1] %||% "")
       )
     }
@@ -2723,6 +2739,17 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
           !is.na(render_df$occupant_id) &
           as.character(render_df$occupant_id) == as.character(active_id %||% "")
       }
+
+      zone_df <- tryCatch(
+        get_active_glyph_zones(current_encounter_id(), if(nrow(combat)) as.integer(combat$round_number[[1L]] %||% 1L) else NULL),
+        error = function(e) data.frame()
+      )
+      if (nrow(zone_df)) zone_df <- zone_df[,c("id","glyph_type","name","rank","center_x","center_y","area_ft","colour","tooltip"),drop=FALSE]
+      render_df$zone_tooltip <- ""
+      if (nrow(zone_df)) for (i in seq_len(nrow(render_df))) {
+        inside <- sqrt((zone_df$center_x-as.numeric(render_df$x[[i]]))^2+(zone_df$center_y-as.numeric(render_df$y[[i]]))^2) <= zone_df$area_ft/5
+        if (any(inside)) render_df$zone_tooltip[[i]] <- paste(zone_df$tooltip[inside],collapse="\n\n")
+      }
       
     
       
@@ -2737,6 +2764,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
               auto_unbox = TRUE,
               null = "null"
             ),
+            zones = jsonlite::toJSON(zone_df, dataframe = "rows", auto_unbox = TRUE, null = "null"),
             inputIds = list(
               move = session$ns("move_to_tile"),
               target = session$ns("map_target_click")
@@ -3232,6 +3260,16 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         return(FALSE)
       }
 
+      rune_entries <- tryCatch(trigger_rune_zone_entry(
+        eid, actor_type, actor_id, old_x, old_y, target_x, target_y,
+        as.integer(combat$round_number[[1L]] %||% 1L)
+      ), error = function(e) { log_safe(paste("⚠️ Rune zone entry check failed:", e$message)); list() })
+      if (length(rune_entries)) {
+        for (entry in rune_entries) log_safe(paste0("✧ ", entry$name, " strikes for ", entry$damage, " ", entry$damage_type, " damage on entry."))
+        refresh_key(refresh_key() + 1L)
+        events_key(events_key() + 1L)
+      }
+
       if (!identical(cunning_mode(), "disengage")) {
         attackers <- tryCatch(
           get_opportunity_attackers(eid, actor_id, actor_type, old_x, old_y, target_x, target_y),
@@ -3287,6 +3325,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       target_y <- suppressWarnings(as.integer(input$move_to_tile$y %||% NA))
       
       if (is.na(target_x) || is.na(target_y)) return()
+      if(place_ward_at_map_point(target_x,target_y))return()
       if(release_rune_at_map_point(target_x,target_y))return()
       
       pm <- pending_move()
@@ -4241,7 +4280,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       
       actor_id <- as.character(input$map_target_click$actor_id %||% "")
       actor_type <- as.character(input$map_target_click$actor_type %||% "")
-      target_x<-suppressWarnings(as.integer(input$map_target_click$x%||%NA));target_y<-suppressWarnings(as.integer(input$map_target_click$y%||%NA));if(!is.na(target_x)&&!is.na(target_y)&&release_rune_at_map_point(target_x,target_y,actor_id))return()
+      target_x<-suppressWarnings(as.integer(input$map_target_click$x%||%NA));target_y<-suppressWarnings(as.integer(input$map_target_click$y%||%NA));if(!is.na(target_x)&&!is.na(target_y)&&place_ward_at_map_point(target_x,target_y))return();if(!is.na(target_x)&&!is.na(target_y)&&release_rune_at_map_point(target_x,target_y,actor_id))return()
       
       if (!nzchar(actor_id)) return()
       
@@ -4327,7 +4366,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         base_parts = damage_parts,
         sneak_available = FALSE,
         sneak_part = NULL,
-        target_traits = get_character_damage_traits(target_char),
+        target_traits = add_active_ward_traits(get_character_damage_traits(target_char),target_id),
         primary_damage_type = as.character(attacker_char$combat_profile$damage_type %||% "")
       )
     }
