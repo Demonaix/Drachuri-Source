@@ -309,7 +309,8 @@ story_state<-set_session_story_state(1L,"qa-story","QA Story",1L);stopifnot(nrow
 story_next<-set_session_story_state(1L,"qa-story","QA Story",2L);stopifnot(story_next$current_slide[[1L]]==2L,story_next$revision[[1L]]>story_state$revision[[1L]],get_session_story_state(1L)$current_slide[[1L]]==2L)
 
 glyph_materials<-Filter(function(x)identical(x$name,"Clay Rune Blank"),get_control_catalogue_definitions());stopifnot(length(glyph_materials)==1L)
-glyph_char<-load_character_from_db("1001");glyph_char$resources$sindre$cur<-100L;glyph_char$resources$sindre$total<-100L
+glyph_char<-load_character_from_db("1001");glyph_char$resources$sindre$cur<-100L;glyph_char$resources$sindre$total<-100L;glyph_char$inventory$items<-inventory_normalize(glyph_char$inventory$items[glyph_char$inventory$items$name!="Clay Rune Blank",,drop=FALSE]);save_character_to_db(glyph_char,"1001")
+missing_glyph<-start_glyph_project("1001","rune","Minor","","","Clay",quoted_hours=2,quoted_resource="sindre",quoted_cost=2L);stopifnot(grepl("Required material missing",missing_glyph$error,fixed=TRUE),load_character_from_db("1001")$resources$sindre$cur==100L)
 glyph_row<-enemy_loot_to_inventory_row(glyph_materials[[1L]],"qa_clay_rune_blank");glyph_char$inventory$items<-inventory_normalize(rbind(inventory_normalize(glyph_char$inventory$items),glyph_row));save_character_to_db(glyph_char,"1001")
 glyph_project<-start_glyph_project("1001","rune","Minor","QA Ember Rune","A test rune that marks its target with ember-light.","Clay",quoted_hours=7,quoted_resource="sindre",quoted_cost=2L)
 stopifnot(glyph_project$glyph$crafting_hours_required[[1L]]==7,glyph_project$glyph$resource_cost[[1L]]==2L)
