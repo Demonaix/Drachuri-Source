@@ -49,7 +49,7 @@ glyph_spend_resource <- function(char,resource,amount) {
   char
 }
 
-start_glyph_project <- function(character_id,glyph_type,rank,name,effect_description="",material=NULL,size_ft=NULL,enhancement_days=NULL,target_item_instance_id=NULL) {
+start_glyph_project <- function(character_id,glyph_type,rank,name,effect_description="",material=NULL,size_ft=NULL,enhancement_days=NULL,target_item_instance_id=NULL,damage_type=NULL) {
   if(!nzchar(trimws(as.character(name%||%""))))return(structure(list(),error="Give the glyph a name."))
   glyph_type<-tolower(as.character(glyph_type));if(glyph_type=="enhancement")material<-NULL
   con<-get_db_connection();if(is.null(con))return(structure(list(),error="Database unavailable."));on.exit(release_db_connection(con),add=TRUE)
@@ -59,12 +59,15 @@ start_glyph_project <- function(character_id,glyph_type,rank,name,effect_descrip
     if(nzchar(spec$material)){if(is.na(glyph_inventory_index(inv,spec$material)))stop(paste0("Required material missing: ",spec$material,"."));inv<-glyph_consume_inventory_item(inv,spec$material)}
     if(!identical(tolower(spec$tool),"none")&&is.na(glyph_inventory_index(inv,spec$tool)))stop(paste0("Required tool missing: ",spec$tool," (tools are not consumed)."))
     if(tolower(glyph_type)=="enhancement"&&!nzchar(as.character(target_item_instance_id%||%"")))stop("Choose an owned item to enhance.")
-    if(tolower(glyph_type)=="enhancement"&&is.na(match(as.character(target_item_instance_id),inv$id)))stop("That enhancement target is no longer in your inventory.")
+    target_index<-match(as.character(target_item_instance_id),inv$id)
+    if(tolower(glyph_type)=="enhancement"&&is.na(target_index))stop("That enhancement target is no longer in your inventory.")
+    if(tolower(glyph_type)=="enhancement"&&!identical(as.character(inv$type[[target_index]]),"weapon"))stop("Weapon enhancements must target a weapon.")
+    damage_type<-tools::toTitleCase(tolower(as.character(damage_type%||%"Fire")));if(glyph_type%in%c("rune","enhancement")&&!damage_type%in%GLYPH_DAMAGE_TYPES)stop("Choose a valid magical damage type.")
     char$inventory$items<-inv;char<-glyph_spend_resource(char,spec$resource,spec$cost);rule<-spec$rule
     row<-DBI::dbGetQuery(con,paste(
       "INSERT INTO character_glyphs(character_id,glyph_type,rank,name,effect_description,material,target_item_instance_id,size_ft,enhancement_days,crafting_hours_required,resource_type,resource_cost,arcane_score,active_duration_rounds,instability_damage,instability_radius_ft,replenishment_dice,replenishment_multiplier,metadata)",
       "VALUES($1,$2,$3,$4,$5,NULLIF($6,''),NULLIF($7,''),$8,$9,$10,$11,$12,$13,$14,NULLIF($15,''),$16,NULLIF($17,''),$18,$19::jsonb) RETURNING *"
-    ),params=list(as.character(character_id),tolower(glyph_type),as.character(rank),trimws(as.character(name)),as.character(effect_description),as.character(material%||%""),as.character(target_item_instance_id%||%""),suppressWarnings(as.numeric(size_ft%||%NA)),suppressWarnings(as.integer(enhancement_days%||%NA)),as.numeric(spec$hours),spec$resource,as.integer(spec$cost),as.integer(rule$arcane_score),spec$duration_rounds,as.character(spec$instability%||%""),as.integer(rule$instability_radius_ft%||%NA),as.character(spec$replenishment_dice%||%""),spec$replenishment_multiplier,enemy_json(list(rule=rule,required_material=spec$material,required_tool=spec$tool))))
+    ),params=list(as.character(character_id),tolower(glyph_type),as.character(rank),trimws(as.character(name)),as.character(effect_description),as.character(material%||%""),as.character(target_item_instance_id%||%""),suppressWarnings(as.numeric(size_ft%||%NA)),suppressWarnings(as.integer(enhancement_days%||%NA)),as.numeric(spec$hours),spec$resource,as.integer(spec$cost),as.integer(rule$arcane_score),spec$duration_rounds,as.character(spec$instability%||%""),as.integer(rule$instability_radius_ft%||%NA),as.character(spec$replenishment_dice%||%""),spec$replenishment_multiplier,enemy_json(list(rule=rule,required_material=spec$material,required_tool=spec$tool,damage_type=damage_type,damage=if(glyph_type=="rune")unname(RUNE_DAMAGE_BY_RANK[[rank]])else if(glyph_type=="enhancement")rule$damage else NULL,area_ft=if(glyph_type=="rune")unname(RUNE_RADIUS_BY_RANK[[rank]])else NULL))))
     DBI::dbExecute(con,"UPDATE character_blobs SET state_blob=$1,char_name=$2,updated_at=now() WHERE id::text=$3",params=list(list(serialize(char,NULL)),char$meta$name,as.character(character_id)));sync_character_inventory_relational(con,char,as.character(character_id));list(glyph=row[1,,drop=FALSE],character=char,cost=spec$cost,resource=spec$resource)
   }),error=function(e){message("start_glyph_project failed: ",e$message);structure(list(),error=e$message)})
 }
@@ -74,13 +77,28 @@ get_character_glyphs <- function(character_id) {
   tryCatch(DBI::dbGetQuery(con,"SELECT * FROM character_glyphs WHERE character_id=$1 ORDER BY CASE status WHEN 'crafting' THEN 0 WHEN 'ready' THEN 1 WHEN 'active' THEN 2 ELSE 3 END,created_at DESC",params=list(as.character(character_id))),error=function(e)data.frame())
 }
 
+sync_active_weapon_enhancements <- function(character_id) {
+  con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE)
+  tryCatch(DBI::dbWithTransaction(con,{
+    glyphs<-DBI::dbGetQuery(con,"SELECT * FROM character_glyphs WHERE character_id=$1 AND glyph_type='enhancement' AND status='active'",params=list(as.character(character_id)));if(!nrow(glyphs))return(NULL)
+    blob<-DBI::dbGetQuery(con,"SELECT state_blob FROM character_blobs WHERE id::text=$1 FOR UPDATE",params=list(as.character(character_id)));if(!nrow(blob))return(NULL);char<-validate_character(unserialize(blob$state_blob[[1L]]));char<-hydrate_character_inventory_relational(con,char,as.character(character_id));inv<-inventory_normalize(char$inventory$items);changed<-FALSE
+    for(i in seq_len(nrow(glyphs))){g<-glyphs[i,,drop=FALSE];idx<-match(as.character(g$target_item_instance_id[[1L]]),inv$id);if(is.na(idx))next;m<-inv$meta[[idx]]%||%list();details<-enemy_db_json(g$metadata[[1L]],list());damage<-as.character(details$damage%||%ENHANCEMENT_RULES[[as.character(g$rank[[1L]])]]$damage%||%"1d4");damage_type<-as.character(details$damage_type%||%if(grepl("fire|flame",paste(g$name[[1L]],g$effect_description[[1L]]),ignore.case=TRUE))"Fire"else"Fire");until<-as.integer(g$active_until_day[[1L]]%||%char$meta$day%||%1L);if(!identical(m$glyph_id,as.integer(g$id[[1L]]))||!identical(m$glyph_damage,damage)||!identical(m$glyph_damage_type,damage_type)||!identical(m$glyph_active_until_day,until)){m$glyph_id<-as.integer(g$id[[1L]]);m$glyph_name<-as.character(g$name[[1L]]);m$glyph_damage<-damage;m$glyph_damage_type<-damage_type;m$glyph_active_until_day<-until;inv$meta[[idx]]<-m;changed<-TRUE}}
+    if(!changed)return(NULL);char$inventory$items<-inv;DBI::dbExecute(con,"UPDATE character_blobs SET state_blob=$1,updated_at=now() WHERE id::text=$2",params=list(list(serialize(char,NULL)),as.character(character_id)));sync_character_inventory_relational(con,char,as.character(character_id));char
+  }),error=function(e){message("sync_active_weapon_enhancements failed: ",e$message);NULL})
+}
+
 work_glyph_project <- function(character_id,glyph_id,hours) {
   con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE);hours<-max(0,as.numeric(hours%||%0))
   tryCatch(DBI::dbWithTransaction(con,{
     glyph<-DBI::dbGetQuery(con,"SELECT * FROM character_glyphs WHERE id=$1 AND character_id=$2 AND status='crafting' FOR UPDATE",params=list(as.integer(glyph_id),as.character(character_id)));if(!nrow(glyph))stop("That crafting project is no longer available.")
     complete<-as.numeric(glyph$crafting_hours_completed[[1L]])+hours>=as.numeric(glyph$crafting_hours_required[[1L]]);status<-if(complete)if(glyph$glyph_type[[1L]]=="rune")"ready"else"active"else"crafting";until_day<-NA_integer_
-    if(complete&&glyph$glyph_type[[1L]]=="enhancement"){blob<-DBI::dbGetQuery(con,"SELECT state_blob FROM character_blobs WHERE id::text=$1",params=list(as.character(character_id)));char<-validate_character(unserialize(blob$state_blob[[1L]]));until_day<-as.integer(char$meta$day%||%1L)+as.integer(glyph$enhancement_days[[1L]])}
-    DBI::dbGetQuery(con,"UPDATE character_glyphs SET crafting_hours_completed=LEAST(crafting_hours_required,crafting_hours_completed+$3),status=$4,completed_at=CASE WHEN $5 THEN now() ELSE completed_at END,activated_at=CASE WHEN $4='active' THEN now() ELSE activated_at END,active_until_day=COALESCE($6::integer,active_until_day),updated_at=now() WHERE id=$1 AND character_id=$2 RETURNING *",params=list(as.integer(glyph_id),as.character(character_id),hours,status,complete,until_day))[1,,drop=FALSE]
+    char<-NULL
+    if(complete&&glyph$glyph_type[[1L]]=="enhancement"){
+      blob<-DBI::dbGetQuery(con,"SELECT state_blob FROM character_blobs WHERE id::text=$1 FOR UPDATE",params=list(as.character(character_id)));char<-validate_character(unserialize(blob$state_blob[[1L]]));char<-hydrate_character_inventory_relational(con,char,as.character(character_id));until_day<-as.integer(char$meta$day%||%1L)+as.integer(glyph$enhancement_days[[1L]]);inv<-inventory_normalize(char$inventory$items);idx<-match(as.character(glyph$target_item_instance_id[[1L]]),inv$id);if(is.na(idx))stop("The weapon being enhanced is no longer in your inventory.");m<-inv$meta[[idx]]%||%list();details<-enemy_db_json(glyph$metadata[[1L]],list());m$glyph_id<-as.integer(glyph$id[[1L]]);m$glyph_name<-as.character(glyph$name[[1L]]);m$glyph_damage<-as.character(details$damage%||%"1d4");m$glyph_damage_type<-as.character(details$damage_type%||%"Fire");m$glyph_active_until_day<-until_day;inv$meta[[idx]]<-m;char$inventory$items<-inv
+    }
+    row<-DBI::dbGetQuery(con,"UPDATE character_glyphs SET crafting_hours_completed=LEAST(crafting_hours_required,crafting_hours_completed+$3),status=$4,completed_at=CASE WHEN $5 THEN now() ELSE completed_at END,activated_at=CASE WHEN $4='active' THEN now() ELSE activated_at END,active_until_day=COALESCE($6::integer,active_until_day),updated_at=now() WHERE id=$1 AND character_id=$2 RETURNING *",params=list(as.integer(glyph_id),as.character(character_id),hours,status,complete,until_day))[1,,drop=FALSE]
+    if(!is.null(char)){DBI::dbExecute(con,"UPDATE character_blobs SET state_blob=$1,updated_at=now() WHERE id::text=$2",params=list(list(serialize(char,NULL)),as.character(character_id)));sync_character_inventory_relational(con,char,as.character(character_id))}
+    list(glyph=row,character=char)
   }),error=function(e){message("work_glyph_project failed: ",e$message);NULL})
 }
 
@@ -89,7 +107,8 @@ replenish_enhancement <- function(character_id,glyph_id) {
   tryCatch(DBI::dbWithTransaction(con,{
     glyph<-DBI::dbGetQuery(con,"SELECT * FROM character_glyphs WHERE id=$1 AND character_id=$2 AND glyph_type='enhancement' AND status IN ('active','depleted') FOR UPDATE",params=list(as.integer(glyph_id),as.character(character_id)));if(!nrow(glyph))stop("That enhancement cannot be replenished.");cost<-as.integer(glyph$replenishment_multiplier[[1L]])*glyph_roll_total(glyph$replenishment_dice[[1L]])
     blob<-DBI::dbGetQuery(con,"SELECT state_blob FROM character_blobs WHERE id::text=$1 FOR UPDATE",params=list(as.character(character_id)));char<-validate_character(unserialize(blob$state_blob[[1L]]));char<-glyph_spend_resource(char,"sindre",cost);until<-as.integer(char$meta$day%||%1L)+as.integer(glyph$enhancement_days[[1L]])
-    row<-DBI::dbGetQuery(con,"UPDATE character_glyphs SET status='active',active_until_day=$3,activated_at=now(),updated_at=now() WHERE id=$1 AND character_id=$2 RETURNING *",params=list(as.integer(glyph_id),as.character(character_id),until));DBI::dbExecute(con,"UPDATE character_blobs SET state_blob=$1,updated_at=now() WHERE id::text=$2",params=list(list(serialize(char,NULL)),as.character(character_id)));list(glyph=row[1,,drop=FALSE],character=char,cost=cost)
+    inv<-inventory_normalize(char$inventory$items);idx<-match(as.character(glyph$target_item_instance_id[[1L]]),inv$id);if(is.na(idx))stop("The enhanced weapon is no longer in your inventory.");m<-inv$meta[[idx]]%||%list();m$glyph_active_until_day<-until;inv$meta[[idx]]<-m;char$inventory$items<-inv
+    row<-DBI::dbGetQuery(con,"UPDATE character_glyphs SET status='active',active_until_day=$3,activated_at=now(),updated_at=now() WHERE id=$1 AND character_id=$2 RETURNING *",params=list(as.integer(glyph_id),as.character(character_id),until));DBI::dbExecute(con,"UPDATE character_blobs SET state_blob=$1,updated_at=now() WHERE id::text=$2",params=list(list(serialize(char,NULL)),as.character(character_id)));sync_character_inventory_relational(con,char,as.character(character_id));list(glyph=row[1,,drop=FALSE],character=char,cost=cost)
   }),error=function(e){message("replenish_enhancement failed: ",e$message);structure(list(),error=e$message)})
 }
 
@@ -99,8 +118,17 @@ use_crafted_rune <- function(character_id,glyph_id,encounter_id=NULL,target_acto
     glyph<-DBI::dbGetQuery(con,"SELECT * FROM character_glyphs WHERE id=$1 AND character_id=$2 AND glyph_type='rune' AND status='ready' FOR UPDATE",params=list(as.integer(glyph_id),as.character(character_id)));if(!nrow(glyph))stop("That rune is not ready to use.");roll<-as.integer(natural_roll_override%||%sample.int(20L,1L));unstable<-!is.null(encounter_id)&&roll==1L;round_now<-0L
     if(!is.null(encounter_id)){combat<-DBI::dbGetQuery(con,"SELECT round_number FROM combat_state WHERE encounter_id=$1",params=list(as.integer(encounter_id)));if(nrow(combat))round_now<-as.integer(combat$round_number[[1L]]%||%0L)}
     status<-if(unstable)"expended"else"active";until<-if(unstable)NA_integer_ else round_now+as.integer(glyph$active_duration_rounds[[1L]]%||%1L)
-    row<-DBI::dbGetQuery(con,"UPDATE character_glyphs SET status=$3,active_until_round=$4,activated_at=now(),updated_at=now(),metadata=metadata||$5::jsonb WHERE id=$1 AND character_id=$2 RETURNING *",params=list(as.integer(glyph_id),as.character(character_id),status,until,enemy_json(list(last_use_roll=roll,target_actor_id=target_actor_id,encounter_id=encounter_id,unstable=unstable))));list(glyph=row[1,,drop=FALSE],roll=roll,unstable=unstable,instability_damage=as.character(glyph$instability_damage[[1L]]),radius_ft=as.integer(glyph$instability_radius_ft[[1L]]))
+    details<-enemy_db_json(glyph$metadata[[1L]],list());rank<-as.character(glyph$rank[[1L]]);row<-DBI::dbGetQuery(con,"UPDATE character_glyphs SET status=$3,active_until_round=$4,activated_at=now(),updated_at=now(),metadata=metadata||$5::jsonb WHERE id=$1 AND character_id=$2 RETURNING *",params=list(as.integer(glyph_id),as.character(character_id),status,until,enemy_json(list(last_use_roll=roll,target_actor_id=target_actor_id,encounter_id=encounter_id,unstable=unstable))));list(glyph=row[1,,drop=FALSE],roll=roll,unstable=unstable,instability_damage=as.character(glyph$instability_damage[[1L]]),radius_ft=as.integer(glyph$instability_radius_ft[[1L]]),damage=as.character(details$damage%||%unname(RUNE_DAMAGE_BY_RANK[[rank]])%||%"1d6"),damage_type=as.character(details$damage_type%||%"Fire"),area_ft=as.integer(details$area_ft%||%unname(RUNE_RADIUS_BY_RANK[[rank]])%||%5L))
   }),error=function(e){message("use_crafted_rune failed: ",e$message);structure(list(),error=e$message)})
+}
+
+release_crafted_rune <- function(character_id,glyph_id,encounter_id,target_actor_id,natural_roll_override=NULL) {
+  result<-use_crafted_rune(character_id,glyph_id,encounter_id,target_actor_id,natural_roll_override);if(length(result$error%||%character())||isTRUE(result$unstable)||is.null(encounter_id)||!nzchar(as.character(target_actor_id%||%"")))return(result)
+  actors<-get_encounter_actors(encounter_id);target<-actors[as.character(actors$actor_id)==as.character(target_actor_id),,drop=FALSE];if(!nrow(target)){result$error<-"The selected rune target is no longer present.";return(result)}
+  affected<-target;if(all(c("x","y")%in%names(actors))&&!is.na(target$x[[1L]])&&!is.na(target$y[[1L]])){squares<-as.numeric(result$area_ft)/5;distance<-sqrt((as.numeric(actors$x)-as.numeric(target$x[[1L]]))^2+(as.numeric(actors$y)-as.numeric(target$y[[1L]]))^2);affected<-actors[!is.na(distance)&distance<=squares,,drop=FALSE]}
+  amount<-glyph_roll_total(result$damage);enc<-get_encounter(encounter_id);session_id<-as.integer(enc$session_id[[1L]]);applied<-character()
+  for(i in seq_len(nrow(affected))){a<-affected[i,,drop=FALSE];ok<-if(a$actor_type[[1L]]=="enemy")!is.null(damage_encounter_enemy(encounter_id,a$actor_id[[1L]],amount))else if(a$actor_type[[1L]]=="player")!is.null(damage_session_player(session_id,a$actor_id[[1L]],amount))else FALSE;if(ok)applied<-c(applied,as.character(a$display_name[[1L]]))}
+  log_game_event(encounter_id,"rune_released","player",as.character(character_id),as.character(target_actor_id),list(damage=amount,damage_expression=result$damage,damage_type=result$damage_type,area_ft=result$area_ft,affected=applied));result$damage_total<-amount;result$affected<-applied;result
 }
 
 glyph_counter_outcome <- function(glyph_type,arcane_score,roll) {

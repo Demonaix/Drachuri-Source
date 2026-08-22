@@ -1818,6 +1818,15 @@ get_equipped_weapons_for_combat <- function(char) {
   rows <- lapply(seq_len(nrow(df)), function(i) {
     row <- df[i, , drop = FALSE]
     meta <- weapon_meta_defaults_global(row$meta[[1]])
+    glyph_until <- suppressWarnings(as.integer(meta$glyph_active_until_day %||% NA_integer_))
+    current_day <- suppressWarnings(as.integer(char$meta$day %||% 1L))
+    glyph_active <- !is.na(glyph_until) && current_day <= glyph_until && nzchar(as.character(meta$glyph_damage %||% ""))
+    if (glyph_active) {
+      if (nzchar(meta$damage2) && !identical(meta$damage2, as.character(meta$glyph_damage))) {
+        meta$damage2 <- paste(meta$damage2, as.character(meta$glyph_damage), sep = "+")
+      } else meta$damage2 <- as.character(meta$glyph_damage)
+      meta$dmg_type2 <- as.character(meta$glyph_damage_type %||% "Other")
+    }
     
     data.frame(
       id = as.character(row$id[1] %||% paste0("weapon_", i)),

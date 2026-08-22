@@ -1282,6 +1282,7 @@ test("glyph rules cover rune, ward, and replenishable enhancement contracts", {
   stopifnot(rune$instability_damage=="3d20",rune$arcane_score==27L,rune$active_time_rounds==6)
   stopifnot(ward$minimum_size_ft==15,ward$crafting_hours==4,ward$arcane_score==27L)
   stopifnot(enhancement$crafting_hours==1,enhancement$arcane_score==37L,enhancement$cost_multiplier==3L)
+  stopifnot(enhancement$damage=="1d4",test_env$RUNE_DAMAGE_BY_RANK[["Arcane"]]=="3d6")
   stopifnot(test_env$glyph_counter_outcome("rune",20,21)$outcome=="unstable")
   stopifnot(test_env$glyph_counter_outcome("ward",20,20)$outcome=="broken")
 })

@@ -264,6 +264,10 @@ armouryTabServer <- function(id, state, restoring, add_log, char_rev) {
     weapon_card <- function(w, mode = "active") {
       p <- paste0("itm_", w$id, "_")
       meta <- weapon_meta_defaults_local(w$meta[[1]])
+      glyph_until <- suppressWarnings(as.integer(meta$glyph_active_until_day %||% NA_integer_))
+      current_day <- suppressWarnings(as.integer(validate_character(state$char)$meta$day %||% 1L))
+      glyph_active <- !is.na(glyph_until) && current_day <= glyph_until && nzchar(as.character(meta$glyph_damage %||% ""))
+      glyph_line <- if (glyph_active) paste0(" • ✧ ",meta$glyph_name%||%"Enhancement",": +",meta$glyph_damage," ",meta$glyph_damage_type," through day ",glyph_until) else if (!is.na(glyph_until)) " • Enhancement depleted" else ""
       hit_bonus <- weapon_hit_bonus(w)
       damage_modifier <- as.numeric(meta$material_damage_modifier %||% 0) + as.numeric(meta$quality_damage_modifier %||% 0)
       
@@ -319,6 +323,7 @@ armouryTabServer <- function(id, state, restoring, add_log, char_rev) {
                 " • Stat: ", toupper(meta$stat),
                 " • Damage: ", meta$damage1,
                 if (nzchar(meta$damage2)) paste0(" + ", meta$damage2) else "",
+                glyph_line,
                 if (damage_modifier != 0) sprintf(" %+g", damage_modifier) else "",
                 if (nzchar(as.character(meta$material %||% ""))) paste0(" • ", meta$material, " / ", meta$build_quality %||% "Unrated") else "",
                 " • Qty: ", w$qty[[1]] %||% 1,

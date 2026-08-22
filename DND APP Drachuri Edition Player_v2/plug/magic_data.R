@@ -83,9 +83,13 @@ WARD_RULES <- list(
 )
 
 ENHANCEMENT_RULES <- list(
-  Minor=list(crafting_hours=1,cost_die="1d4"),Major=list(crafting_hours=2,cost_die="2d4"),
-  Arcane=list(crafting_hours=3,cost_die="3d4"),Cursed=list(crafting_hours=3,cost_die="4d4")
+  Minor=list(crafting_hours=1,cost_die="1d4",damage="1d4"),Major=list(crafting_hours=2,cost_die="2d4",damage="1d6"),
+  Arcane=list(crafting_hours=3,cost_die="3d4",damage="1d8"),Cursed=list(crafting_hours=3,cost_die="4d4",damage="1d10")
 )
+
+GLYPH_DAMAGE_TYPES <- c("Fire","Cold","Lightning","Acid","Poison","Force","Necrotic","Radiant","Psychic","Thunder")
+RUNE_DAMAGE_BY_RANK <- c(Minor="1d6",Major="2d6",Arcane="3d6",Cursed="4d6")
+RUNE_RADIUS_BY_RANK <- c(Minor=5L,Major=10L,Arcane=15L,Cursed=20L)
 
 glyph_resource_cost <- function(cost_text) {
   parts<-strsplit(trimws(as.character(cost_text))," +")[[1L]]
@@ -101,7 +105,7 @@ get_glyph_rule <- function(glyph_type,rank,arcana_skill=0,material=NULL,size_ft=
   }
   if(glyph_type=="enhancement"){
     rule<-ENHANCEMENT_RULES[[rank]];if(is.null(rule))return(NULL);days<-max(1L,as.integer(enhancement_days%||%1L));cost<-paste(days,paste0(rule$cost_die," Sindre"),sep=" x ")
-    return(list(glyph_type="Enhancement",rank=rank,material="None",crafting_hours=rule$crafting_hours,cost=cost,cost_die=rule$cost_die,cost_multiplier=days,active_time=paste(days,"day(s)"),active_days=days,arcane_score=30L+arcana_skill,usage="Enchant an owned item outside combat.",replenishment=paste0(days," x ",rule$cost_die," Sindre; 1 minute (10 rounds)."),counter="As a turn action while touching the item, make an Arcana check against its Arcane Score."))
+    return(list(glyph_type="Enhancement",rank=rank,material="None",crafting_hours=rule$crafting_hours,cost=cost,cost_die=rule$cost_die,cost_multiplier=days,damage=rule$damage,active_time=paste(days,"day(s)"),active_days=days,arcane_score=30L+arcana_skill,usage="Enchant an owned weapon outside combat.",replenishment=paste0(days," x ",rule$cost_die," Sindre; 1 minute (10 rounds)."),counter="As a turn action while touching the item, make an Arcana check against its Arcane Score."))
   }
   NULL
 }
