@@ -270,6 +270,8 @@ armouryTabServer <- function(id, state, restoring, add_log, char_rev) {
       glyph_days_left<-if(!is.na(glyph_until))max(0L,glyph_until-current_day)else NA_integer_
       glyph_rank<-as.character(meta$glyph_rank%||%"Minor")
       glyph_line <- if (glyph_active) paste0(" • ✧ ",glyph_rank," ",meta$glyph_name%||%"Enhancement",": +",meta$glyph_damage," ",meta$glyph_damage_type," • ",glyph_days_left," day(s) remaining (through day ",glyph_until,")") else if (!is.na(glyph_until)) paste0(" • ✧ ",glyph_rank," enhancement DEPLETED — replenish in Glyphs") else ""
+      displayed_damage2<-if(glyph_active)as.character(meta$glyph_damage)else as.character(meta$damage2)
+      displayed_type2<-if(glyph_active)as.character(meta$glyph_damage_type)else as.character(meta$dmg_type2)
       hit_bonus <- weapon_hit_bonus(w)
       damage_modifier <- as.numeric(meta$material_damage_modifier %||% 0) + as.numeric(meta$quality_damage_modifier %||% 0)
       
@@ -294,8 +296,8 @@ armouryTabServer <- function(id, state, restoring, add_log, char_rev) {
               column(6, textInput(ns(paste0(p, "dmg_type1")), "Damage Type 1", value = meta$dmg_type1))
             ),
             fluidRow(
-              column(6, textInput(ns(paste0(p, "damage2")), "Damage 2", value = meta$damage2)),
-              column(6, textInput(ns(paste0(p, "dmg_type2")), "Damage Type 2", value = meta$dmg_type2))
+              column(6, textInput(ns(paste0(p, "damage2")), if(glyph_active)"Enchanted Damage 2"else"Damage 2", value = displayed_damage2)),
+              column(6, textInput(ns(paste0(p, "dmg_type2")), if(glyph_active)"Enchanted Damage Type 2"else"Damage Type 2", value = displayed_type2))
             ),
             fluidRow(
               column(6, selectInput(ns(paste0(p, "material")), "Material", c("Copper","Iron","Steel","Titanium Copper","Wood"), selected = meta$material %||% "Steel")),
@@ -324,7 +326,7 @@ armouryTabServer <- function(id, state, restoring, add_log, char_rev) {
                 ifelse(hit_bonus >= 0, paste0("+", hit_bonus), hit_bonus),
                 " • Stat: ", toupper(meta$stat),
                 " • Damage: ", meta$damage1,
-                if (nzchar(meta$damage2)) paste0(" + ", meta$damage2) else "",
+                if (nzchar(displayed_damage2)) paste0(" + ", displayed_damage2," ",displayed_type2) else "",
                 glyph_line,
                 if (damage_modifier != 0) sprintf(" %+g", damage_modifier) else "",
                 if (nzchar(as.character(meta$material %||% ""))) paste0(" • ", meta$material, " / ", meta$build_quality %||% "Unrated") else "",
@@ -573,8 +575,7 @@ armouryTabServer <- function(id, state, restoring, add_log, char_rev) {
               meta$adv <- as.character(input[[paste0(p, "adv")]] %||% "Normal")
               meta$damage1 <- as.character(input[[paste0(p, "damage1")]] %||% "1d6")
               meta$dmg_type1 <- as.character(input[[paste0(p, "dmg_type1")]] %||% "Slashing")
-              meta$damage2 <- as.character(input[[paste0(p, "damage2")]] %||% "")
-              meta$dmg_type2 <- as.character(input[[paste0(p, "dmg_type2")]] %||% "Other")
+              if(nzchar(as.character(meta$glyph_damage%||%""))){meta$glyph_damage<-as.character(input[[paste0(p,"damage2")]]%||%meta$glyph_damage);meta$glyph_damage_type<-as.character(input[[paste0(p,"dmg_type2")]]%||%meta$glyph_damage_type)}else{meta$damage2 <- as.character(input[[paste0(p, "damage2")]] %||% "");meta$dmg_type2 <- as.character(input[[paste0(p, "dmg_type2")]] %||% "Other")}
               meta$material <- as.character(input[[paste0(p, "material")]] %||% "Steel")
               meta$build_quality <- as.character(input[[paste0(p, "build_quality")]] %||% "Bog-Standard")
               meta$material_id <- NULL; meta$condition_id <- NULL
