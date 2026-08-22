@@ -310,12 +310,12 @@ glyph_char<-load_character_from_db("1001");glyph_char$resources$sindre$cur<-100L
 glyph_row<-enemy_loot_to_inventory_row(glyph_materials[[1L]],"qa_clay_rune_blank");glyph_char$inventory$items<-inventory_normalize(rbind(inventory_normalize(glyph_char$inventory$items),glyph_row));save_character_to_db(glyph_char,"1001")
 glyph_project<-start_glyph_project("1001","rune","Minor","QA Ember Rune","A test rune that marks its target with ember-light.","Clay")
 stopifnot(is.list(glyph_project),is.null(glyph_project$error),glyph_project$glyph$status[[1L]]=="crafting",glyph_project$glyph$arcane_score[[1L]]>=5L,!"qa_clay_rune_blank"%in%glyph_project$character$inventory$items$id)
-glyph_done<-work_glyph_project("1001",glyph_project$glyph$id[[1L]],1000);stopifnot(glyph_done$glyph$status[[1L]]=="ready")
+glyph_done<-work_glyph_project("1001",glyph_project$glyph$id[[1L]],1000);stopifnot(glyph_done$glyph$status[[1L]]=="ready",any(glyph_done$character$inventory$items$id==paste0("crafted_rune_",glyph_project$glyph$id[[1L]])))
 glyph_used<-use_crafted_rune("1001",glyph_project$glyph$id[[1L]],1L,natural_roll_override=1L);stopifnot(isTRUE(glyph_used$unstable),glyph_used$glyph$status[[1L]]=="expended",glyph_used$instability_damage=="1d4")
 
 enhance_char<-load_character_from_db("1001");enhance_weapon<-inventory_normalize(enhance_char$inventory$items);enhance_weapon<-enhance_weapon[enhance_weapon$type=="weapon",,drop=FALSE];stopifnot(nrow(enhance_weapon)>0L)
 enhance_project<-start_glyph_project("1001","enhancement","Minor","QA Flame Edge","Adds magical fire damage.",enhancement_days=3L,target_item_instance_id=enhance_weapon$id[[1L]],damage_type="Fire")
-stopifnot(is.null(enhance_project$error));enhance_done<-work_glyph_project("1001",enhance_project$glyph$id[[1L]],1000);stopifnot(enhance_done$glyph$status[[1L]]=="active",!is.null(enhance_done$character))
+stopifnot(is.null(enhance_project$error),enhance_weapon$id[[1L]]%in%enhance_project$character$inventory$items$id);enhance_done<-work_glyph_project("1001",enhance_project$glyph$id[[1L]],1000);stopifnot(enhance_done$glyph$status[[1L]]=="active",!is.null(enhance_done$character))
 enhanced_weapon<-inventory_normalize(enhance_done$character$inventory$items);enhanced_meta<-enhanced_weapon$meta[[match(enhance_weapon$id[[1L]],enhanced_weapon$id)]];stopifnot(enhanced_meta$glyph_damage=="1d4",enhanced_meta$glyph_damage_type=="Fire")
 enhanced_index<-match(enhance_weapon$id[[1L]],enhance_done$character$inventory$items$id);enhance_done$character$inventory$items$equipped[[enhanced_index]]<-TRUE;enhance_done$character$inventory$items$in_bag[[enhanced_index]]<-FALSE;combat_enhanced<-get_equipped_weapons_for_combat(enhance_done$character);combat_enhanced<-combat_enhanced[combat_enhanced$id==enhance_weapon$id[[1L]],,drop=FALSE];stopifnot(nrow(combat_enhanced)==1L,grepl("1d4",combat_enhanced$damage2[[1L]],fixed=TRUE),combat_enhanced$dmg_type2[[1L]]=="Fire")
 

@@ -51,11 +51,11 @@ load_functions(global_file, c(
   "merchant_item_stock_weight", "merchant_haggle_terms",
   "food_item_meta", "food_rations_available", "consume_food_ration", "spoil_character_food",
   "camp_foraging_reward", "merchant_stock_category", "merchant_select_stock",
-  "equipped_magical_traits"
+  "equipped_magical_traits", "new_character", "validate_character", "inventory_normalize"
 ))
 load_functions(relational_inventory_file, c("equipment_material_is_eligible", "inventory_item_category", "equipment_adjusted_value"))
 load_functions(enemy_generator_file, c("resolve_layered_damage_traits", "enemy_is_animal", "roll_enemy_mundane_loot", "roll_enemy_food_loot"))
-load_functions(glyph_core_file,c("glyph_character_level","glyph_material_requirement","glyph_counter_outcome"))
+load_functions(glyph_core_file,c("glyph_character_level","glyph_material_requirement","glyph_counter_outcome","glyph_default_identity","normalize_weapon_enchantments"))
 load_functions(
   session_file,
   c(
@@ -1285,6 +1285,8 @@ test("glyph rules cover rune, ward, and replenishable enhancement contracts", {
   stopifnot(enhancement$damage=="1d4",test_env$RUNE_DAMAGE_BY_RANK[["Arcane"]]=="3d6")
   stopifnot(test_env$glyph_counter_outcome("rune",20,21)$outcome=="unstable")
   stopifnot(test_env$glyph_counter_outcome("ward",20,20)$outcome=="broken")
+  identity<-test_env$glyph_default_identity("rune","Minor","Fire","Clay")
+  stopifnot(identity$name=="Minor Fire Rune",grepl("1d6 Fire",identity$description,fixed=TRUE))
 })
 
 cat("\n", tests_run, " tests passed.\n", sep = "")

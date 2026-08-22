@@ -29,6 +29,7 @@ debugCombatUI <- function(id) {
               uiOutput(ns("turn_actions_ui")),
               actionButton(ns("override_action_budget"), "Override Action", class = "btn btn-default"),
               actionButton(ns("open_standard_actions"), "Combat Actions", class = "btn btn-default"),
+              uiOutput(ns("combat_runes_ui")),
               actionButton(ns("open_loot"), "Loot Defeated", class = "btn btn-success"),
               uiOutput(ns("level_two_actions_ui")),
               uiOutput(ns("level_three_actions_ui")),
@@ -345,6 +346,17 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       turn_budget(updated)
       TRUE
     }
+
+    combat_runes <- reactive({
+      inv<-inventory_normalize(validate_character(core$state$char)$inventory$items);keep<-inv$type=="glyph"&vapply(inv$meta,function(m)identical(as.character((m%||%list())$glyph_type%||%""),"rune")&&identical(as.character((m%||%list())$status%||%""),"ready"),logical(1));inv[keep,,drop=FALSE]
+    })
+    output$combat_runes_ui<-renderUI({r<-combat_runes();if(!nrow(r))return(NULL);actionButton(session$ns("open_combat_rune"),paste0("Runes (",nrow(r),")"),class="btn btn-danger")})
+    observeEvent(input$open_combat_rune,{
+      if(!isTRUE(is_players_turn()))return();r<-combat_runes();actors<-get_encounter_actors(current_encounter_id());if(!nrow(r)||!nrow(actors))return();showModal(modalDialog(title="Release a crafted rune",selectInput(session$ns("combat_rune_id"),"Rune",choices=setNames(vapply(r$meta,function(m)as.character(m$glyph_id),character(1)),r$name)),selectInput(session$ns("combat_rune_target"),"Centre of area",choices=setNames(as.character(actors$actor_id),paste0(actors$display_name," · ",actors$actor_type))),p("Releasing a rune uses your bonus action. Everyone inside its area may be affected."),footer=tagList(modalButton("Cancel"),actionButton(session$ns("confirm_combat_rune"),"Release Rune",class="btn btn-danger"))))
+    },ignoreInit=TRUE)
+    observeEvent(input$confirm_combat_rune,{
+      req(input$combat_rune_id,input$combat_rune_target);if(!spend_action_safe("bonus_action","Release Rune"))return();res<-release_crafted_rune(as.character(core$state$char_id),as.integer(input$combat_rune_id),current_encounter_id(),input$combat_rune_target);removeModal();if(length(res$error%||%character()))return(showNotification(res$error,type="error"));if(!is.null(res$character))core$state$char<-validate_character(res$character);if(is.function(core$bump_char_rev))core$bump_char_rev();refresh_key(refresh_key()+1L);events_key(events_key()+1L);if(isTRUE(res$unstable))showNotification(paste("Rune instability!",res$instability_damage,"damage."),type="error",duration=10)else showNotification(paste0(res$damage_total," ",res$damage_type," damage; affected: ",paste(res$affected,collapse=", ")),type="message",duration=10)
+    },ignoreInit=TRUE)
 
     output$turn_actions_ui <- renderUI({
       budget <- turn_budget()
