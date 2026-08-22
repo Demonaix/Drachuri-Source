@@ -267,6 +267,17 @@ inventoryTabServer <- function(id, state, restoring, add_log, char_rev, session_
     # ----------------------------
     # Item card
     # ----------------------------
+    item_meta_summary <- function(i) {
+      meta<-if("meta"%in%names(i)&&length(i$meta)&&is.list(i$meta[[1L]]))i$meta[[1L]]else list()
+      category<-tools::toTitleCase(gsub("_"," ",as.character(meta$category%||%i$type[[1L]]%||%"item")))
+      parts<-c(category)
+      if(nzchar(as.character(meta$effect%||%"")))parts<-c(parts,paste0("Effect: ",gsub("_"," ",meta$effect),if(nzchar(as.character(meta$effect_amount%||%"")))paste0(" ",meta$effect_amount)else""))
+      if(length(meta$resistances%||%character()))parts<-c(parts,paste0("Resistance: ",paste(meta$resistances,collapse=", ")))
+      if(length(meta$condition_immunities%||%character()))parts<-c(parts,paste0("Condition immunity: ",paste(meta$condition_immunities,collapse=", ")))
+      if(identical(as.character(meta$category%||%""),"food"))parts<-c(parts,paste0(meta$food_rations_remaining%||%(meta$ration_value%||%1)*(i$qty[[1L]]%||%1)," ration(s) · fresh through day ",meta$fresh_until_day%||%((validate_character(state$char)$meta$day%||%1)+(meta$shelf_life_days%||%3))))
+      paste(parts,collapse=" • ")
+    }
+
     item_card <- function(i, mode = "active") {
       p <- paste0("i_", i$id, "_")
       
@@ -308,15 +319,14 @@ inventoryTabServer <- function(id, state, restoring, add_log, char_rev, session_
             div(
               class = "item-sub",
               paste0(
-                "Type: ", toupper(i$type %||% "item"),
-                " • Qty: ", i$qty %||% 1,
-                " • ", i$weight %||% 0, " lbs",
-                " • ", i$value %||% 0, "g"
+                item_meta_summary(i),
+                " • Qty: ", i$qty[[1L]] %||% 1,
+                " • ", i$weight[[1L]] %||% 0, " lbs",
+                " • ", i$value[[1L]] %||% 0, "g"
               ),
               if (isTRUE(i$equipped)) tags$span(" • EQUIPPED"),
-              if(identical(as.character((i$meta%||%list())$category%||%""),"food"))tags$span(paste0(" • ",(i$meta%||%list())$food_rations_remaining%||%((i$meta%||%list())$ration_value%||%1)*(i$qty%||%1)," ration(s) • fresh through day ",(i$meta%||%list())$fresh_until_day%||%((validate_character(state$char)$meta$day%||%1)+((i$meta%||%list())$shelf_life_days%||%3)))),
               tags$br(),
-              i$desc %||% ""
+              tags$span(style="white-space:pre-wrap",i$desc[[1L]] %||% "No description recorded.")
             )
           ),
           div(
