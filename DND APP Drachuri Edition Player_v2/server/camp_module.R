@@ -313,7 +313,7 @@ campUI <- function(id) {
               "left: 22%; top: 72%;"),
       
       # Character (top-right near tent)
-      hotspot("go_character", "Character",
+      hotspot("go_character", "Settings",
               "left: 58%; top: 18%; width: 14%; height: 16%;",
               "left: 58%; top: 18%;"),
       
@@ -338,7 +338,7 @@ campUI <- function(id) {
               "left: 46%; top: 46%;"),
       
       # Level (far bottom-left corner)
-      hotspot("go_level", "Level",
+      hotspot("go_level", "Character",
               "left: 10%; top: 50%; width: 12%; height: 14%;",
               "left: 10%; top: 50%;")
     )

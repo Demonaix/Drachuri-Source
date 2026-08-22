@@ -6,7 +6,7 @@ sidebarTabUI <- function(id) {
   ns <- NS(id)
   
   tabPanel(
-    title = "Character",
+    title = "Settings",
     value = "character",
     
     div(

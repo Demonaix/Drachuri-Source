@@ -20,6 +20,10 @@ source(
   "../DND APP Drachuri Edition Player_v2/shared/session_db_core.R",
   local = FALSE
 )
+source(
+  "../DND APP Drachuri Edition Player_v2/shared/story_core.R",
+  local = FALSE
+)
 
 # Encounter setup and live combat both depend on the canonical map helpers.
 # app.R also sources this file, but runApp() can bypass app.R for this project.

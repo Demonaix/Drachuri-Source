@@ -121,6 +121,7 @@ server_player <- function(input, output, session) {
   source("server/landing_module.R")
   source("server/private_notes_module.R")
   source("server/merchant_module.R")
+  source("server/story_module.R")
   source("server/dice_module.R")
   source("server/magic_module.R")
   source("server/blood_module.R")
@@ -365,6 +366,7 @@ server_player <- function(input, output, session) {
   source("calls/party_hud_call.R", local=TRUE)
   privateNotesServer("notes", core$state)
   merchantServer("merchants",core$state)
+  storyPlayerServer("story",core$state)
  source("calls/character_3d_call.R", local=TRUE)
   source("calls/rune_call.R", local=TRUE)
   

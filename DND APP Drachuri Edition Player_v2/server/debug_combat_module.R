@@ -1557,7 +1557,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       df <- snapshot_data()$combat %||% data.frame()
       if (!is.data.frame(df)) data.frame() else df
     })
-    observeEvent({x<-combat_tbl();if(!nrow(x))return(NULL);c(current_encounter_id(),as.integer(x$round_number[[1L]]%||%1L))},{x<-combat_tbl();ticks<-tick_active_rune_zones(current_encounter_id(),as.integer(x$round_number[[1L]]%||%1L));if(length(ticks)){refresh_key(refresh_key()+1L);events_key(events_key()+1L);bump_map_visual()}},ignoreInit=FALSE)
+    observeEvent({x<-combat_tbl();if(!nrow(x))NULL else c(current_encounter_id(),as.integer(x$round_number[[1L]]%||%1L))},{x<-combat_tbl();ticks<-tick_active_rune_zones(current_encounter_id(),as.integer(x$round_number[[1L]]%||%1L));if(length(ticks)){refresh_key(refresh_key()+1L);events_key(events_key()+1L);bump_map_visual()}},ignoreInit=FALSE)
     
     events_tbl <- reactive({
       events_key()

@@ -1,0 +1,19 @@
+storyPlayerUI<-function(id){ns<-NS(id);tagList(
+  tags$style(HTML(paste0("#",ns("wrap"),"{position:fixed;right:22px;bottom:164px;z-index:1039}#",ns("open"),"{width:58px;height:58px;border-radius:50%;font-size:24px;background:#51386c;color:#fff4df;border:2px solid #d7b96d;box-shadow:0 5px 18px rgba(0,0,0,.35)}#",ns("badge"),"{position:absolute;right:-3px;top:-5px;background:#8f241d;color:white;border-radius:999px;min-width:22px;padding:2px 6px;text-align:center;font-weight:bold}"))),
+  div(id=ns("wrap"),actionButton(ns("open"),"📜",title="Story"),uiOutput(ns("badge")))
+)}
+
+storyPlayerServer<-function(id,state){moduleServer(id,function(input,output,session){
+  revision<-reactiveVal(0L);seen_revision<-reactiveVal(0L);story_state<-reactiveVal(data.frame());resource_prefix<-reactiveVal("")
+  sid<-reactive({x<-suppressWarnings(as.integer(state$active_session_id%||%NA));if(is.na(x))NA_integer_ else x})
+  refresh_story<-function(){if(is.na(sid()))return();row<-get_session_story_state(sid());story_state(row);if(nrow(row)&&as.integer(row$revision[[1L]])>revision())revision(as.integer(row$revision[[1L]]))}
+  observe({invalidateLater(2500,session);req(!is.na(sid()));refresh_story()})
+  output$badge<-renderUI({revision();if(revision()>seen_revision())span(id=session$ns("badge"),"!")else NULL})
+  board_for_state<-function(){row<-story_state();if(!nrow(row))return(NULL);storyboard_read(as.character(row$storyboard_id[[1L]]))}
+  register_board<-function(board){if(is.null(board))return("");prefix<-paste0("story-player-",story_safe_id(board$storyboard_id));path<-storyboard_path(board$storyboard_id);suppressWarnings(try(shiny::removeResourcePath(prefix),silent=TRUE));shiny::addResourcePath(prefix,path);resource_prefix(prefix);prefix}
+  slide_ui<-function(){row<-story_state();if(!nrow(row))return(tagList(h4("No story is being shown"),p("The DM has not revealed a storyboard yet.")));board<-board_for_state();if(is.null(board))return(tagList(h4(row$title[[1L]]),p("This storyboard is not installed on this computer yet."),p("Ask the DM for the exported storyboard ZIP, then upload it below.")));prefix<-register_board(board);idx<-min(length(board$slides),max(1L,as.integer(row$current_slide[[1L]])));slide<-board$slides[[idx]];img<-as.character(slide$image%||%"");tagList(div(style="text-align:center",h3(slide$title%||%board$title),if(nzchar(img))tags$img(src=paste0(prefix,"/",gsub("\\\\","/",img)),style="max-width:100%;max-height:60vh;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.25)"),div(style="white-space:pre-wrap;text-align:left;font-family:Georgia,serif;font-size:17px;line-height:1.55;margin-top:15px",slide$text%||%""),p(style="opacity:.65;margin-top:12px",paste("Scene",idx,"of",length(board$slides))))) }
+  show_story<-function(){seen_revision(revision());showModal(modalDialog(size="l",title="📜 Story",uiOutput(session$ns("story_body")),tags$hr(),h4("Install a storyboard"),fileInput(session$ns("story_zip"),"Upload the ZIP supplied by your DM",accept=c(".zip","application/zip")),footer=tagList(modalButton("Close"),actionButton(session$ns("import_story"),"Upload New Storyboard",class="btn btn-primary"))))}
+  output$story_body<-renderUI({revision();slide_ui()})
+  observeEvent(input$open,{refresh_story();show_story()},ignoreInit=TRUE)
+  observeEvent(input$import_story,{req(input$story_zip$datapath);res<-tryCatch(storyboard_import_zip(input$story_zip$datapath),error=function(e)structure(list(),error=e$message));if(length(res$error%||%character()))return(showNotification(res$error,type="error",duration=10));showNotification(paste("Storyboard installed:",res$title),type="message");refresh_story();removeModal();show_story()},ignoreInit=TRUE)
+})}

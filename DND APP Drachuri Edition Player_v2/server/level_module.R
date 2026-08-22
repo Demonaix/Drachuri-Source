@@ -248,7 +248,7 @@ levelTabUI <- function(id) {
   ns <- NS(id)
 
   tabPanel(
-    title = "Level",
+    title = "Character",
     value = "level",
     tags$style(HTML("
       .levelup-wrap{display:grid;grid-template-columns:minmax(260px,.8fr) minmax(360px,1.2fr);gap:14px}

@@ -305,6 +305,9 @@ stopifnot(nrow(category_rows)==1L,mundane_count==100L,food_summary$n[[1L]]==100L
 animal_gift<-give_animal_to_character("1001","animal_001","Cinder");stopifnot(nrow(animal_gift)==1L)
 stable<-get_character_stable("1001");stopifnot(nrow(stable)==1L,stable$name[[1L]]=="Cinder",stable$current_hp[[1L]]==stable$max_hp[[1L]])
 
+story_state<-set_session_story_state(1L,"qa-story","QA Story",1L);stopifnot(nrow(story_state)==1L,story_state$current_slide[[1L]]==1L)
+story_next<-set_session_story_state(1L,"qa-story","QA Story",2L);stopifnot(story_next$current_slide[[1L]]==2L,story_next$revision[[1L]]>story_state$revision[[1L]],get_session_story_state(1L)$current_slide[[1L]]==2L)
+
 glyph_materials<-Filter(function(x)identical(x$name,"Clay Rune Blank"),get_control_catalogue_definitions());stopifnot(length(glyph_materials)==1L)
 glyph_char<-load_character_from_db("1001");glyph_char$resources$sindre$cur<-100L;glyph_char$resources$sindre$total<-100L
 glyph_row<-enemy_loot_to_inventory_row(glyph_materials[[1L]],"qa_clay_rune_blank");glyph_char$inventory$items<-inventory_normalize(rbind(inventory_normalize(glyph_char$inventory$items),glyph_row));save_character_to_db(glyph_char,"1001")

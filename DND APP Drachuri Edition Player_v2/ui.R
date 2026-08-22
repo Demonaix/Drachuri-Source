@@ -12,6 +12,7 @@ source("server/camp_module.R")
 source("server/landing_module.R")
 source("server/private_notes_module.R")
 source("server/merchant_module.R")
+source("server/story_module.R")
 source("server/dice_module.R")
 source("server/magic_module.R")
 source("server/blood_module.R")
@@ -674,6 +675,7 @@ window.showToast = function(message, timeoutMs = 2500) {
  partyHudUI("partyhud"),
  privateNotesUI("notes"),
  merchantUI("merchants"),
+ storyPlayerUI("story"),
 
   # Landing overlay
   div(
