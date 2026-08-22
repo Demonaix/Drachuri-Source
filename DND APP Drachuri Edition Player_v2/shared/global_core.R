@@ -2524,11 +2524,21 @@ character_skill_modifier <- function(char,skill,skill_defs=NULL) {
   as.integer(floor((score-10L)/2L)+multiplier*proficiency)
 }
 
-merchant_haggle_terms <- function(base_value,direction=c("buy","sell"),temperament=c("fair","hard","generous"),roll,dc_penalty=0L) {
+merchant_pricing_multiplier <- function(pricing_style=c("standard","cheap","expensive","very_expensive")) {
+  pricing_style<-match.arg(pricing_style)
+  c(cheap=.75,standard=1,expensive=1.35,very_expensive=1.75)[[pricing_style]]
+}
+
+merchant_item_stock_weight <- function(item) {
+  rarity<-tolower(as.character((item$meta%||%list())$rarity%||%"common"))
+  c(common=1,uncommon=.55,rare=.20,very_rare=.07,legendary=.015)[[rarity]]%||%1
+}
+
+merchant_haggle_terms <- function(base_value,direction=c("buy","sell"),temperament=c("fair","hard","generous"),roll,dc_penalty=0L,pricing_style="standard") {
   direction<-match.arg(direction);temperament<-match.arg(temperament)
   base<-max(0,as.numeric(base_value%||%0));roll<-as.integer(roll%||%0L)
   dc<-c(generous=10L,fair=13L,hard=16L)[[temperament]]+max(0L,as.integer(dc_penalty%||%0L));success<-roll>=dc
-  normal<-if(direction=="buy")c(generous=.90,fair=1,hard=1.15)[[temperament]] else c(generous=.65,fair=.50,hard=.35)[[temperament]]
+  normal<-if(direction=="buy")c(generous=.90,fair=1,hard=1.15)[[temperament]]*merchant_pricing_multiplier(pricing_style) else c(generous=.65,fair=.50,hard=.35)[[temperament]]
   margin<-if(success)min(.25,.10+.05*floor(max(0,roll-dc)/5))else 0
   multiplier<-if(success){if(direction=="buy")normal-margin else normal+margin}else{if(direction=="buy")normal+.10 else max(.10,normal-.10)}
   list(base=base,dc=dc,roll=roll,success=success,multiplier=multiplier,price=max(if(base>0)1 else 0,round(base*multiplier)))
@@ -2540,10 +2550,10 @@ merchant_stock_category <- function(item) {
 }
 
 merchant_select_stock <- function(items,n,specialty="general") {
-  if(!length(items)||n<1L)return(list());n<-min(as.integer(n),length(items));if(specialty!="general")return(sample(items,n,replace=FALSE))
+  if(!length(items)||n<1L)return(list());n<-min(as.integer(n),length(items));weights<-vapply(items,merchant_item_stock_weight,numeric(1));if(specialty!="general")return(sample(items,n,replace=FALSE,prob=weights))
   groups<-split(items,vapply(items,merchant_stock_category,character(1)));targets<-c(general=.35,food=.25,consumable=.10,weapon=.10,armour=.10,crafting=.05,magical_item=.03,treasure=.02);chosen<-list()
   for(category in names(targets)){pool<-groups[[category]]%||%list();take<-min(length(pool),max(if(category%in%c("general","food"))1L else 0L,as.integer(round(n*targets[[category]]))));if(take>0L)chosen<-c(chosen,sample(pool,take,replace=FALSE))}
-  used<-vapply(chosen,function(x)as.character(x$id%||%""),character(1));remaining<-Filter(function(x)!as.character(x$id%||%"")%in%used,items);if(length(chosen)<n&&length(remaining))chosen<-c(chosen,sample(remaining,min(n-length(chosen),length(remaining)),replace=FALSE));chosen[seq_len(min(n,length(chosen)))]
+  used<-vapply(chosen,function(x)as.character(x$id%||%""),character(1));remaining<-Filter(function(x)!as.character(x$id%||%"")%in%used,items);needed<-n-length(chosen);if(needed>0L&&length(remaining)){staples<-Filter(function(x)merchant_stock_category(x)%in%c("general","food"),remaining);fill<-if(length(staples)>=needed)staples else remaining;fill_weights<-vapply(fill,merchant_item_stock_weight,numeric(1));chosen<-c(chosen,sample(fill,min(needed,length(fill)),replace=FALSE,prob=fill_weights))};chosen[seq_len(min(n,length(chosen)))]
 }
 
 new_character <- function() {

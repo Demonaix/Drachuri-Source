@@ -321,7 +321,12 @@ roll_loot_equipment_provenance <- function(loot, enemy_type = "", characteristic
     kind <- inventory_definition_kind(entry$type %||% "item")
     if (!kind %in% c("weapon", "armour")) next
     meta <- entry$meta %||% list(); if (!is.list(meta)) meta <- list()
-    if (isTRUE(meta$provenance_assigned) && !is.null(meta$material_id) && !is.null(meta$condition_id)) next
+    if (isTRUE(meta$provenance_assigned) && !is.null(meta$material_id) && !is.null(meta$condition_id)) {
+      material_row<-materials[materials$id==as.numeric(meta$material_id),,drop=FALSE];quality_row<-qualities[qualities$id==as.numeric(meta$condition_id),,drop=FALSE]
+      if(nrow(material_row))meta$material_cost_modifier<-as.numeric(material_row$cost_modifier[[1L]]%||%1)
+      if(nrow(quality_row))meta$quality_cost_modifier<-as.numeric(quality_row$cost_modifier[[1L]]%||%1)
+      entry$meta<-meta;loot[[i]]<-entry;next
+    }
     name <- tolower(as.character(entry$name %||% ""))
     forced_wood <- grepl("shortbow|longbow|crossbow|quarterstaff|wooden club", name)
     locked <- isTRUE(meta$lock_provenance)
@@ -346,14 +351,24 @@ roll_loot_equipment_provenance <- function(loot, enemy_type = "", characteristic
     meta$is_iron <- isTRUE(material$is_iron[[1L]]); meta$is_wood <- isTRUE(material$is_wood[[1L]])
     meta$material_attack_bonus <- as.numeric(material$attack_bonus[[1L]] %||% 0)
     meta$material_damage_modifier <- as.numeric(material$damage_modifier[[1L]] %||% 0)
+    meta$material_cost_modifier <- as.numeric(material$cost_modifier[[1L]] %||% 1)
     meta$condition_id <- as.numeric(quality$id[[1L]]); meta$build_quality <- as.character(quality$name[[1L]])
     meta$quality_attack_bonus <- as.numeric(quality$attack_bonus[[1L]] %||% 0)
     meta$quality_damage_modifier <- as.numeric(quality$damage_modifier[[1L]] %||% 0)
     meta$quality_armour_modifier <- as.numeric(quality$armour_modifier[[1L]] %||% 0)
+    meta$quality_cost_modifier <- as.numeric(quality$cost_modifier[[1L]] %||% 1)
     meta$provenance_assigned <- TRUE
     entry$meta <- meta; loot[[i]] <- entry
   }
   loot
+}
+
+equipment_adjusted_value <- function(item) {
+  value<-max(0,as.numeric(item$value%||%0));meta<-item$meta%||%list()
+  if(!tolower(as.character(item$type%||%""))%in%c("weapon","armor","armour"))return(value)
+  material<-suppressWarnings(as.numeric(meta$material_cost_modifier%||%1));quality<-suppressWarnings(as.numeric(meta$quality_cost_modifier%||%1))
+  if(is.na(material)||material<0)material<-1;if(is.na(quality)||quality<0)quality<-1
+  max(if(value>0)1 else 0,round(value*material*quality,2))
 }
 
 roll_equipment_assignment <- function(character_id, instance_id, assignment_source = "player_roll") {

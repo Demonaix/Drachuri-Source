@@ -44,12 +44,13 @@ load_functions(global_file, c(
   "armor_meta_defaults_global", "calc_auto_ac_for_char", "get_effective_max_hp", "get_weapon_hit_bonus",
   "starting_character_hp", "camp_gathering_yield", "consume_heart_sindre",
   "character_subclass_names", "magical_identity_labels", "skill_identity_labels",
-  "character_magic_types", "bloodlust_bite_required", "merchant_haggle_terms",
+  "character_magic_types", "bloodlust_bite_required", "merchant_pricing_multiplier",
+  "merchant_item_stock_weight", "merchant_haggle_terms",
   "food_item_meta", "food_rations_available", "consume_food_ration", "spoil_character_food",
   "camp_foraging_reward", "merchant_stock_category", "merchant_select_stock",
   "equipped_magical_traits"
 ))
-load_functions(relational_inventory_file, c("equipment_material_is_eligible", "inventory_item_category"))
+load_functions(relational_inventory_file, c("equipment_material_is_eligible", "inventory_item_category", "equipment_adjusted_value"))
 load_functions(enemy_generator_file, c("resolve_layered_damage_traits", "enemy_is_animal", "roll_enemy_mundane_loot", "roll_enemy_food_loot"))
 load_functions(
   session_file,
@@ -1190,6 +1191,13 @@ test("material eligibility enforces Fae and Boss loot rules", {
   stopifnot(test_env$equipment_material_is_eligible(postgres_boss, "Bandit", "Boss"))
 })
 
+test("equipment material and build quality alter merchant base value", {
+  item<-list(type="weapon",value=100,meta=list(material_cost_modifier=.5,quality_cost_modifier=1.4))
+  stopifnot(test_env$equipment_adjusted_value(item)==70)
+  item$meta$material_cost_modifier<-5
+  stopifnot(test_env$equipment_adjusted_value(item)==700)
+})
+
 test("ordinary non-equipment loot receives an authoritative category", {
   mundane <- data.frame(type = "item", meta = I(list(list())))
   crafting <- data.frame(type = "item", meta = I(list(list(category = "crafting"))))
@@ -1234,6 +1242,8 @@ test("merchant temperament and haggling produce bounded buy and sell prices", {
   stopifnot(hard_win$success, hard_win$price < hard_fail$price)
   stopifnot(generous_sell$success, generous_sell$price >= 75)
   stopifnot(rejected_once$dc == 15L, !rejected_once$success)
+  stopifnot(test_env$merchant_haggle_terms(100,"buy","fair",13,pricing_style="cheap")$price==65L)
+  stopifnot(test_env$merchant_haggle_terms(100,"buy","fair",13,pricing_style="very_expensive")$price==165L)
 })
 
 test("general merchants draw a balanced mix instead of armour-heavy stock", {
