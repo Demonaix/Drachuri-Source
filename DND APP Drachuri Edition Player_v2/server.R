@@ -107,7 +107,6 @@ server_player <- function(input, output, session) {
   source("session_db.R") #Helpers for sessions (overflow from global basically)
   source("plug/skills_data.R")
   source("plug/combat_data.R")
-  source("plug/magic_data.R")
   source("plug/game_data.R")
   source("shared/class_feature_core.R")
   

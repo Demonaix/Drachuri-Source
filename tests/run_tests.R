@@ -23,9 +23,12 @@ relational_inventory_file <- file.path(
   "DND APP Drachuri Edition Player_v2", "shared", "relational_inventory_core.R"
 )
 enemy_generator_file <- file.path(project_dir,"DND APP Drachuri Edition Player_v2","shared","enemy_generator_core.R")
+magic_data_file <- file.path(project_dir,"DND APP Drachuri Edition Player_v2","plug","magic_data.R")
+glyph_core_file <- file.path(project_dir,"DND APP Drachuri Edition Player_v2","shared","glyph_core.R")
 
 test_env <- new.env(parent = baseenv())
 test_env$`%||%` <- function(a, b) if (!is.null(a)) a else b
+sys.source(magic_data_file,envir=test_env)
 
 load_functions <- function(path, names) {
   expressions <- parse(path)
@@ -52,6 +55,7 @@ load_functions(global_file, c(
 ))
 load_functions(relational_inventory_file, c("equipment_material_is_eligible", "inventory_item_category", "equipment_adjusted_value"))
 load_functions(enemy_generator_file, c("resolve_layered_damage_traits", "enemy_is_animal", "roll_enemy_mundane_loot", "roll_enemy_food_loot"))
+load_functions(glyph_core_file,c("glyph_character_level","glyph_material_requirement","glyph_counter_outcome"))
 load_functions(
   session_file,
   c(
@@ -1269,6 +1273,17 @@ test("layered NPC damage traits escalate duplicates and resolve conflicts", {
   stopifnot("fire"%in%traits$immunities,"poison"%in%traits$immunities)
   stopifnot("cold"%in%traits$resistances,!"acid"%in%traits$resistances,!"acid"%in%traits$vulnerabilities)
   stopifnot("frightened"%in%traits$condition_immunities)
+})
+
+test("glyph rules cover rune, ward, and replenishable enhancement contracts", {
+  rune<-test_env$get_glyph_rule("rune","Arcane",7,"Metal")
+  ward<-test_env$get_glyph_rule("ward","Major",7,"Heartwood Dust",20)
+  enhancement<-test_env$get_glyph_rule("enhancement","Minor",7,enhancement_days=3)
+  stopifnot(rune$instability_damage=="3d20",rune$arcane_score==27L,rune$active_time_rounds==6)
+  stopifnot(ward$minimum_size_ft==15,ward$crafting_hours==4,ward$arcane_score==27L)
+  stopifnot(enhancement$crafting_hours==1,enhancement$arcane_score==37L,enhancement$cost_multiplier==3L)
+  stopifnot(test_env$glyph_counter_outcome("rune",20,21)$outcome=="unstable")
+  stopifnot(test_env$glyph_counter_outcome("ward",20,20)$outcome=="broken")
 })
 
 cat("\n", tests_run, " tests passed.\n", sep = "")

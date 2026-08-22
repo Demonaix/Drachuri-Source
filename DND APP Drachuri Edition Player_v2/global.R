@@ -6,3 +6,5 @@
 source("shared/global_core.R", local = FALSE)
 source("shared/enemy_generator_core.R", local = FALSE)
 source("shared/relational_inventory_core.R", local = FALSE)
+source("plug/magic_data.R", local = FALSE)
+source("shared/glyph_core.R", local = FALSE)

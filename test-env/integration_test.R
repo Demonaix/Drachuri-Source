@@ -305,6 +305,14 @@ stopifnot(nrow(category_rows)==1L,mundane_count==100L,food_summary$n[[1L]]==100L
 animal_gift<-give_animal_to_character("1001","animal_001","Cinder");stopifnot(nrow(animal_gift)==1L)
 stable<-get_character_stable("1001");stopifnot(nrow(stable)==1L,stable$name[[1L]]=="Cinder",stable$current_hp[[1L]]==stable$max_hp[[1L]])
 
+glyph_materials<-Filter(function(x)identical(x$name,"Clay Rune Blank"),get_control_catalogue_definitions());stopifnot(length(glyph_materials)==1L)
+glyph_char<-load_character_from_db("1001");glyph_char$resources$sindre$cur<-100L;glyph_char$resources$sindre$total<-100L
+glyph_row<-enemy_loot_to_inventory_row(glyph_materials[[1L]],"qa_clay_rune_blank");glyph_char$inventory$items<-inventory_normalize(rbind(inventory_normalize(glyph_char$inventory$items),glyph_row));save_character_to_db(glyph_char,"1001")
+glyph_project<-start_glyph_project("1001","rune","Minor","QA Ember Rune","A test rune that marks its target with ember-light.","Clay")
+stopifnot(is.list(glyph_project),is.null(glyph_project$error),glyph_project$glyph$status[[1L]]=="crafting",glyph_project$glyph$arcane_score[[1L]]>=5L,!"qa_clay_rune_blank"%in%glyph_project$character$inventory$items$id)
+glyph_done<-work_glyph_project("1001",glyph_project$glyph$id[[1L]],1000);stopifnot(glyph_done$status[[1L]]=="ready")
+glyph_used<-use_crafted_rune("1001",glyph_project$glyph$id[[1L]],1L,natural_roll_override=1L);stopifnot(isTRUE(glyph_used$unstable),glyph_used$glyph$status[[1L]]=="expended",glyph_used$instability_damage=="1d4")
+
 stopifnot(isTRUE(end_encounter_combat(1L)))
 ended_snapshot <- get_player_live_snapshot(1L, "1002")
 ended_combat <- get_combat_state(1L)

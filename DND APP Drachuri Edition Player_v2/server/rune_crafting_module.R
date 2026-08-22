@@ -1,78 +1,43 @@
 runeCraftingUI <- function(id) {
-  ns <- NS(id)
-  
-  tagList(
-    div(class = "card",
-        div(class = "title", "Rune Crafting"),
-        div(class = "desc", "Create minor, major, arcane, or cursed runes."),
-        
-        numericInput(ns("level"), "Character Level", value = 1, min = 1),
-        numericInput(ns("arcana"), "Arcana Skill", value = 0, min = 0),
-        
-        uiOutput(ns("rune_type_ui")),
-        uiOutput(ns("material_ui")),
-        
-        hr(),
-        uiOutput(ns("rune_summary"))
-    )
+  ns<-NS(id)
+  tagList(tags$style(HTML(paste0("#",ns("root")," .glyph-card{border:1px solid rgba(119,84,150,.45);border-radius:14px;background:rgba(255,252,245,.94);padding:14px;margin-bottom:12px}#",ns("root")," .glyph-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:12px}#",ns("root")," .glyph-pills{display:flex;gap:6px;flex-wrap:wrap}#",ns("root")," .glyph-pill{padding:4px 8px;border-radius:999px;background:#eee3f3;font-size:12px}#",ns("root")," .glyph-effect{white-space:pre-wrap;margin-top:8px}"))),
+    div(id=ns("root"),div(class="glyph-grid",
+      div(class="glyph-card",h3("✧ Glyph Workshop"),p("Craft persistent runes, wards, and enhancements using your character's real skill, resources, materials, and time."),fluidRow(column(6,selectInput(ns("glyph_type"),"Glyph type",c("Rune"="rune","Ward"="ward","Enhancement"="enhancement"))),column(6,uiOutput(ns("rank_ui")))),textInput(ns("glyph_name"),"Glyph name",placeholder="e.g. Rune of Winter's Grasp"),textAreaInput(ns("effect_description"),"Purpose / magical effect",placeholder="Describe what this particular glyph is intended to do."),uiOutput(ns("type_fields")),actionButton(ns("review_project"),"Review & Start Project",class="btn btn-primary")),
+      div(class="glyph-card",h3("Crafting Rule"),uiOutput(ns("character_magic_summary")),uiOutput(ns("rule_summary")))
+    ),div(class="glyph-card",h3("Your Glyphs & Projects"),uiOutput(ns("glyphs_ui")),tags$hr(),fluidRow(column(5,selectInput(ns("active_glyph_id"),"Selected glyph/project",choices=character())),column(3,numericInput(ns("work_hours"),"Hours of work",1,min=.25,step=.25)),column(4,br(),actionButton(ns("work_project"),"Apply Crafting Time",class="btn btn-primary"))),div(style="display:flex;gap:8px;flex-wrap:wrap",actionButton(ns("use_rune"),"Use Ready Rune",class="btn btn-danger"),actionButton(ns("replenish"),"Replenish Enhancement",class="btn btn-warning"))))
   )
 }
 
-runeCraftingServer <- function(id) {
-  moduleServer(id, function(input, output, session) {
-    ns <- session$ns
-    
-    available_types <- reactive({
-      get_available_rune_types(input$level %||% 1)
-    })
-    
-    output$rune_type_ui <- renderUI({
-      selectInput(
-        ns("rune_type"),
-        "Rune Type",
-        choices = available_types()
-      )
-    })
-    
-    output$material_ui <- renderUI({
-      req(input$rune_type)
-      
-      selectInput(
-        ns("material"),
-        "Blank Material",
-        choices = get_available_rune_materials(input$rune_type)
-      )
-    })
-    
-    rune_rule <- reactive({
-      req(input$rune_type, input$material)
-      get_rune_rule(
-        rune_type = input$rune_type,
-        material = input$material,
-        arcana_skill = input$arcana %||% 0
-      )
-    })
-    
-    output$rune_summary <- renderUI({
-      rule <- rune_rule()
-      req(rule)
-      
+runeCraftingServer <- function(id,state,char_rev,bump_char_rev=NULL) {
+  moduleServer(id,function(input,output,session){
+    `%||%`<-get("%||%",inherits=TRUE);refresh<-reactiveVal(0L)
+    cid<-reactive({x<-state$char_id;if(is.null(x)||!length(x)||is.na(x[[1L]]))""else as.character(x[[1L]])})
+    current_char<-reactive({char_rev();validate_character(state$char)});unlocked<-reactive(glyph_unlocked_ranks(current_char()))
+    output$rank_ui<-renderUI(selectInput(session$ns("rank"),"Rank",choices=unlocked()))
+    inventory_choices<-reactive({inv<-inventory_normalize(current_char()$inventory$items);if(!nrow(inv))character()else setNames(inv$id,paste0(inv$name," · ",inv$type))})
+    output$type_fields<-renderUI({req(input$glyph_type,input$rank);type<-input$glyph_type;rank<-input$rank;if(type=="rune")return(selectInput(session$ns("material"),"Rune blank",choices=get_available_rune_materials(rank)));if(type=="ward"){rule<-WARD_RULES[[rank]];return(tagList(selectInput(session$ns("material"),"Ward material (one is consumed)",choices=rule$materials),numericInput(session$ns("size_ft"),paste0("Ward size in feet (minimum ",rule$min_size_ft,"ft)"),rule$min_size_ft,min=rule$min_size_ft,step=1)))};tagList(numericInput(session$ns("enhancement_days"),"Active duration in campaign days",1,min=1,max=365),selectInput(session$ns("target_item"),"Item to enhance",choices=inventory_choices()))})
+    preview_rule<-reactive({req(input$glyph_type,input$rank);get_glyph_rule(input$glyph_type,input$rank,glyph_arcana_bonus(current_char()),input$material,input$size_ft,input$enhancement_days)})
+    output$character_magic_summary<-renderUI({
+      x<-current_char()
       tagList(
-        h4(paste(rule$rune_type, rule$material, "Rune")),
-        tags$ul(
-          tags$li(strong("Required blank: "), rule$required_blank),
-          tags$li(strong("Required tools: "), rule$required_tools),
-          tags$li(strong("Crafting time: "), rule$crafting_time),
-          tags$li(strong("Cost: "), rule$cost),
-          tags$li(strong("Active time: "), paste0(rule$active_time_sec, " seconds / ", rule$active_time_rounds, " round(s)")),
-          tags$li(strong("Arcane score: "), rule$arcane_score),
-          tags$li(strong("Instability: "), paste(rule$instability_damage, "damage in", rule$instability_radius_ft, "ft radius")),
-          tags$li(strong("Usage: "), rule$usage),
-          tags$li(strong("Dodge counter: "), rule$counter_dodge),
-          tags$li(strong("Disrupt counter: "), rule$counter_disrupt),
-          tags$li(strong("Near-success disrupt: "), rule$disrupt_near_success)
-        )
+        div(class="glyph-pills",
+          span(class="glyph-pill",paste("Level",glyph_character_level(x))),
+          span(class="glyph-pill",paste("Arcana",sprintf("%+d",glyph_arcana_bonus(x)))),
+          span(class="glyph-pill",paste("Sindre",x$resources$sindre$cur%||%0)),
+          span(class="glyph-pill",paste("HP",x$resources$hp$cur%||%0))
+        ),
+        p("Available ranks: ",paste(unlocked(),collapse=", "))
       )
     })
+    output$rule_summary<-renderUI({r<-preview_rule();req(r);type<-tolower(input$glyph_type);target_label<-names(inventory_choices())[match(input$target_item%||%"",unname(inventory_choices()))];if(!length(target_label)||is.na(target_label))target_label<-"Choose an item";items<-if(type=="rune")list(li(strong("Material: "),r$required_blank),li(strong("Tool: "),r$required_tools),li(strong("Crafting time: "),r$crafting_time," hours (rolled when started)"),li(strong("Cost: "),r$cost," (rolled when started)"),li(strong("Active: "),r$active_time_rounds," round(s)"),li(strong("Arcane Score: "),r$arcane_score),li(strong("Instability: "),"Natural 1 in combat; ",r$instability_damage," damage within ",r$instability_radius_ft,"ft"),li(strong("Use: "),r$usage),li(strong("Counters: "),r$counter_dodge,"; ",r$counter_disrupt))else if(type=="ward")list(li(strong("Material: "),r$material),li(strong("Size: "),r$size_ft,"ft"),li(strong("Crafting time: "),r$crafting_hours," hours"),li(strong("Cost: "),r$cost),li(strong("Arcane Score: "),r$arcane_score),li(strong("Duration: "),r$active_time),li(strong("Counter: "),r$counter))else list(li(strong("Target item: "),target_label),li(strong("Crafting time: "),r$crafting_hours," hours"),li(strong("Cost: "),r$cost),li(strong("Arcane Score: "),r$arcane_score),li(strong("Active: "),r$active_time),li(strong("Replenishment: "),r$replenishment),li(strong("Counter: "),r$counter));tags$ul(items)})
+    glyphs<-reactive({refresh();char_rev();if(!nzchar(cid())||isTRUE(state$offline_mode))return(data.frame());get_character_glyphs(cid())})
+    observe({g<-glyphs();choices<-if(nrow(g))setNames(as.character(g$id),paste0(g$name," · ",tools::toTitleCase(g$glyph_type)," · ",g$status))else character();keep<-isolate(input$active_glyph_id%||%"");updateSelectInput(session,"active_glyph_id",choices=choices,selected=if(keep%in%unname(choices))keep else if(length(choices))unname(choices[[1L]])else character())})
+    output$glyphs_ui<-renderUI({g<-glyphs();if(!nrow(g))return(tags$em("No glyphs or crafting projects yet."));day<-as.integer(current_char()$meta$day%||%1L);div(class="glyph-grid",lapply(seq_len(nrow(g)),function(i){x<-g[i,,drop=FALSE];status<-as.character(x$status[[1L]]);if(x$glyph_type[[1L]]=="enhancement"&&status=="active"&&!is.na(x$active_until_day[[1L]])&&day>x$active_until_day[[1L]])status<-"depleted";progress<-paste0(round(as.numeric(x$crafting_hours_completed[[1L]]),2),"/",round(as.numeric(x$crafting_hours_required[[1L]]),2)," hours");pills<-c(paste(tools::toTitleCase(x$glyph_type[[1L]]),x$rank[[1L]]),paste("Status",status),paste("Arcane Score",x$arcane_score[[1L]]),if(x$status[[1L]]=="crafting")progress else NULL,if(!is.na(x$material[[1L]]))as.character(x$material[[1L]])else NULL,if(!is.na(x$size_ft[[1L]]))paste0(x$size_ft[[1L]],"ft")else NULL,if(!is.na(x$active_until_day[[1L]]))paste("Active through day",x$active_until_day[[1L]])else NULL);div(class="glyph-card",h4(x$name[[1L]]),div(class="glyph-pills",lapply(pills,function(p)span(class="glyph-pill",p))),div(class="glyph-effect",x$effect_description[[1L]]),if(!is.na(x$instability_damage[[1L]]))p("Instability: ",x$instability_damage[[1L]]," in ",x$instability_radius_ft[[1L]],"ft")else NULL)}))})
+    refresh_character<-function(char){state$char<-validate_character(char);if(is.function(bump_char_rev))bump_char_rev();refresh(refresh()+1L)}
+    observeEvent(input$review_project,{r<-preview_rule();req(r);nm<-trimws(input$glyph_name%||%"");if(!nzchar(nm))return(showNotification("Give the glyph a name.",type="warning"));showModal(modalDialog(title="Start glyph project?",p(strong(nm)),p(input$effect_description%||%"No purpose recorded."),p("Starting consumes the required material and immediately rolls and pays the listed Sindre or HP cost. Crafting time is then tracked as an in-game project."),footer=tagList(modalButton("Cancel"),actionButton(session$ns("confirm_project"),"Consume materials & start",class="btn btn-danger"))))},ignoreInit=TRUE)
+    observeEvent(input$confirm_project,{removeModal();res<-start_glyph_project(cid(),input$glyph_type,input$rank,input$glyph_name,input$effect_description,input$material,input$size_ft,input$enhancement_days,input$target_item);if(length(res$error%||%character()))return(showNotification(res$error,type="error",duration=10));refresh_character(res$character);showNotification(paste0("Project started: ",res$glyph$name[[1L]],". Paid ",res$cost," ",toupper(res$resource),"."),type="message",duration=10)},ignoreInit=TRUE)
+    observeEvent(input$work_project,{id<-suppressWarnings(as.integer(input$active_glyph_id));if(is.na(id))return();row<-work_glyph_project(cid(),id,input$work_hours);if(is.null(row))return(showNotification("Crafting time could not be recorded.",type="error"));refresh(refresh()+1L);showNotification(if(row$status[[1L]]=="crafting")"Crafting progress recorded."else"Glyph completed.",type="message")},ignoreInit=TRUE)
+    observeEvent(input$replenish,{id<-suppressWarnings(as.integer(input$active_glyph_id));if(is.na(id))return();res<-replenish_enhancement(cid(),id);if(length(res$error%||%character()))return(showNotification(res$error,type="error"));refresh_character(res$character);showNotification(paste0("Enhancement replenished for ",res$cost," Sindre."),type="message")},ignoreInit=TRUE)
+    observeEvent(input$use_rune,{id<-suppressWarnings(as.integer(input$active_glyph_id));if(is.na(id))return();eid<-suppressWarnings(as.integer(state$active_encounter_id%||%NA));res<-use_crafted_rune(cid(),id,if(is.na(eid))NULL else eid);if(length(res$error%||%character()))return(showNotification(res$error,type="error"));refresh(refresh()+1L);if(isTRUE(res$unstable))showModal(modalDialog(title="Rune instability!",p("Natural 1: the rune destabilises for ",strong(res$instability_damage)," damage in a ",res$radius_ft,"ft radius."),easyClose=TRUE))else showNotification(paste0("Rune activated (roll ",res$roll,")."),type="message")},ignoreInit=TRUE)
   })
 }
