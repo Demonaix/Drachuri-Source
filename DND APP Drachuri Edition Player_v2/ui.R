@@ -735,7 +735,7 @@ window.showToast = function(message, timeoutMs = 2500) {
         character3DTabUI("character_3d"),
         tabPanel(
           
-          title = "Runes",
+          title = "Glyphs",
           
           value = "runes",
           

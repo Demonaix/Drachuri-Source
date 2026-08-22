@@ -745,7 +745,11 @@ character_magic_types <- function(x) {
   }), use.names = FALSE))
   if ("Exothermic" %in% thermal) out <- c(out, "Fire")
   if ("Endothermic" %in% thermal) out <- c(out, "Cold")
-  unique(out)
+  manual <- as.character((x$magic %||% list())$types %||% character())
+  aliases <- c(Chemical = "Poison", Nuclear = "Radiant", Radiation = "Radiant", Light = "Radiant")
+  manual <- ifelse(manual %in% names(aliases), unname(aliases[manual]), manual)
+  allowed <- c("Mechanical", "Natural", if (exists("GLYPH_DAMAGE_TYPES", inherits = TRUE)) get("GLYPH_DAMAGE_TYPES", inherits = TRUE) else c("Fire","Cold","Lightning","Acid","Poison","Force","Necrotic","Radiant","Psychic","Thunder"))
+  unique(c(out, manual)[c(out, manual) %in% allowed])
 }
 
 bloodlust_bite_required <- function(x, attack_roll = NA_integer_, start_of_turn = FALSE) {

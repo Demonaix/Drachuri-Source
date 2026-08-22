@@ -19,14 +19,16 @@ inventoryTabUI <- function(id) {
         pfx, ".item-sub{font-size:13px;opacity:.9;margin-top:4px;line-height:1.35;}\n",
         pfx, ".item-actions{display:flex;gap:6px;flex-wrap:wrap;}\n",
         pfx, ".status-bar{display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;}\n",
-        pfx, ".status-pill{padding:6px 10px;border-radius:999px;border:1px solid rgba(150,120,70,0.4);background:rgba(255,255,245,0.8);}\n"
+        pfx, ".status-pill{padding:6px 10px;border-radius:999px;border:1px solid rgba(150,120,70,0.4);background:rgba(255,255,245,0.8);}\n",
+        pfx, ".nav-tabs{display:flex!important;visibility:visible!important;margin-bottom:12px;}\n"
       )
     })),
     
     div(
       id = ns("root"),
       tabsetPanel(
-      tabPanel("Items",
+      id = ns("inventory_sections"), type = "tabs",
+      tabPanel("Items", value = "items",
       div(
         class = "card",
         
@@ -56,7 +58,7 @@ inventoryTabUI <- function(id) {
           uiOutput(ns("items_bag_ui"))
         )
       )),
-      tabPanel("Stables",
+      tabPanel("🐴 Stables", value = "stables",
         div(class="card",
           div(class="card-titlebar",h4("🐴 Stables")),
           p("Animals are kept separately from carried inventory and do not count towards carry weight."),
@@ -274,6 +276,12 @@ inventoryTabServer <- function(id, state, restoring, add_log, char_rev, session_
       if(nzchar(as.character(meta$effect%||%"")))parts<-c(parts,paste0("Effect: ",gsub("_"," ",meta$effect),if(nzchar(as.character(meta$effect_amount%||%"")))paste0(" ",meta$effect_amount)else""))
       if(length(meta$resistances%||%character()))parts<-c(parts,paste0("Resistance: ",paste(meta$resistances,collapse=", ")))
       if(length(meta$condition_immunities%||%character()))parts<-c(parts,paste0("Condition immunity: ",paste(meta$condition_immunities,collapse=", ")))
+      if(identical(as.character(i$type[[1L]]%||%""),"glyph")){
+        parts<-c(parts,paste(tools::toTitleCase(as.character(meta$glyph_type%||%"glyph")),meta$rank%||%""),paste("Status",meta$status%||%"ready"),paste("Arcane Score",meta$arcane_score%||%"?"))
+        if(nzchar(as.character(meta$damage_type%||%"")))parts<-c(parts,paste(meta$damage%||%"",meta$damage_type,"damage",if(!is.null(meta$radius_ft))paste0("in ",meta$radius_ft,"ft")else""))
+        if(length(meta$resistance_types%||%character()))parts<-c(parts,paste0("Resists: ",paste(meta$resistance_types,collapse=", ")))
+        if(!is.null(meta$active_time_rounds))parts<-c(parts,paste(meta$active_time_rounds,"round(s)"))
+      }
       if(identical(as.character(meta$category%||%""),"food"))parts<-c(parts,paste0(meta$food_rations_remaining%||%(meta$ration_value%||%1)*(i$qty[[1L]]%||%1)," ration(s) · fresh through day ",meta$fresh_until_day%||%((validate_character(state$char)$meta$day%||%1)+(meta$shelf_life_days%||%3))))
       paste(parts,collapse=" • ")
     }

@@ -16,8 +16,10 @@ partyHudUI <- function(id) {
   max-height: calc(100vh - 125px);
   overflow-y: auto;
   overflow-x: hidden;
-  scrollbar-width: thin;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
+#", root_id, "::-webkit-scrollbar{width:0;height:0;display:none;}
 
     #", root_id, " .partyhud-shell{
       display: flex;

@@ -283,7 +283,7 @@ campUI <- function(id) {
       
 
       # Runes / Glyphcrafting
-      hotspot("go_runes", "Runes",
+      hotspot("go_runes", "Glyphs",
               "left: 42%; top: 72%; width: 12%; height: 14%;",
               "left: 42%; top: 72%;"),
       

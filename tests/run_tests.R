@@ -1297,4 +1297,10 @@ test("glyph rules cover rune, ward, and replenishable enhancement contracts", {
   stopifnot(test_env$glyph_zone_colour("Fire")=="#d63b2f",test_env$glyph_zone_colour("ward")=="#3a78c2")
 })
 
+test("manual magic types use the same damage vocabulary as glyphs", {
+  x <- list(build=list(), magic=list(types=c("Chemical","Thunder","Nuclear","Bogus")))
+  stopifnot(setequal(test_env$character_magic_types(x), c("Poison","Thunder","Radiant")))
+  stopifnot(all(test_env$GLYPH_DAMAGE_TYPES %in% c("Fire","Cold","Lightning","Acid","Poison","Force","Necrotic","Radiant","Psychic","Thunder")))
+})
+
 cat("\n", tests_run, " tests passed.\n", sep = "")

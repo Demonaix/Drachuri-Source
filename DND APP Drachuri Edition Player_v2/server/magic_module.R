@@ -177,17 +177,7 @@ magicTabServer <- function(
 ) {
   moduleServer(id, function(input, output, session) {
     
-    MAGIC_TYPES <- c(
-      "Mechanical",
-      "Natural",
-      "Fire",
-      "Cold",
-      "Lightning",
-      "Radiant",   # better than "Light"
-      "Necrotic",  # better than "Radiation"
-      "Chemical",
-      "Nuclear"
-    )
+    MAGIC_TYPES <- unique(c("Mechanical", "Natural", GLYPH_DAMAGE_TYPES))
     
     output$magic_types_ui <- renderUI({
       x <- validate_character(state$char)
@@ -195,7 +185,7 @@ magicTabServer <- function(
       selected <- character_magic_types(x)
       all_types <- MAGIC_TYPES
       
-      tags$div(
+      tagList(tags$div(
         class = "pill-row",
         
         lapply(all_types, function(type) {
@@ -210,8 +200,16 @@ magicTabServer <- function(
             tags$span(class="mono", type)
           )
         })
-      )
+      ), checkboxGroupInput(session$ns("manual_magic_types"), "Additional unlocked damage types", choices = GLYPH_DAMAGE_TYPES, selected = intersect(selected, GLYPH_DAMAGE_TYPES)))
     })
+
+    observeEvent(input$manual_magic_types, {
+      if (isTRUE(restoring())) return()
+      x <- validate_character(state$char)
+      x$magic <- x$magic %||% list()
+      x$magic$types <- intersect(as.character(input$manual_magic_types), GLYPH_DAMAGE_TYPES)
+      state$char <- validate_character(x)
+    }, ignoreInit = TRUE)
     
     # -------------------------
     # Guards / utilities
