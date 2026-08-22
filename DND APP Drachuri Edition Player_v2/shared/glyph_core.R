@@ -82,12 +82,18 @@ glyph_spend_resource <- function(char,resource,amount) {
   char
 }
 
-start_glyph_project <- function(character_id,glyph_type,rank,name,effect_description="",material=NULL,size_ft=NULL,enhancement_days=NULL,target_item_instance_id=NULL,damage_type=NULL,resistance_types=NULL) {
+start_glyph_project <- function(character_id,glyph_type,rank,name,effect_description="",material=NULL,size_ft=NULL,enhancement_days=NULL,target_item_instance_id=NULL,damage_type=NULL,resistance_types=NULL,quoted_hours=NULL,quoted_resource=NULL,quoted_cost=NULL) {
   glyph_type<-tolower(as.character(glyph_type));if(glyph_type=="enhancement")material<-NULL
   con<-get_db_connection();if(is.null(con))return(structure(list(),error="Database unavailable."));on.exit(release_db_connection(con),add=TRUE)
   tryCatch(DBI::dbWithTransaction(con,{
     blob<-DBI::dbGetQuery(con,"SELECT state_blob FROM character_blobs WHERE id::text=$1 FOR UPDATE",params=list(as.character(character_id)));if(!nrow(blob))stop("Character not found.")
-    char<-validate_character(unserialize(blob$state_blob[[1L]]));char<-hydrate_character_inventory_relational(con,char,as.character(character_id));spec<-glyph_project_spec(char,glyph_type,rank,material,size_ft,enhancement_days);inv<-inventory_normalize(char$inventory$items)
+    char<-validate_character(unserialize(blob$state_blob[[1L]]));char<-hydrate_character_inventory_relational(con,char,as.character(character_id));spec<-glyph_project_spec(char,glyph_type,rank,material,size_ft,enhancement_days)
+    if(!is.null(quoted_hours)||!is.null(quoted_resource)||!is.null(quoted_cost)){
+      if(is.null(quoted_hours)||is.null(quoted_resource)||is.null(quoted_cost))stop("The glyph quote is incomplete. Review the project again.")
+      if(!identical(as.character(quoted_resource),as.character(spec$resource)))stop("The glyph resource cost changed. Review the project again.")
+      spec$hours<-max(0,as.numeric(quoted_hours));spec$cost<-max(0L,as.integer(quoted_cost))
+    }
+    inv<-inventory_normalize(char$inventory$items)
     if(nzchar(spec$material)){if(is.na(glyph_inventory_index(inv,spec$material)))stop(paste0("Required material missing: ",spec$material,"."));inv<-glyph_consume_inventory_item(inv,spec$material)}
     if(!identical(tolower(spec$tool),"none")&&is.na(glyph_inventory_index(inv,spec$tool)))stop(paste0("Required tool missing: ",spec$tool," (tools are not consumed)."))
     if(tolower(glyph_type)=="enhancement"&&!nzchar(as.character(target_item_instance_id%||%"")))stop("Choose an owned item to enhance.")
