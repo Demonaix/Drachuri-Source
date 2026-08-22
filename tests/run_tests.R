@@ -55,7 +55,7 @@ load_functions(global_file, c(
 ))
 load_functions(relational_inventory_file, c("equipment_material_is_eligible", "inventory_item_category", "equipment_adjusted_value"))
 load_functions(enemy_generator_file, c("resolve_layered_damage_traits", "enemy_is_animal", "roll_enemy_mundane_loot", "roll_enemy_food_loot"))
-load_functions(glyph_core_file,c("glyph_character_level","glyph_material_requirement","glyph_counter_outcome","glyph_default_identity","normalize_weapon_enchantments"))
+load_functions(glyph_core_file,c("glyph_character_level","glyph_unlocked_ranks","glyph_mastery_level","glyph_material_requirement","glyph_counter_outcome","glyph_default_identity","normalize_weapon_enchantments"))
 load_functions(
   session_file,
   c(
@@ -1287,6 +1287,8 @@ test("glyph rules cover rune, ward, and replenishable enhancement contracts", {
   stopifnot(test_env$glyph_counter_outcome("ward",20,20)$outcome=="broken")
   identity<-test_env$glyph_default_identity("rune","Minor","Fire","Clay")
   stopifnot(identity$name=="Minor Fire Rune",grepl("1d6 Fire",identity$description,fixed=TRUE))
+  stopifnot(test_env$glyph_mastery_level(list(build=list(level=1L)))==1L)
+  stopifnot(identical(test_env$glyph_unlocked_ranks(list(build=list(level=10L))),c("Minor","Major","Arcane")))
 })
 
 cat("\n", tests_run, " tests passed.\n", sep = "")

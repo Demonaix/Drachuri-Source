@@ -267,7 +267,9 @@ armouryTabServer <- function(id, state, restoring, add_log, char_rev) {
       glyph_until <- suppressWarnings(as.integer(meta$glyph_active_until_day %||% NA_integer_))
       current_day <- suppressWarnings(as.integer(validate_character(state$char)$meta$day %||% 1L))
       glyph_active <- !is.na(glyph_until) && current_day <= glyph_until && nzchar(as.character(meta$glyph_damage %||% ""))
-      glyph_line <- if (glyph_active) paste0(" • ✧ ",meta$glyph_name%||%"Enhancement",": +",meta$glyph_damage," ",meta$glyph_damage_type," through day ",glyph_until) else if (!is.na(glyph_until)) " • Enhancement depleted" else ""
+      glyph_days_left<-if(!is.na(glyph_until))max(0L,glyph_until-current_day)else NA_integer_
+      glyph_rank<-as.character(meta$glyph_rank%||%"Minor")
+      glyph_line <- if (glyph_active) paste0(" • ✧ ",glyph_rank," ",meta$glyph_name%||%"Enhancement",": +",meta$glyph_damage," ",meta$glyph_damage_type," • ",glyph_days_left," day(s) remaining (through day ",glyph_until,")") else if (!is.na(glyph_until)) paste0(" • ✧ ",glyph_rank," enhancement DEPLETED — replenish in Glyphs") else ""
       hit_bonus <- weapon_hit_bonus(w)
       damage_modifier <- as.numeric(meta$material_damage_modifier %||% 0) + as.numeric(meta$quality_damage_modifier %||% 0)
       
