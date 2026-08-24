@@ -23,15 +23,19 @@ debugCombatUI <- function(id) {
           class = "combat-card",
           div(
             class = "combat-compact-header",
-            uiOutput(ns("header_ui")),
+            uiOutput(ns("header_ui"))
+          ),
+          div(
+            class = "combat-command-bar",
             div(
-            class = "combat-compact-actions",
+              class = "combat-command-actions",
               div(id=ns("combat_movement_group"),class="combat-action-group",span(class="combat-action-label","Movement"),uiOutput(ns("dash_button_ui")),uiOutput(ns("phase_move_ui"))),
               div(id=ns("combat_actions_group"),class="combat-action-group",span(class="combat-action-label","Actions"),actionButton(ns("open_standard_actions"),"Combat Actions",class="btn btn-default"),uiOutput(ns("level_two_actions_ui")),uiOutput(ns("level_three_actions_ui")),uiOutput(ns("class_actions_ui")),uiOutput(ns("rogue_combat_ui"))),
-              div(class="combat-action-group",span(class="combat-action-label","Glyphs"),uiOutput(ns("combat_runes_ui")),uiOutput(ns("combat_wards_ui"))),
-              div(id=ns("combat_turn_group"),class="combat-action-group",span(class="combat-action-label","Turn"),actionButton(ns("open_loot"),"Loot Defeated",class="btn btn-success"),actionButton(ns("override_action_budget"),"Override",class="btn btn-default"),actionButton(ns("end_turn"),"End Turn",class="btn btn-warning")),
-              div(id=ns("combat_status_group"),class="combat-action-status",uiOutput(ns("turn_actions_ui")),div(class="combat-turn-box",uiOutput(ns("turn_notice_ui"))))
-            )
+              div(class="combat-action-group",span(class="combat-action-label","Glyphs"),uiOutput(ns("combat_runes_ui")),uiOutput(ns("combat_wards_ui")))
+            ),
+            div(id=ns("combat_turn_group"),class="combat-command-turn",span(class="combat-action-label","Turn"),actionButton(ns("open_loot"),"Loot Defeated",class="btn btn-success"),actionButton(ns("override_action_budget"),"Override",class="btn btn-default"),actionButton(ns("end_turn"),"End Turn",class="btn btn-warning"))
+          ),
+          div(id=ns("combat_status_group"),class="combat-status-strip",uiOutput(ns("turn_actions_ui")),div(class="combat-turn-box",uiOutput(ns("turn_notice_ui")))
           )
         ),
         
