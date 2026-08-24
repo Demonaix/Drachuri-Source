@@ -94,10 +94,10 @@
 ========================================================= */
 
 .combat-compact-header{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:14px;
+  display:grid;
+  grid-template-columns:1fr;
+  align-items:start;
+  gap:10px;
   min-width:0;
 }
 
@@ -127,14 +127,16 @@
 .combat-compact-actions{
   display:flex;
   align-items:center;
-  justify-content:flex-end;
+  justify-content:flex-start;
   flex-wrap:wrap;
   gap:8px;
 }
 
-.combat-action-group,.combat-action-status{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:6px 8px;border:1px solid rgba(191,167,111,.35);border-radius:8px;background:rgba(255,255,255,.035)}
-.combat-action-label{font-size:10px;font-weight:900;letter-spacing:.09em;text-transform:uppercase;color:#bfa76f;margin-right:2px}
-.combat-action-status{border-color:transparent;background:transparent;padding-right:0}
+.combat-action-group,.combat-action-status{display:flex;align-items:center;flex-wrap:wrap;gap:5px;padding:0 10px 0 0;border:0;border-right:1px solid rgba(191,167,111,.4);background:transparent}
+.combat-action-label{font-size:9px;font-weight:900;letter-spacing:.09em;text-transform:uppercase;color:#876f3d;margin-right:2px}
+.combat-action-status{border-right:0;padding-right:0;margin-left:auto}
+.combat-compact-actions .btn{font-size:13px!important;line-height:1.2!important;padding:6px 10px!important;border-radius:7px!important;min-width:0!important}
+.combat-compact-actions .shiny-html-output{display:flex;align-items:center;gap:5px;margin:0}
 
 .combat-compact-actions .form-group{
   margin:0;
@@ -145,8 +147,10 @@
 }
 
 .combat-compact-actions .combat-turn-box{
-  min-width:170px;
+  min-width:0;
 }
+
+@media(max-width:1100px){.combat-action-status{margin-left:0}.combat-action-group{border-right:0}}
 
 .combat-top-grid{
   display:grid;

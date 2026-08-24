@@ -903,6 +903,16 @@ test("standard combat actions are wired to shared action and effect mechanics", 
   stopifnot(grepl('player_reaction_available(FALSE)', combat_source, fixed = TRUE))
 })
 
+test("control combat exposes the shared standard action set", {
+  control_file <- file.path(project_dir, "DND APP Drachuri Edition 2 Control", "control_app", "modules", "control_live_combat_module.R")
+  source_text <- paste(readLines(control_file, warn = FALSE), collapse = "\n")
+  required <- c("control_dash_action", "control_disengage_action", "control_hide_action",
+                "control_dodge_action", "control_help_action", "control_grapple_action",
+                "escape_grapple", "control_ready_action")
+  stopifnot(all(vapply(required, grepl, logical(1), x = source_text, fixed = TRUE)))
+  stopifnot(grepl("control_disengage()", source_text, fixed = TRUE))
+})
+
 test("combat UI exposes lifecycle, summon control, and module shortcuts", {
   player_file <- file.path(project_dir, "DND APP Drachuri Edition Player_v2", "server", "debug_combat_module.R")
   control_file <- file.path(project_dir, "DND APP Drachuri Edition 2 Control", "control_app", "modules", "control_live_combat_module.R")

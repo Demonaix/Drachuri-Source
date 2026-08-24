@@ -349,12 +349,11 @@ controlLiveCombatUI <- function(id) {
             class = "live-combat-actions",
             actionButton(ns("bind_encounter"), "Set Active Encounter", class = "btn btn-default"),
             actionButton(ns("start_combat"), "Start Combat", class = "btn btn-primary"),
+            actionButton(ns("open_combat_actions"), "Combat Actions", class = "btn btn-default"),
             actionButton(ns("end_turn"), "End Turn", class = "btn btn-warning"),
             actionButton(ns("end_combat"), "End Combat", class = "btn btn-danger"),
             selectInput(ns("target_id"), "Target", choices = c(), width = "220px"),
             actionButton(ns("attack_btn"), "Attack", class = "btn btn-danger")
-            ,actionButton(ns("escape_grapple"), "Escape Grapple", class = "btn btn-default")
-            ,checkboxInput(ns("movement_disengage"), "Disengage before moving", value = FALSE)
           )
         ),
         div(
@@ -448,6 +447,8 @@ controlLiveCombatServer <- function(
     
     pending_attack <- reactiveVal(NULL)
     turn_move_ft <- reactiveVal(0L)
+    control_dash <- reactiveVal(FALSE)
+    control_disengage <- reactiveVal(FALSE)
     reinforce_templates_rv <- reactiveVal(data.frame())
     audit_key <- reactiveVal(0L)
     audit_log_path <- file.path("logs", "control-audit.log")
@@ -1034,11 +1035,10 @@ limit 1
 
     observe({
       started <- isTRUE(combat_started())
-      lapply(c("end_turn", "end_combat", "attack_btn", "move_w", "move_e", "move_n", "move_s",
+      lapply(c("end_turn", "end_combat", "attack_btn", "open_combat_actions", "move_w", "move_e", "move_n", "move_s",
                "move_nw", "move_ne", "move_sw", "move_se"), function(id) {
         shinyjs::toggleState(id = id, condition = started)
       })
-      actor_id<-as.character(active_actor_id()%||%"");conditions<-if(started&&nzchar(actor_id))tryCatch(get_active_encounter_conditions(current_encounter_id(),actor_id),error=function(e)data.frame())else data.frame();grappled<-is.data.frame(conditions)&&nrow(conditions)&&any(tolower(as.character(conditions$condition%||%""))=="grappled");shinyjs::toggleState(id="escape_grapple",condition=started&&grappled)
     })
     
     encounter_events_r <- reactive({
@@ -2673,6 +2673,7 @@ limit 1
       }
       
       turn_move_ft(0L)
+      control_dash(FALSE);control_disengage(FALSE)
       ctrl$active_encounter_id <- eid
       
       first_name <- as.character(init_df$display_name[1] %||% "Unknown")
@@ -2697,6 +2698,7 @@ limit 1
       
       ok <- tryCatch(advance_turn(eid), error = function(e) FALSE)
       turn_move_ft(0L)
+      control_dash(FALSE);control_disengage(FALSE)
       
       if (isTRUE(ok)) {
         log_safe("Turn advanced.")
@@ -3034,6 +3036,48 @@ limit 1
     observeEvent(input$move_sw, { move_active_actor(-1L,  1L) }, ignoreInit = TRUE)
     observeEvent(input$move_se, { move_active_actor( 1L,  1L) }, ignoreInit = TRUE)
 
+    active_conditions <- function(actor_id=as.character(active_actor_id()%||%"")) {
+      rows<-tryCatch(get_active_encounter_conditions(current_encounter_id(),actor_id),error=function(e)data.frame())
+      if(!is.data.frame(rows)||!nrow(rows))return(character())
+      tolower(as.character(rows$condition%||%""))
+    }
+    active_is_engaged <- function() {
+      self<-active_actor_row();actors<-encounter_actors_r();if(!nrow(self)||!nrow(actors))return(FALSE)
+      opponents<-actors[as.character(actors$actor_type)!=as.character(active_actor_type()),,drop=FALSE]
+      hp_col<-intersect(c("hp_current","current_hp","hp"),names(opponents));if(length(hp_col))opponents<-opponents[suppressWarnings(as.numeric(opponents[[hp_col[[1L]]]]))>0,,drop=FALSE]
+      nrow(opponents)&&any(vapply(seq_len(nrow(opponents)),function(i)is_adjacent_5ft(self$x[[1L]],self$y[[1L]],opponents$x[[i]],opponents$y[[i]]),logical(1)))
+    }
+    add_control_condition <- function(condition,target_id=as.character(active_actor_id()),target_type=as.character(active_actor_type()),source="control_action",payload=list()) {
+      payload$condition<-condition
+      combat<-combat_state_r();round<-as.integer(combat$round_number[[1L]]%||%1L)
+      result<-create_encounter_effect(current_encounter_id(),target_type,target_id,source,"condition",payload=payload,target_actor_type=target_type,target_actor_id=target_id,starts_round=round,ends_round=round+1L)
+      ok<-is.data.frame(result)&&nrow(result)>0L;if(ok)bump_live();ok
+    }
+    observeEvent(input$open_combat_actions,{
+      if(!isTRUE(combat_started()))return(log_safe("Start combat before using combat actions.",type="warning"))
+      grappled<-"grappled"%in%active_conditions();engaged<-active_is_engaged()
+      showModal(modalDialog(title=paste("Combat actions —",get_actor_display_name(active_actor_id())),
+        p("These actions apply to the active combatant. Help and Grapple use the selected Target."),
+        footer=tagList(modalButton("Cancel"),actionButton(session$ns("control_dash_action"),"Dash"),actionButton(session$ns("control_disengage_action"),"Disengage",disabled=if(!engaged)"disabled"else NULL),actionButton(session$ns("control_hide_action"),"Hide"),actionButton(session$ns("control_dodge_action"),"Dodge"),actionButton(session$ns("control_help_action"),"Help"),actionButton(session$ns("control_grapple_action"),"Grapple"),actionButton(session$ns("escape_grapple"),"Escape Grapple",disabled=if(!grappled)"disabled"else NULL),actionButton(session$ns("control_ready_action"),"Ready"))))
+    },ignoreInit=TRUE)
+    observeEvent(input$control_dash_action,{control_dash(TRUE);removeModal();log_safe(paste0(get_actor_display_name(active_actor_id())," dashes; movement is doubled this turn."))},ignoreInit=TRUE)
+    observeEvent(input$control_disengage_action,{if(!active_is_engaged())return(log_safe("Disengage is unavailable because no opponent is adjacent.",type="warning"));control_disengage(TRUE);removeModal();log_safe(paste0(get_actor_display_name(active_actor_id())," disengages for this turn."))},ignoreInit=TRUE)
+    observeEvent(input$control_dodge_action,{ok<-add_control_condition("dodging");removeModal();log_safe(if(ok)paste0(get_actor_display_name(active_actor_id())," takes the Dodge action.")else"Dodge could not be applied.",type=if(ok)"message"else"error")},ignoreInit=TRUE)
+    observeEvent(input$control_ready_action,{ok<-add_control_condition("readied");removeModal();log_safe(if(ok)paste0(get_actor_display_name(active_actor_id())," readies an action.")else"Ready could not be applied.",type=if(ok)"message"else"error")},ignoreInit=TRUE)
+    observeEvent(input$control_hide_action,{
+      actor_id<-as.character(active_actor_id());actor_type<-as.character(active_actor_type());actor<-load_actor_for_combat(actor_id,actor_type);pos<-active_position_row();if(is.null(actor)||!nrow(pos))return(log_safe("This actor cannot make a hide check.",type="error"))
+      abilities<-actor$abilities%||%list();dex<-floor((as.integer(abilities$dex%||%10L)-10L)/2L);prof<-if(actor_type=="player"){rank<-as.character(actor$prof$skills$stealth%||%"None");pb<-character_proficiency_bonus(actor);if(rank=="Expertise")2L*pb else if(rank=="Proficient")pb else 0L}else 0L
+      tiles<-map_tiles_r();tile<-get_tile_row(tiles,pos$x[[1L]],pos$y[[1L]],current_map_id());terrain<-if(nrow(tile))as.character(tile$terrain[[1L]]%||%"grass")else"grass";light<-if(nrow(tile))as.character(tile$light[[1L]]%||%"full")else"full";dc<-combat_hide_dc(10L,terrain,light,FALSE,TRUE);roll<-sample.int(20L,1L)+dex+prof;end_encounter_condition(current_encounter_id(),actor_id,"hidden");ok<-roll>=dc&&add_control_condition("hidden",actor_id,actor_type,"hide",list(stealth_total=roll,hide_dc=dc,terrain=terrain,light=light));removeModal();bump_live();log_safe(paste0(if(ok)"Hidden"else"Spotted",": ",get_actor_display_name(actor_id)," rolled Stealth ",roll," vs DC ",dc," (",terrain,", ",light,")."),type=if(ok)"message"else"warning")
+    },ignoreInit=TRUE)
+    observeEvent(input$control_help_action,{
+      target<-as.character(input$target_id%||%"");self<-active_position_row();row<-get_actor_row(target);valid<-nzchar(target)&&nrow(self)&&nrow(row)&&as.character(row$actor_type[[1L]])!=as.character(active_actor_type())&&is_adjacent_5ft(self$x[[1L]],self$y[[1L]],row$x[[1L]],row$y[[1L]])
+      if(!valid)return(log_safe("Help requires a selected adjacent opponent to distract.",type="warning"));ok<-add_control_condition("helped_against",target,as.character(row$actor_type[[1L]]),"help");removeModal();log_safe(if(ok)paste0(get_actor_display_name(target)," is distracted for the next allied attack.")else"Help could not be applied.",type=if(ok)"message"else"error")
+    },ignoreInit=TRUE)
+    observeEvent(input$control_grapple_action,{
+      target<-as.character(input$target_id%||%"");self<-active_position_row();row<-get_actor_row(target);valid<-nzchar(target)&&nrow(self)&&nrow(row)&&as.character(row$actor_type[[1L]])!=as.character(active_actor_type())&&is_adjacent_5ft(self$x[[1L]],self$y[[1L]],row$x[[1L]],row$y[[1L]])
+      if(!valid)return(log_safe("Grapple requires a selected adjacent opponent.",type="warning"));attacker<-load_actor_for_combat(active_actor_id(),active_actor_type());defender<-load_actor_for_combat(target,as.character(row$actor_type[[1L]]));amod<-floor((as.integer(attacker$abilities$str%||%10L)-10L)/2L);dmod<-max(floor((as.integer(defender$abilities$str%||%10L)-10L)/2L),floor((as.integer(defender$abilities$dex%||%10L)-10L)/2L));a<-sample.int(20L,1L)+amod;d<-sample.int(20L,1L)+dmod;ok<-a>=d&&add_control_condition("grappled",target,as.character(row$actor_type[[1L]]),"grapple",list(grappler_id=as.character(active_actor_id())));removeModal();log_safe(paste0(if(ok)"Grapple succeeds"else"Grapple fails",": ",a," vs ",d,"."),type=if(ok)"message"else"warning")
+    },ignoreInit=TRUE)
+
     observeEvent(input$escape_grapple, {
       if (!isTRUE(combat_started())) return(log_safe("Start combat before using combat actions.",type="error"))
       actor_id<-as.character(active_actor_id()%||%"");actor_type<-as.character(active_actor_type()%||%"")
@@ -3042,7 +3086,7 @@ limit 1
       actor<-load_actor_for_combat(actor_id,actor_type);abilities<-actor$abilities%||%list();str_mod<-floor((as.integer(abilities$str%||%10L)-10L)/2L);dex_mod<-floor((as.integer(abilities$dex%||%10L)-10L)/2L);prof<-if(identical(actor_type,"player"))tryCatch(character_proficiency_bonus(actor),error=function(e)2L)else 2L
       escape_total<-sample.int(20L,1L)+max(str_mod,dex_mod)+as.integer(prof);hold_total<-sample.int(20L,1L)+2L;escaped<-escape_total>=hold_total&&isTRUE(end_encounter_condition(current_encounter_id(),actor_id,"grappled"))
       log_game_event(current_encounter_id(),"standard_action",actor_type,actor_id,payload=list(action="escape_grapple",escape_total=escape_total,hold_total=hold_total,success=escaped))
-      log_safe(paste0(if(escaped)"Escape succeeds" else "The grapple holds"," for ",get_actor_display_name(actor_id)," (",escape_total," vs ",hold_total,")."),type=if(escaped)"message"else"warning");if(escaped)bump_live()
+      removeModal();log_safe(paste0(if(escaped)"Escape succeeds" else "The grapple holds"," for ",get_actor_display_name(actor_id)," (",escape_total," vs ",hold_total,")."),type=if(escaped)"message"else"warning");if(escaped)bump_live()
     },ignoreInit=TRUE)
     
     observeEvent(input$map_target_click, {
@@ -3062,7 +3106,8 @@ limit 1
       target_x <- as.integer(path$x[[nrow(path)]]); target_y <- as.integer(path$y[[nrow(path)]])
       speed_ft <- get_actor_speed_ft(actor_id, actor_type)
       if (is.na(speed_ft) || speed_ft < 0L) speed_ft <- 30L
-      if (as.integer(turn_move_ft() %||% 0L) + total_ft > speed_ft) {
+      allowance_ft<-speed_ft*if(isTRUE(control_dash()))2L else 1L
+      if (as.integer(turn_move_ft() %||% 0L) + total_ft > allowance_ft) {
         log_safe("The actual route exceeds this actor's remaining movement.", type = "error")
         return(FALSE)
       }
@@ -3079,7 +3124,7 @@ limit 1
       }
       if (length(rune_entries)) for (entry in rune_entries) log_safe(paste0(entry$name, " strikes ", get_actor_display_name(actor_id), " for ", entry$damage, " ", entry$damage_type, " damage."), type = "warning")
 
-      if (!isTRUE(input$movement_disengage)) {
+      if (!isTRUE(control_disengage())) {
         parts <- lapply(2:nrow(path), function(path_i) tryCatch(get_opportunity_attackers(
           eid, actor_id, actor_type, path$x[[path_i - 1L]], path$y[[path_i - 1L]], path$x[[path_i]], path$y[[path_i]]
         ), error = function(e) data.frame()))
@@ -3096,7 +3141,6 @@ limit 1
         path = lapply(seq_len(nrow(path)), function(i) list(x = path$x[[i]], y = path$y[[i]]))
       ))
       turn_move_ft(as.integer(turn_move_ft() %||% 0L) + total_ft)
-      if (isTRUE(input$movement_disengage)) updateCheckboxInput(session, "movement_disengage", value = FALSE)
       pending_move(NULL); bump_positions(); bump_events(); bump_map_visual()
       log_safe(paste0("Moved along the highlighted path to (", target_x, ", ", target_y, "). Cost: ", total_ft, " ft."))
       TRUE
@@ -3126,7 +3170,8 @@ limit 1
       actor_id <- as.character(active_actor_id() %||% ""); actor_type <- as.character(active_actor_type() %||% "player")
       speed_ft <- suppressWarnings(as.integer(get_actor_speed_ft(actor_id, actor_type)))
       if (is.na(speed_ft) || speed_ft < 0L) speed_ft <- 30L
-      remaining_ft <- max(0L, speed_ft - as.integer(turn_move_ft() %||% 0L))
+      allowance_ft <- speed_ft * if (isTRUE(control_dash())) 2L else 1L
+      remaining_ft <- max(0L, allowance_ft - as.integer(turn_move_ft() %||% 0L))
       path_result <- combat_grid_shortest_path(
         map_tiles_r(), map_occupants_r(), old_x, old_y, target_x, target_y,
         map_id = current_map_id(), exclude_actor_id = actor_id, max_cost_ft = remaining_ft
