@@ -75,6 +75,7 @@ function setupPicking(state){
   });
 }
 function clearGroup(group){for(const child of [...group.children]){group.remove(child);disposeObject(child);}}
+function makeTextTexture(state,text){const key=`canvas-label:${text}`;if(state.textures[key])return state.textures[key];const canvas=document.createElement("canvas");canvas.width=768;canvas.height=150;const c=canvas.getContext("2d");c.clearRect(0,0,canvas.width,canvas.height);c.fillStyle="#291c12";c.font="bold 104px Georgia";c.textAlign="center";c.textBaseline="middle";c.fillText(text,canvas.width/2,canvas.height/2+5);const tex=new THREE.CanvasTexture(canvas);tex.colorSpace=THREE.SRGBColorSpace;state.textures[key]=tex;return tex;}
 function buildTabletop(state,rows,xs,ys){
   const bottom=-3.05,tileMap=state.tileByKey,edges=[];
   for(const row of rows){const x=Number(row.x),y=Number(row.y),top=Math.max(elevation(row),-.05);for(const [dx,dy,rot] of [[-1,0,Math.PI/2],[1,0,Math.PI/2],[0,-1,0],[0,1,0]])if(!tileMap.has(`${x+dx},${y+dy}`))edges.push({x:x-state.centerX+dx*.5,z:y-state.centerY+dy*.5,top,rot});}
@@ -97,6 +98,9 @@ function buildTabletop(state,rows,xs,ys){
   const door=new THREE.Mesh(new THREE.PlaneGeometry(doorW,doorH),new THREE.MeshLambertMaterial({color:0xffffff,map:texture(state,"tavern_door_oak.jpg",1,1),side:THREE.DoubleSide}));door.position.set(doorX,floorY+doorH/2,frontZ-.19);state.terrainRoot.add(door);
   const ceiling=new THREE.Mesh(new THREE.BoxGeometry(roomWidth,.28,roomDepth),ceilingMat);ceiling.position.y=floorY+wallH+.14;ceiling.receiveShadow=true;state.terrainRoot.add(ceiling);
   const rafterY=floorY+wallH-.42,rafterCount=Math.max(5,Math.min(11,Math.round(roomDepth/6)));for(let i=0;i<rafterCount;i++){const z=-roomDepth/2+.9+i*(roomDepth-1.8)/Math.max(1,rafterCount-1),beam=new THREE.Mesh(new THREE.BoxGeometry(roomWidth-.5,.32,.38),darkWood);beam.position.set(0,rafterY,z);beam.castShadow=true;state.terrainRoot.add(beam);}for(const x of [-roomWidth/2+.32,roomWidth/2-.32]){const beam=new THREE.Mesh(new THREE.BoxGeometry(.4,.44,roomDepth-.5),darkWood);beam.position.set(x,rafterY-.08,0);beam.castShadow=true;state.terrainRoot.add(beam);}
+  const dracnosW=3.6,dracnosH=5.4,dracnosZ=-roomDepth*.18,dracnosY=floorY+8.5,dracnosX=-roomWidth/2+.19,dracnos=new THREE.Mesh(new THREE.PlaneGeometry(dracnosW,dracnosH),new THREE.MeshBasicMaterial({map:texture(state,"wanted_dracnos.png",1,1),side:THREE.DoubleSide}));dracnos.rotation.y=Math.PI/2;dracnos.position.set(dracnosX,dracnosY,dracnosZ);state.terrainRoot.add(dracnos);
+  const nameLabel=new THREE.Mesh(new THREE.PlaneGeometry(3,.58),new THREE.MeshBasicMaterial({map:makeTextTexture(state,"DRACNOS"),transparent:true,side:THREE.DoubleSide,depthWrite:false}));nameLabel.rotation.y=Math.PI/2;nameLabel.position.set(dracnosX+.025,dracnosY-dracnosH*.405,dracnosZ);state.terrainRoot.add(nameLabel);
+  for(const [dy,dz] of [[dracnosH*.43,-dracnosW*.42],[dracnosH*.43,dracnosW*.42],[-dracnosH*.43,-dracnosW*.42],[-dracnosH*.43,dracnosW*.42]]){const pin=new THREE.Mesh(new THREE.SphereGeometry(.065,8,6),new THREE.MeshBasicMaterial({color:0x3d291c}));pin.position.set(dracnosX+.045,dracnosY+dy,dracnosZ+dz);state.terrainRoot.add(pin);}
 }
 function buildSurfaceGeometry(items,tileMap,centerX,centerY){
   const positions=[],uvs=[],indices=[];

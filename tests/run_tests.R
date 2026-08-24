@@ -1546,6 +1546,16 @@ test("lean 3D tavern is enclosed with a door, ceiling, rafters and camera bounds
   stopifnot(grepl("controls.maxDistance", js, fixed = TRUE))
 })
 
+test("Dracnos wanted sketch is pinned away from the live HUD wall", {
+  js <- paste(readLines(file.path("DND APP Drachuri Edition Player_v2", "www", "js", "combat3d_lean.js"), warn = FALSE), collapse = "\n")
+  poster <- file.path("DND APP Drachuri Edition Player_v2", "www", "assets", "textures", "wanted_dracnos.png")
+  stopifnot(file.exists(poster), file.info(poster)$size > 100000)
+  stopifnot(grepl("wanted_dracnos.png", js, fixed = TRUE))
+  stopifnot(grepl('makeTextTexture(state,"DRACNOS")', js, fixed = TRUE))
+  stopifnot(grepl("dracnosX=-roomWidth/2", js, fixed = TRUE))
+  stopifnot(grepl("dracnos.rotation.y=Math.PI/2", js, fixed = TRUE))
+})
+
 test("control encounter workflow uses named selectors", {
   live <- paste(readLines(file.path("DND APP Drachuri Edition 2 Control", "control_app", "modules", "control_live_combat_module.R"), warn = FALSE), collapse = "\n")
   setup <- paste(readLines(file.path("DND APP Drachuri Edition 2 Control", "control_app", "modules", "control_encounter_setup_module.R"), warn = FALSE), collapse = "\n")
