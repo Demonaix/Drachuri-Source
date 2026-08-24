@@ -60,7 +60,7 @@ load_functions(global_file, c(
   "combat_attack_geometry", "combat_hide_dc"
 ))
 load_functions(relational_inventory_file, c("equipment_material_is_eligible", "inventory_item_category", "equipment_adjusted_value"))
-load_functions(enemy_generator_file, c("enemy_special_attack", "enemy_attack_catalog", "resolve_layered_damage_traits", "enemy_is_animal", "roll_enemy_mundane_loot", "roll_enemy_food_loot"))
+load_functions(enemy_generator_file, c("enemy_special_attack", "enemy_attack_catalog", "resolve_layered_damage_traits", "enemy_is_animal", "roll_enemy_mundane_loot", "roll_enemy_food_loot", "npc_feature_definition", "npc_feature_catalogue"))
 load_functions(glyph_core_file,c("GLYPH_PHYSICAL_TYPES","glyph_character_level","glyph_unlocked_ranks","glyph_mastery_level","glyph_material_requirement","glyph_counter_outcome","glyph_default_identity","normalize_weapon_enchantments","validate_ward_resistances","glyph_zone_colour"))
 load_functions(
   session_file,
@@ -1409,6 +1409,17 @@ test("Annwn NPC attacks retain lore, range and effect contracts", {
   stopifnot(attacks$blood_feed$requires=="target_grappled_restrained_or_incapacitated",attacks$blood_feed$heal_fraction==1)
   stopifnot(attacks$great_beast_grab$on_hit_condition=="grappled")
   stopifnot(attacks$integrated_projectile$lore_status=="provisional")
+})
+
+test("Annwn NPC features replace generic traits with layered lore-safe definitions", {
+  features<-test_env$npc_feature_catalogue()
+  stopifnot(!any(c("Barbarian","Speedy","Boss","Fae","Animal","Armoured","Brute","Archer","Spellcaster","Regenerator")%in%names(features)))
+  stopifnot(features$mandred_sorcery$category=="magical_discipline")
+  stopifnot(features$necromancy$requires_features=="mandred_sorcery")
+  stopifnot(features$cythraul_restoration$compatible_pools=="cythraul")
+  stopifnot(features$boss_encounter$category=="encounter_modifier",!features$boss_encounter$enabled_for_generation)
+  attacks<-test_env$enemy_attack_catalog()
+  stopifnot(!length(unique(unlist(lapply(features,function(x)setdiff(x$attacks,names(attacks)))))))
 })
 
 test("glyph rules cover rune, ward, and replenishable enhancement contracts", {

@@ -6,14 +6,17 @@ npc_pool_rule <- function(item_id, chance=100, group="", required=FALSE) {
 npc_pool_attack_rule <- function(attack_id, chance=100, group="", required=FALSE) {
   list(item_id=attack_id,chance=as.numeric(chance),group=group,required=isTRUE(required))
 }
+npc_pool_feature_rule <- function(feature_id, chance=100, group="", required=FALSE) {
+  list(item_id=feature_id,chance=as.numeric(chance),group=group,required=isTRUE(required))
+}
 
 npc_default_pool_catalogue <- function() {
-  catalogue_version <- 6L
+  catalogue_version <- 7L
   rule <- npc_pool_rule
   make_pool <- function(id,name,base_type,features=character(),rules=list(),abilities=NULL,
                         resistances=NULL,immunities=NULL,vulnerabilities=NULL,condition_immunities=NULL,
                         foundation="",status="Core",description="",restriction="",hp_max=NULL,ac=NULL,
-                        movement_speed=NULL,gold=NULL,attack_ids=NULL,attack_rules=list()) {
+                        movement_speed=NULL,gold=NULL,attack_ids=NULL,attack_rules=list(),feature_rules=list()) {
     base <- enemy_generator_types()[[base_type]]
     list(
       id=id,name=name,base_type=base_type,features=features,catalogue_version=catalogue_version,
@@ -23,85 +26,86 @@ npc_default_pool_catalogue <- function() {
       vulnerabilities=vulnerabilities %||% base$vulnerabilities %||% character(),
       condition_immunities=condition_immunities %||% base$condition_immunities %||% character(),
       rules=rules,foundation=foundation,status=status,description=description,restriction=restriction,
-      hp_max=hp_max,ac=ac,movement_speed=movement_speed,gold=gold,attack_ids=attack_ids,attack_rules=attack_rules
+      hp_max=hp_max,ac=ac,movement_speed=movement_speed,gold=gold,attack_ids=attack_ids,attack_rules=attack_rules,
+      feature_rules=feature_rules
     )
   }
   list(
     make_pool("custom","Custom Enemy","Custom",foundation="Bespoke",description="A blank mechanical foundation for an authored enemy."),
     make_pool("oldrin_civilian","Oldrin Civilian","Custom",rules=list(rule("club",65,"civilian_weapon",TRUE),rule("dagger",35,"civilian_weapon",TRUE)),
       abilities=c(str=9L,dex=10L,con=10L,int=10L,cha=10L,bld_str=10L),foundation="Oldrin humanoid",
-      description="An ordinary inhabitant of a town, village, farm, estate or road.",restriction="Occupation should shape skills and possessions.",hp_max=7L,ac=10L,gold=c(0L,5L),attack_ids="unarmed_strike",attack_rules=list(npc_pool_attack_rule("desperate_shove",30))),
+      description="An ordinary inhabitant of a town, village, farm, estate or road.",restriction="Occupation should shape skills and possessions.",hp_max=7L,ac=10L,gold=c(0L,5L),attack_ids="unarmed_strike",attack_rules=list(npc_pool_attack_rule("desperate_shove",30)),feature_rules=list(npc_pool_feature_rule("farmer",25,"civilian_occupation",TRUE),npc_pool_feature_rule("labourer",20,"civilian_occupation",TRUE),npc_pool_feature_rule("craftsperson",15,"civilian_occupation",TRUE),npc_pool_feature_rule("merchant",10,"civilian_occupation",TRUE),npc_pool_feature_rule("servant_attendant",12,"civilian_occupation",TRUE),npc_pool_feature_rule("scribe_clerk",8,"civilian_occupation",TRUE),npc_pool_feature_rule("traveller",10,"civilian_occupation",TRUE))),
     make_pool("oldrin_bandit_raider","Bandit Raider","Bandit",rules=list(
       rule("leather_armor"),rule("shortsword",70,"sidearm",TRUE),rule("dagger",30,"sidearm",TRUE),
       rule("shortbow",45),rule("healing_draught",5)),foundation="Usually Oldrin humanoid",
-      description="A criminal, deserter, displaced person or opportunistic raider.",restriction="Bandit is an occupation, never a species or fixed faction.",attack_rules=list(npc_pool_attack_rule("dirty_kick",30),npc_pool_attack_rule("pocket_sand",20))),
-    make_pool("forest_outlaw","Forest Outlaw","Bandit",c("Archer"),list(
+      description="A criminal, deserter, displaced person or opportunistic raider.",restriction="Bandit is an occupation, never a species or fixed faction.",attack_rules=list(npc_pool_attack_rule("dirty_kick",30),npc_pool_attack_rule("pocket_sand",20)),feature_rules=list(npc_pool_feature_rule("dirty_fighter",35),npc_pool_feature_rule("ambusher",25),npc_pool_feature_rule("reckless_fighter",20),npc_pool_feature_rule("skirmisher_training",20))),
+    make_pool("forest_outlaw","Forest Outlaw","Bandit",c("wilderness_survivor"),list(
       rule("padded_armor",65,"outlaw_armour",TRUE),rule("studded_leather",35,"outlaw_armour",TRUE),
       rule("shortbow"),rule("dagger",75),rule("healing_draught",8)),foundation="Usually Oldrin humanoid",
-      description="A fugitive hunter or criminal living beyond House authority.",restriction="Do not automatically assign a political faction."),
-    make_pool("oldrin_hunter","Oldrin Hunter / Scout","Bandit",c("Archer"),list(
+      description="A fugitive hunter or criminal living beyond House authority.",restriction="Do not automatically assign a political faction.",feature_rules=list(npc_pool_feature_rule("trained_archer",70),npc_pool_feature_rule("ambusher",45),npc_pool_feature_rule("trap_setter",35),npc_pool_feature_rule("scout_training",35))),
+    make_pool("oldrin_hunter","Oldrin Hunter / Scout","Bandit",c("tracker","wilderness_survivor"),list(
       rule("leather_armor"),rule("shortbow",70,"hunter_weapon",TRUE),rule("spear",30,"hunter_weapon",TRUE),rule("dagger")),
-      foundation="Oldrin humanoid",description="A hunter, tracker, messenger or wilderness scout.",gold=c(1L,8L)),
-    make_pool("town_guard","Town Guard","Guard",rules=list(
+      foundation="Oldrin humanoid",description="A hunter, tracker, messenger or wilderness scout.",gold=c(1L,8L),feature_rules=list(npc_pool_feature_rule("trained_archer",70),npc_pool_feature_rule("scout_training",45),npc_pool_feature_rule("ambusher",20))),
+    make_pool("town_guard","Town Guard","Guard",c("guard_training"),rules=list(
       rule("chain_shirt"),rule("spear"),rule("shield",65),rule("dagger",25),rule("healing_draught",5)),
-      foundation="Predominantly Oldrin humanoid",description="Local armed authority in an Oldrin settlement.",restriction="Allegiance must match the settlement or House."),
-    make_pool("house_soldier","House Soldier","Guard",rules=list(
+      foundation="Predominantly Oldrin humanoid",description="Local armed authority in an Oldrin settlement.",restriction="Allegiance must match the settlement or House.",feature_rules=list(npc_pool_feature_rule("shield_training",55),npc_pool_feature_rule("spear_training",70),npc_pool_feature_rule("veteran_training",8),npc_pool_feature_rule("officer",3))),
+    make_pool("house_soldier","House Soldier","Guard",c("soldier_training"),rules=list(
       rule("scale_mail",60,"soldier_armour",TRUE),rule("chain_mail",40,"soldier_armour",TRUE),
       rule("spear",60,"soldier_weapon",TRUE),rule("shortsword",40,"soldier_weapon",TRUE),rule("shield",70)),
       abilities=c(str=14L,dex=12L,con=14L,int=10L,cha=10L,bld_str=10L),foundation="Oldrin humanoid",
-      description="A professional soldier serving one of Annwn's Great Houses.",restriction="House allegiance is mandatory metadata.",hp_max=28L,ac=16L,gold=c(3L,15L)),
-    make_pool("veteran_house_guard","Veteran House Guard","Guard",c("Boss","Armoured"),list(
+      description="A professional soldier serving one of Annwn's Great Houses.",restriction="House allegiance is mandatory metadata.",hp_max=28L,ac=16L,gold=c(3L,15L),feature_rules=list(npc_pool_feature_rule("formation_training",60),npc_pool_feature_rule("shield_training",45),npc_pool_feature_rule("spear_training",45),npc_pool_feature_rule("veteran_training",10),npc_pool_feature_rule("officer",5))),
+    make_pool("veteran_house_guard","Veteran House Guard","Guard",c("guard_training","veteran_training"),list(
       rule("chain_mail"),rule("spear",45,"guard_weapon",TRUE),rule("shortsword",55,"guard_weapon",TRUE),
       rule("shield",80),rule("healing_draught",15)),foundation="Usually Oldrin humanoid",status="Uncommon / elite",
-      description="An experienced retainer trusted with nobles, estates and strategic sites.",restriction="Do not randomly make them sorcerers."),
-    make_pool("mercenary_soldier","Mercenary Soldier","Guard",rules=list(
+      description="An experienced retainer trusted with nobles, estates and strategic sites.",restriction="Do not randomly make them sorcerers.",feature_rules=list(npc_pool_feature_rule("bodyguard_training",40),npc_pool_feature_rule("formation_training",60),npc_pool_feature_rule("officer",20),npc_pool_feature_rule("elite_combatant",35))),
+    make_pool("mercenary_soldier","Mercenary Soldier","Guard",c("professional_mercenary"),rules=list(
       rule("hide_armor",35,"mercenary_armour",TRUE),rule("scale_mail",65,"mercenary_armour",TRUE),
       rule("spear",40,"mercenary_weapon",TRUE),rule("shortsword",35,"mercenary_weapon",TRUE),
       rule("battleaxe",25,"mercenary_weapon",TRUE),rule("shield",50),rule("healing_draught",10)),
-      foundation="Predominantly Oldrin humanoid",description="A professional fighter whose allegiance is contractual.",restriction="No universal mercenary faction or culture."),
-    make_pool("oldrin_sorcerer","Oldrin Sorcerer","Custom",c("Spellcaster"),list(rule("longsword",80,"sorcerer_sidearm",TRUE),rule("dagger",20,"sorcerer_sidearm",TRUE),rule("healing_draught",20)),
+      foundation="Predominantly Oldrin humanoid",description="A professional fighter whose allegiance is contractual.",restriction="No universal mercenary faction or culture.",feature_rules=list(npc_pool_feature_rule("skirmisher_training",30),npc_pool_feature_rule("dirty_fighter",20),npc_pool_feature_rule("campaign_hardened",15),npc_pool_feature_rule("veteran_training",10),npc_pool_feature_rule("leader",5))),
+    make_pool("oldrin_sorcerer","Oldrin Sorcerer","Custom",c("mandred_sorcery"),list(rule("longsword",80,"sorcerer_sidearm",TRUE),rule("dagger",20,"sorcerer_sidearm",TRUE),rule("healing_draught",20)),
       abilities=c(str=9L,dex=12L,con=12L,int=15L,cha=13L,bld_str=16L),foundation="Oldrin humanoid",status="Core / uncommon",
-      description="An Oldrin with magical capability connected to Annwn.",restriction="Sorcerer is not a species and does not imply blood drinking.",hp_max=25L,ac=12L,gold=c(5L,50L),attack_ids="unarmed_strike",attack_rules=list(npc_pool_attack_rule("mandred_push",30),npc_pool_attack_rule("mandred_grasp",20))),
-    make_pool("oldrin_necromancer","Oldrin Necromancer","Custom",c("Spellcaster"),list(
+      description="An Oldrin with magical capability connected to Annwn.",restriction="Sorcerer is not a species and does not imply blood drinking.",hp_max=25L,ac=12L,gold=c(5L,50L),attack_ids="unarmed_strike",attack_rules=list(npc_pool_attack_rule("mandred_push",30),npc_pool_attack_rule("mandred_grasp",20)),feature_rules=list(npc_pool_feature_rule("mandred_control",50,"sorcerous_discipline"),npc_pool_feature_rule("alchemy",15,"sorcerous_discipline"),npc_pool_feature_rule("tinkering",15,"sorcerous_discipline"),npc_pool_feature_rule("necromancy",10,"sorcerous_discipline"))),
+    make_pool("oldrin_necromancer","Oldrin Necromancer","Custom",c("mandred_sorcery","necromancy"),list(
       rule("dagger"),rule("bone_fragment",75),rule("healing_draught",20)),
       abilities=c(str=8L,dex=12L,con=13L,int=16L,cha=12L,bld_str=17L),foundation="Oldrin sorcerer",status="Core / rare",
-      description="A sorcerer specialising in necrotic magic and undead.",restriction="Necromancy does not automatically imply Abyss worship.",hp_max=34L,ac=13L,gold=c(10L,80L),attack_ids="withering_touch",attack_rules=list(npc_pool_attack_rule("grave_bolt",100),npc_pool_attack_rule("spectral_grasp",35),npc_pool_attack_rule("life_drain",20))),
+      description="A sorcerer specialising in necrotic magic and undead.",restriction="Necromancy does not automatically imply Abyss worship.",hp_max=34L,ac=13L,gold=c(10L,80L),attack_ids="withering_touch",attack_rules=list(npc_pool_attack_rule("grave_bolt",100),npc_pool_attack_rule("spectral_grasp",35),npc_pool_attack_rule("life_drain",20)),feature_rules=list(npc_pool_feature_rule("undead_controller",60),npc_pool_feature_rule("life_drain_adept",15))),
     make_pool("fae_wanderer","Fae Wanderer","Custom",rules=list(rule("club",30,"wanderer_weapon",TRUE),rule("dagger",70,"wanderer_weapon",TRUE)),
       abilities=c(str=10L,dex=15L,con=11L,int=13L,cha=14L,bld_str=14L),foundation="Tylwyth Teg / fae",
       description="A traveller, displaced fae, scout or solitary survivor.",restriction="Do not default fae to whimsical tricksters or blood drinkers.",hp_max=18L,ac=13L,gold=c(0L,4L),attack_ids="unarmed_strike"),
-    make_pool("fae_hunter","Fae Hunter / Scout","Bandit",c("Archer","Speedy"),list(
+    make_pool("fae_hunter","Fae Hunter / Scout","Bandit",c("fae_hunter_training"),list(
       rule("leather_armor"),rule("shortbow",65,"fae_hunter_weapon",TRUE),rule("spear",35,"fae_hunter_weapon",TRUE),rule("dagger")),
       abilities=c(str=12L,dex=16L,con=12L,int=12L,cha=12L,bld_str=15L),foundation="Tylwyth Teg / fae",
-      description="A fae hunter or scout surviving in hostile Oldrin territory.",hp_max=26L,ac=14L,gold=c(0L,4L)),
-    make_pool("fae_warrior","Fae Warrior","Bandit",rules=list(
+      description="A fae hunter or scout surviving in hostile Oldrin territory.",hp_max=26L,ac=14L,gold=c(0L,4L),feature_rules=list(npc_pool_feature_rule("fae_survivor",70),npc_pool_feature_rule("trained_archer",75),npc_pool_feature_rule("tracker",60),npc_pool_feature_rule("ambusher",45),npc_pool_feature_rule("old_instincts",15))),
+    make_pool("fae_warrior","Fae Warrior","Bandit",c("fae_martial_training"),rules=list(
       rule("studded_leather"),rule("spear",55,"fae_weapon",TRUE),rule("shortsword",45,"fae_weapon",TRUE),rule("shortbow",50),rule("shield",35)),
       abilities=c(str=14L,dex=15L,con=13L,int=12L,cha=13L,bld_str=15L),foundation="Tylwyth Teg / fae",
-      description="An armed Tylwyth Teg combatant.",restriction="Do not automatically make fae warriors Cythraul.",hp_max=36L,ac=15L,gold=c(0L,6L)),
-    make_pool("cythraul","Cythraul","Custom",c("Boss","Spellcaster"),list(
+      description="An armed Tylwyth Teg combatant.",restriction="Do not automatically make fae warriors Cythraul.",hp_max=36L,ac=15L,gold=c(0L,6L),feature_rules=list(npc_pool_feature_rule("fae_survivor",40),npc_pool_feature_rule("spear_training",50),npc_pool_feature_rule("veteran_training",15),npc_pool_feature_rule("old_instincts",20))),
+    make_pool("cythraul","Cythraul","Custom",c("cythraul_restoration"),list(
       rule("shortsword",45,"cythraul_weapon",TRUE),rule("spear",30,"cythraul_weapon",TRUE),rule("dagger",25,"cythraul_weapon",TRUE)),
       abilities=c(str=15L,dex=17L,con=16L,int=14L,cha=16L,bld_str=19L),foundation="Magically altered fae",status="Restricted / rare",
       description="A fae who restored lost magical power through blood drinking after the Tears of Time.",
-      restriction="Generate only deliberately. Never treat as a generic vampire, cultist or automatically evil addict.",hp_max=65L,ac=17L,gold=c(0L,20L),attack_ids="mandred_bolt",attack_rules=list(npc_pool_attack_rule("blood_feed",70))),
+      restriction="Generate only deliberately. Never treat as a generic vampire, cultist or automatically evil addict.",hp_max=65L,ac=17L,gold=c(0L,20L),attack_ids="mandred_bolt",attack_rules=list(npc_pool_attack_rule("blood_feed",70)),feature_rules=list(npc_pool_feature_rule("blood_fuelled_recovery",40))),
     make_pool("restless_dead","Restless Dead","Undead",rules=list(
       rule("ring_mail",35),rule("bone_fragment"),rule("spear",55,"dead_weapon",TRUE),rule("dagger",45,"dead_weapon",TRUE)),
       foundation="Undead",description="A corpse or spirit disturbed through necromantic influence.",restriction="Do not generate intelligent undead without an explicit subtype.",attack_ids="dead_grasp"),
-    make_pool("necromantic_servitor","Necromantic Servitor","Undead",c("Regenerator"),list(
+    make_pool("necromantic_servitor","Necromantic Servitor","Undead",c("bound_servitor"),list(
       rule("ring_mail",45),rule("spear",65,"servitor_weapon",TRUE),rule("shortsword",35,"servitor_weapon",TRUE),rule("bone_fragment")),
       foundation="Deliberately raised undead",description="An undead guard or minion controlled by a sorcerer.",
-      restriction="A plausible necromantic creator or history should exist.",hp_max=25L,attack_ids="servitor_strike",attack_rules=list(npc_pool_attack_rule("restraining_grip",40))),
-    make_pool("llechwyr","Llechwyr","Custom",c("Speedy","Spellcaster"),rules=list(),
+      restriction="A plausible necromantic creator or history should exist.",hp_max=25L,attack_ids="servitor_strike",attack_rules=list(npc_pool_attack_rule("restraining_grip",40)),feature_rules=list(npc_pool_feature_rule("guardian_servitor",20),npc_pool_feature_rule("restraining_servitor",30))),
+    make_pool("llechwyr","Llechwyr","Custom",c("shadow_stalker"),rules=list(),
       abilities=c(str=13L,dex=17L,con=14L,int=8L,cha=8L,bld_str=16L),foundation="Shadow creature",status="Restricted supernatural",
       description="An established shadow-creature of Annwn: hunter, omen and supernatural threat.",restriction="Never use as ordinary roadside wildlife; no automatic radiant vulnerability.",
-      hp_max=48L,ac=15L,movement_speed=40L,gold=c(0L,0L),attack_ids="shadow_strike",attack_rules=list(npc_pool_attack_rule("shadow_pounce",35),npc_pool_attack_rule("drag_into_darkness",30))),
+      hp_max=48L,ac=15L,movement_speed=40L,gold=c(0L,0L),attack_ids="shadow_strike",attack_rules=list(npc_pool_attack_rule("shadow_pounce",35),npc_pool_attack_rule("drag_into_darkness",30)),feature_rules=list(npc_pool_feature_rule("patient_lurker",40),npc_pool_feature_rule("shadow_pouncer",30),npc_pool_feature_rule("dragging_hunter",20))),
     make_pool("wild_animal","Wild Animal","Animal",rules=list(rule("animal_pelt")),foundation="Animal",
       description="Normal fauna of Annwn.",restriction="Keep mundane animals mundane; select attacks that fit its anatomy.",attack_ids=character(),attack_rules=list(npc_pool_attack_rule("animal_bite",50,"animal_primary",TRUE),npc_pool_attack_rule("animal_claw",50,"animal_primary",TRUE))),
-    make_pool("great_beast","Great Beast","Animal",c("Brute"),list(rule("bear_pelt")),
+    make_pool("great_beast","Great Beast","Animal",c("massive_beast"),list(rule("bear_pelt")),
       abilities=c(str=18L,dex=13L,con=17L,int=3L,cha=7L,bld_str=11L),foundation="Exceptional natural animal",status="Core / uncommon",
       description="A particularly large, old or dangerous natural animal.",restriction="A generator category, not necessarily an in-world taxonomic term; check anatomy before saving.",hp_max=55L,ac=14L,gold=c(0L,0L),attack_ids=character(),attack_rules=list(npc_pool_attack_rule("great_beast_maul",60,"beast_primary",TRUE),npc_pool_attack_rule("great_beast_grab",40,"beast_primary",TRUE),npc_pool_attack_rule("great_beast_pounce",50,"beast_mobility",TRUE),npc_pool_attack_rule("great_beast_charge",50,"beast_mobility",TRUE))),
-    make_pool("sorcerous_construct","Sorcerous Construct","Construct",rules=list(rule("glyph_mat_009",45)),
+    make_pool("sorcerous_construct","Sorcerous Construct","Construct",c("constructed_body"),rules=list(rule("glyph_mat_009",45)),
       abilities=c(str=17L,dex=9L,con=18L,int=5L,cha=3L,bld_str=12L),foundation="Oldrin sorcerous construct",status="Provisional / context restricted",
       description="An artificial guard, labourer or weapon associated with sorcery and tinkering.",
-      restriction="Only generate with a plausible sorcerous creator; not evidence of an ancient construct civilisation.",hp_max=55L,ac=16L,gold=c(0L,0L),attack_ids="integrated_strike")
+      restriction="Only generate with a plausible sorcerous creator; not evidence of an ancient construct civilisation.",hp_max=55L,ac=16L,gold=c(0L,0L),attack_ids="integrated_strike",feature_rules=list(npc_pool_feature_rule("heavy_frame",40)))
   )
 }
 
