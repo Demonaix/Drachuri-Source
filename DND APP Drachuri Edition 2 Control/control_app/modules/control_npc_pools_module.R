@@ -5,10 +5,12 @@ npc_pool_rule <- function(item_id, chance=100, group="", required=FALSE) {
 }
 
 npc_default_pool_catalogue <- function() {
-  catalogue_version <- 2L
+  catalogue_version <- 3L
   rule <- npc_pool_rule
   make_pool <- function(id,name,base_type,features=character(),rules=list(),abilities=NULL,
-                        resistances=NULL,immunities=NULL,vulnerabilities=NULL,condition_immunities=NULL) {
+                        resistances=NULL,immunities=NULL,vulnerabilities=NULL,condition_immunities=NULL,
+                        foundation="",status="Core",description="",restriction="",hp_max=NULL,ac=NULL,
+                        movement_speed=NULL,gold=NULL,attack_ids=NULL) {
     base <- enemy_generator_types()[[base_type]]
     list(
       id=id,name=name,base_type=base_type,features=features,catalogue_version=catalogue_version,
@@ -17,64 +19,98 @@ npc_default_pool_catalogue <- function() {
       immunities=immunities %||% base$immunities %||% character(),
       vulnerabilities=vulnerabilities %||% base$vulnerabilities %||% character(),
       condition_immunities=condition_immunities %||% base$condition_immunities %||% character(),
-      rules=rules
+      rules=rules,foundation=foundation,status=status,description=description,restriction=restriction,
+      hp_max=hp_max,ac=ac,movement_speed=movement_speed,gold=gold,attack_ids=attack_ids
     )
   }
   list(
-    make_pool("custom","Custom Enemy","Custom"),
-    make_pool("bandit","Bandit Raider","Bandit",rules=list(
+    make_pool("custom","Custom Enemy","Custom",foundation="Bespoke",description="A blank mechanical foundation for an authored enemy."),
+    make_pool("oldrin_civilian","Oldrin Civilian","Custom",rules=list(rule("dagger",20)),
+      abilities=c(str=9L,dex=10L,con=10L,int=10L,cha=10L,bld_str=10L),foundation="Oldrin humanoid",
+      description="An ordinary inhabitant of a town, village, farm, estate or road.",restriction="Occupation should shape skills and possessions.",hp_max=7L,ac=10L,gold=c(0L,5L),attack_ids="unarmed"),
+    make_pool("oldrin_bandit_raider","Bandit Raider","Bandit",rules=list(
       rule("leather_armor"),rule("shortsword",70,"sidearm",TRUE),rule("dagger",30,"sidearm",TRUE),
-      rule("shortbow",45),rule("healing_draught",5))),
+      rule("shortbow",45),rule("healing_draught",5)),foundation="Usually Oldrin humanoid",
+      description="A criminal, deserter, displaced person or opportunistic raider.",restriction="Bandit is an occupation, never a species or fixed faction."),
     make_pool("forest_outlaw","Forest Outlaw","Bandit",c("Archer"),list(
       rule("padded_armor",65,"outlaw_armour",TRUE),rule("studded_leather",35,"outlaw_armour",TRUE),
-      rule("shortbow"),rule("dagger",75),rule("healing_draught",8))),
-    make_pool("goblin_skirmisher","Goblin Skirmisher","Bandit",c("Speedy"),list(
-      rule("padded_armor"),rule("dagger"),rule("shortbow",70),rule("shield",15))),
-    make_pool("drachuri_reaver","Drachuri Clan Reaver","Bandit",c("Barbarian","Brute"),list(
-      rule("hide_armor"),rule("battleaxe",65,"reaver_weapon",TRUE),rule("spear",35,"reaver_weapon",TRUE),
-      rule("shield",25),rule("healing_draught",8))),
-    make_pool("guard","Town Guard","Guard",rules=list(
-      rule("chain_shirt"),rule("spear"),rule("shield",65),rule("dagger",25),rule("healing_draught",5))),
-    make_pool("veteran_guard","Veteran House Guard","Guard",c("Boss","Armoured"),list(
+      rule("shortbow"),rule("dagger",75),rule("healing_draught",8)),foundation="Usually Oldrin humanoid",
+      description="A fugitive hunter or criminal living beyond House authority.",restriction="Do not automatically assign a political faction."),
+    make_pool("oldrin_hunter","Oldrin Hunter / Scout","Bandit",c("Archer"),list(
+      rule("leather_armor"),rule("shortbow",70,"hunter_weapon",TRUE),rule("spear",30,"hunter_weapon",TRUE),rule("dagger")),
+      foundation="Oldrin humanoid",description="A hunter, tracker, messenger or wilderness scout.",gold=c(1L,8L)),
+    make_pool("town_guard","Town Guard","Guard",rules=list(
+      rule("chain_shirt"),rule("spear"),rule("shield",65),rule("dagger",25),rule("healing_draught",5)),
+      foundation="Predominantly Oldrin humanoid",description="Local armed authority in an Oldrin settlement.",restriction="Allegiance must match the settlement or House."),
+    make_pool("house_soldier","House Soldier","Guard",rules=list(
+      rule("scale_mail",60,"soldier_armour",TRUE),rule("chain_mail",40,"soldier_armour",TRUE),
+      rule("spear",60,"soldier_weapon",TRUE),rule("shortsword",40,"soldier_weapon",TRUE),rule("shield",70)),
+      abilities=c(str=14L,dex=12L,con=14L,int=10L,cha=10L,bld_str=10L),foundation="Oldrin humanoid",
+      description="A professional soldier serving one of Annwn's Great Houses.",restriction="House allegiance is mandatory metadata.",hp_max=28L,ac=16L,gold=c(3L,15L)),
+    make_pool("veteran_house_guard","Veteran House Guard","Guard",c("Boss","Armoured"),list(
       rule("chain_mail"),rule("spear",45,"guard_weapon",TRUE),rule("shortsword",55,"guard_weapon",TRUE),
-      rule("shield",80),rule("healing_draught",15))),
-    make_pool("mercenary","Mercenary Soldier","Guard",rules=list(
+      rule("shield",80),rule("healing_draught",15)),foundation="Usually Oldrin humanoid",status="Uncommon / elite",
+      description="An experienced retainer trusted with nobles, estates and strategic sites.",restriction="Do not randomly make them sorcerers."),
+    make_pool("mercenary_soldier","Mercenary Soldier","Guard",rules=list(
       rule("hide_armor",35,"mercenary_armour",TRUE),rule("scale_mail",65,"mercenary_armour",TRUE),
       rule("spear",40,"mercenary_weapon",TRUE),rule("shortsword",35,"mercenary_weapon",TRUE),
-      rule("battleaxe",25,"mercenary_weapon",TRUE),rule("shield",50),rule("healing_draught",10))),
-    make_pool("cultist","Blood Cult Acolyte","Cultist",rules=list(
-      rule("leather_armor"),rule("dagger"),rule("bone_fragment",45),rule("healing_draught",10))),
-    make_pool("blood_priest","Blood Cult Priest","Cultist",c("Spellcaster","Boss"),list(
-      rule("studded_leather"),rule("dagger"),rule("bone_fragment",70),rule("healing_draught",35))),
-    make_pool("animal","Wild Animal","Animal",rules=list(rule("animal_pelt"))),
-    make_pool("dire_beast","Dire Beast","Animal",c("Brute"),list(rule("bear_pelt"))),
-    make_pool("fen_beast","Fen Beast","Animal",c("Venomous"),list(rule("animal_pelt"))),
-    make_pool("fae","Fae Wanderer","Fae",rules=list(rule("fae_dust"))),
-    make_pool("fae_trickster","Annwn Fae Trickster","Fae",c("Speedy","Spellcaster"),list(
-      rule("fae_dust"),rule("dagger",45),rule("healing_draught",12))),
-    make_pool("mandred_warden","Mandred Warden","Fae",c("Armoured"),list(
-      rule("studded_leather"),rule("spear"),rule("shield",60),rule("fae_dust"))),
-    make_pool("undead","Restless Dead","Undead",rules=list(
-      rule("ring_mail"),rule("bone_fragment"),rule("spear",55,"dead_weapon",TRUE),rule("dagger",45,"dead_weapon",TRUE))),
-    make_pool("wasting_dead","Wasting Dead","Undead",c("Regenerator","Venomous"),list(
-      rule("bone_fragment"),rule("ring_mail",25))),
-    make_pool("construct","Stone Sentinel","Construct",rules=list(rule("glyph_mat_009",35))),
-    make_pool("war_construct","Ancient War Construct","Construct",c("Boss","Armoured"),list(
-      rule("plate_armor"),rule("battleaxe"),rule("shield",55),rule("glyph_mat_009",75))),
-    make_pool("dragonkin","Dragonkin Raider","Dragonkin",rules=list(
-      rule("scale_mail"),rule("spear"),rule("shield",35))),
-    make_pool("dragonkin_hunter","Dragonkin Hunter","Dragonkin",c("Archer","Speedy"),list(
-      rule("hide_armor"),rule("shortbow"),rule("dagger"),rule("healing_draught",10))),
-    make_pool("dragonkin_champion","Dragonkin Champion","Dragonkin",c("Boss","Armoured"),list(
-      rule("chain_mail"),rule("battleaxe"),rule("shield",70),rule("healing_draught",25)))
+      rule("battleaxe",25,"mercenary_weapon",TRUE),rule("shield",50),rule("healing_draught",10)),
+      foundation="Predominantly Oldrin humanoid",description="A professional fighter whose allegiance is contractual.",restriction="No universal mercenary faction or culture."),
+    make_pool("oldrin_sorcerer","Oldrin Sorcerer","Custom",c("Spellcaster"),list(rule("dagger",70),rule("healing_draught",20)),
+      abilities=c(str=9L,dex=12L,con=12L,int=15L,cha=13L,bld_str=16L),foundation="Oldrin humanoid",status="Core / uncommon",
+      description="An Oldrin with magical capability connected to Annwn.",restriction="Sorcerer is not a species and does not imply blood drinking.",hp_max=25L,ac=12L,gold=c(5L,50L),attack_ids="unarmed"),
+    make_pool("oldrin_necromancer","Oldrin Necromancer","Custom",c("Spellcaster"),list(
+      rule("dagger"),rule("bone_fragment",75),rule("healing_draught",20)),
+      abilities=c(str=8L,dex=12L,con=13L,int=16L,cha=12L,bld_str=17L),foundation="Oldrin sorcerer",status="Core / rare",
+      description="A sorcerer specialising in necrotic magic and undead.",restriction="Necromancy does not automatically imply Abyss worship.",hp_max=34L,ac=13L,gold=c(10L,80L),attack_ids="necrotic_touch"),
+    make_pool("fae_wanderer","Fae Wanderer","Custom",rules=list(rule("dagger",45)),
+      abilities=c(str=10L,dex=15L,con=11L,int=13L,cha=14L,bld_str=14L),foundation="Tylwyth Teg / fae",
+      description="A traveller, displaced fae, scout or solitary survivor.",restriction="Do not default fae to whimsical tricksters or blood drinkers.",hp_max=18L,ac=13L,gold=c(0L,4L),attack_ids="unarmed"),
+    make_pool("fae_hunter","Fae Hunter / Scout","Bandit",c("Archer","Speedy"),list(
+      rule("leather_armor"),rule("shortbow",65,"fae_hunter_weapon",TRUE),rule("spear",35,"fae_hunter_weapon",TRUE),rule("dagger")),
+      abilities=c(str=12L,dex=16L,con=12L,int=12L,cha=12L,bld_str=15L),foundation="Tylwyth Teg / fae",
+      description="A fae hunter or scout surviving in hostile Oldrin territory.",hp_max=26L,ac=14L,gold=c(0L,4L)),
+    make_pool("fae_warrior","Fae Warrior","Bandit",rules=list(
+      rule("studded_leather"),rule("spear",55,"fae_weapon",TRUE),rule("shortsword",45,"fae_weapon",TRUE),rule("shortbow",50),rule("shield",35)),
+      abilities=c(str=14L,dex=15L,con=13L,int=12L,cha=13L,bld_str=15L),foundation="Tylwyth Teg / fae",
+      description="An armed Tylwyth Teg combatant.",restriction="Do not automatically make fae warriors Cythraul.",hp_max=36L,ac=15L,gold=c(0L,6L)),
+    make_pool("cythraul","Cythraul","Custom",c("Boss","Spellcaster"),list(),
+      abilities=c(str=15L,dex=17L,con=16L,int=14L,cha=16L,bld_str=19L),foundation="Magically altered fae",status="Restricted / rare",
+      description="A fae who restored lost magical power through blood drinking after the Tears of Time.",
+      restriction="Generate only deliberately. Never treat as a generic vampire, cultist or automatically evil addict.",hp_max=65L,ac=17L,gold=c(0L,20L),attack_ids=c("bite","fae_bolt")),
+    make_pool("restless_dead","Restless Dead","Undead",rules=list(
+      rule("ring_mail",35),rule("bone_fragment"),rule("spear",55,"dead_weapon",TRUE),rule("dagger",45,"dead_weapon",TRUE)),
+      foundation="Undead",description="A corpse or spirit disturbed through necromantic influence.",restriction="Do not generate intelligent undead without an explicit subtype.",attack_ids=character()),
+    make_pool("necromantic_servitor","Necromantic Servitor","Undead",c("Regenerator"),list(
+      rule("ring_mail",45),rule("spear",65,"servitor_weapon",TRUE),rule("shortsword",35,"servitor_weapon",TRUE),rule("bone_fragment")),
+      foundation="Deliberately raised undead",description="An undead guard or minion controlled by a sorcerer.",
+      restriction="A plausible necromantic creator or history should exist.",hp_max=25L,attack_ids=character()),
+    make_pool("llechwyr","Llechwyr","Custom",c("Speedy","Spellcaster"),rules=list(),
+      abilities=c(str=13L,dex=17L,con=14L,int=8L,cha=8L,bld_str=16L),foundation="Shadow creature",status="Restricted supernatural",
+      description="An established shadow-creature of Annwn: hunter, omen and supernatural threat.",restriction="Never use as ordinary roadside wildlife; no automatic radiant vulnerability.",
+      hp_max=48L,ac=15L,movement_speed=40L,gold=c(0L,0L),attack_ids="necrotic_touch"),
+    make_pool("wild_animal","Wild Animal","Animal",rules=list(rule("animal_pelt")),foundation="Animal",
+      description="Normal fauna of Annwn.",restriction="Keep mundane animals mundane."),
+    make_pool("great_beast","Great Beast","Animal",c("Brute"),list(rule("bear_pelt")),
+      abilities=c(str=18L,dex=13L,con=17L,int=3L,cha=7L,bld_str=11L),foundation="Exceptional natural animal",status="Core / uncommon",
+      description="A particularly large, old or dangerous natural animal.",restriction="A generator category, not necessarily an in-world taxonomic term.",hp_max=55L,ac=14L,gold=c(0L,0L)),
+    make_pool("sorcerous_construct","Sorcerous Construct","Construct",rules=list(rule("glyph_mat_009",45)),
+      abilities=c(str=17L,dex=9L,con=18L,int=5L,cha=3L,bld_str=12L),foundation="Oldrin sorcerous construct",status="Provisional / context restricted",
+      description="An artificial guard, labourer or weapon associated with sorcery and tinkering.",
+      restriction="Only generate with a plausible sorcerous creator; not evidence of an ancient construct civilisation.",hp_max=55L,ac=16L,gold=c(0L,0L),attack_ids="stone_fist")
   )
 }
 
 merge_npc_pool_catalogue <- function(saved=list()) {
   defaults <- npc_default_pool_catalogue()
-  retired_names <- c("example 2","new pool")
+  retired_names <- c("example 2","new pool","goblin skirmisher","drachuri clan reaver","blood cult acolyte",
+                     "blood cult priest","dire beast","fen beast","annwn fae trickster","mandred warden",
+                     "wasting dead","stone sentinel","ancient war construct","dragonkin raider","dragonkin hunter","dragonkin champion")
+  retired_ids <- c("bandit","guard","veteran_guard","mercenary","cultist","blood_priest","animal","dire_beast",
+                   "goblin_skirmisher","drachuri_reaver","fen_beast","fae","fae_trickster","mandred_warden","undead",
+                   "wasting_dead","construct","war_construct","dragonkin","dragonkin_hunter","dragonkin_champion")
   saved <- Filter(function(x) {
-    !tolower(trimws(as.character(x$name %||% ""))) %in% retired_names
+    !tolower(trimws(as.character(x$name %||% ""))) %in% retired_names && !as.character(x$id %||% "") %in% retired_ids
   },saved)
   default_ids <- vapply(defaults,`[[`,"","id")
   saved_by_id <- setNames(saved,vapply(saved,function(x)as.character(x$id %||% ""),character(1)))
@@ -89,7 +125,7 @@ merge_npc_pool_catalogue <- function(saved=list()) {
 controlNpcPoolsUI <- function(id) { ns<-NS(id); tagList(
   div(class="control-card",div(class="control-section-title","NPC Pools"),
       fluidRow(column(4,selectInput(ns("pool_id"),"Pool",choices=character()),textInput(ns("pool_name"),"Pool name"),selectInput(ns("base_type"),"Base stat foundation",choices=names(enemy_generator_types())),selectizeInput(ns("features"),"Features / characteristics",choices=character(),multiple=TRUE),actionButton(ns("save_pool"),"Save Pool",class="btn btn-primary"),actionButton(ns("new_pool"),"New Pool")),
-               column(8,h4("Inventory chances"),fluidRow(column(4,selectInput(ns("item_id"),"Item",choices=character())),column(2,numericInput(ns("chance"),"Chance / weight %",100,min=0,max=100)),column(3,textInput(ns("group"),"Alternative group",placeholder="bow")),column(3,checkboxInput(ns("required"),"Guarantee one from group",FALSE))),actionButton(ns("add_rule"),"Add / Update Rule"),actionButton(ns("remove_rule"),"Remove Selected Rule"),selectInput(ns("rule_id"),"Current rules",choices=character()),tags$hr(),actionButton(ns("roll_preview"),"Roll Example Loadout",class="btn btn-default"),uiOutput(ns("preview"))))),
+               column(8,uiOutput(ns("pool_context")),h4("Inventory chances"),fluidRow(column(4,selectInput(ns("item_id"),"Item",choices=character())),column(2,numericInput(ns("chance"),"Chance / weight %",100,min=0,max=100)),column(3,textInput(ns("group"),"Alternative group",placeholder="bow")),column(3,checkboxInput(ns("required"),"Guarantee one from group",FALSE))),actionButton(ns("add_rule"),"Add / Update Rule"),actionButton(ns("remove_rule"),"Remove Selected Rule"),selectInput(ns("rule_id"),"Current rules",choices=character()),tags$hr(),actionButton(ns("roll_preview"),"Roll Example Loadout",class="btn btn-default"),uiOutput(ns("preview"))))),
   div(class="control-card",h4("Pool statistics and damage traits"),fluidRow(lapply(names(c(str="STR",dex="DEX",con="CON",int="INT",cha="CHA",bld_str="Blood strength")),function(stat){labels<-c(str="STR",dex="DEX",con="CON",int="INT",cha="CHA",bld_str="Blood strength");column(2,numericInput(ns(paste0("ability_",stat)),labels[[stat]],10,min=1,max=30))})),fluidRow(column(3,selectizeInput(ns("resistances"),"Resistances",enemy_damage_types(),multiple=TRUE)),column(3,selectizeInput(ns("immunities"),"Immunities",enemy_damage_types(),multiple=TRUE)),column(3,selectizeInput(ns("vulnerabilities"),"Vulnerabilities",enemy_damage_types(),multiple=TRUE)),column(3,selectizeInput(ns("condition_immunities"),"Condition immunities",enemy_conditions(),multiple=TRUE)))),
   div(class="control-card",p(class="control-mini","Independent entries roll their percentage. Entries sharing a group are alternatives; a required group always chooses exactly one using their percentages as weights."))
 ) }
@@ -108,6 +144,7 @@ controlNpcPoolsServer <- function(id) { moduleServer(id,function(input,output,se
     if(!identical(saved,merged))saveRDS(merged,path)
     merged
   }); active<-reactive({x<-Filter(function(p)identical(p$id,input$pool_id%||%""),pools());if(length(x))x[[1]]else NULL}); selected_rule<-reactive({p<-active();if(is.null(p))return(NULL);x<-Filter(function(r)identical(r$item_id,input$rule_id%||%""),p$rules);if(length(x))x[[1]]else NULL})
+  output$pool_context<-renderUI({p<-active();if(is.null(p))return(NULL);div(class="trait-note",strong(paste(p$foundation%||%"Bespoke","·",p$status%||%"Custom")),tags$p(p$description%||%""),if(nzchar(p$restriction%||%""))tags$small(strong("Generation rule: "),p$restriction))})
   observe({ps<-pools();vals<-vapply(ps,`[[`,"","id");keep<-input$pool_id%||%"";updateSelectInput(session,"pool_id",choices=setNames(vals,vapply(ps,`[[`,"","name")),selected=if(keep%in%vals)keep else if(length(vals))vals[1] else character())})
   observe({choices<-feature_choices();sig<-paste(names(choices),choices,collapse="|");if(identical(sig,feature_choice_sig()))return();feature_choice_sig(sig);updateSelectizeInput(session,"features",choices=choices,selected=isolate(input$features%||%character()),server=TRUE)})
   observe({it<-inventory();vals<-vapply(it,`[[`,"","id");keep<-input$item_id%||%"";updateSelectInput(session,"item_id",choices=setNames(vals,vapply(it,`[[`,"","name")),selected=if(keep%in%vals)keep else if(length(vals))vals[1] else character())})
