@@ -1519,9 +1519,14 @@ test("local launch configures a feature-rich visual map", {
   stopifnot(all(vapply(c("forest", "road", "ravine", "water", "wall"), function(x) grepl(paste0('"', x, '"'), visual_map, fixed = TRUE), logical(1))))
 })
 
-test("generated tavern textures are shipped and wired into 3D", {
+test("generated environment textures are shipped and wired into 3D", {
   texture_dir <- file.path("DND APP Drachuri Edition Player_v2", "www", "assets", "textures")
-  assets <- c("tavern_table_oak.jpg", "tavern_floorboards.jpg", "tavern_plaster_timbers.jpg", "battlefield_fieldstone.jpg")
+  assets <- c(
+    "grass.jpg", "dirt.jpg", "forest.jpg", "swamp.jpg", "stone.jpg",
+    "water.jpg", "ravine.jpg", "pit.jpg", "bark.jpg", "leaves.jpg",
+    "tavern_table_oak.jpg", "tavern_floorboards.jpg",
+    "tavern_plaster_timbers.jpg", "battlefield_fieldstone.jpg"
+  )
   stopifnot(all(file.exists(file.path(texture_dir, assets))))
   stopifnot(all(file.info(file.path(texture_dir, assets))$size > 100000))
   js <- paste(readLines(file.path("DND APP Drachuri Edition Player_v2", "www", "js", "combat3d_lean.js"), warn=FALSE), collapse="\n")

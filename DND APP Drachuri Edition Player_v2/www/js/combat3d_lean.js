@@ -8,7 +8,7 @@ const TERRAIN = {
   water:{color:0x367eaa,tex:"water.jpg",h:-.18}, stone:{color:0x85837b,tex:"stone.jpg",h:.10},
   wall:{color:0x76706a,tex:"battlefield_fieldstone.jpg",h:.10}, road:{color:0xa5885b,tex:"dirt.jpg",h:-.07},
   swamp:{color:0x526944,tex:"swamp.jpg",h:-.03}, ravine:{color:0x17151a,tex:"ravine.jpg",h:-2.65},
-  pit:{color:0x17151a,tex:"ravine.jpg",h:-2.10}, mandred_convergence:{color:0x714ca1,tex:"stone.jpg",h:.12}
+  pit:{color:0x17151a,tex:"pit.jpg",h:-2.10}, mandred_convergence:{color:0x714ca1,tex:"stone.jpg",h:.12}
 };
 
 function normalise(value) {
@@ -75,7 +75,7 @@ function buildTabletop(state,rows,xs,ys){
   for(const row of rows){const x=Number(row.x),y=Number(row.y),top=Math.max(elevation(row),-.05);for(const [dx,dy,rot] of [[-1,0,Math.PI/2],[1,0,Math.PI/2],[0,-1,0],[0,1,0]])if(!tileMap.has(`${x+dx},${y+dy}`))edges.push({x:x-state.centerX+dx*.5,z:y-state.centerY+dy*.5,top,rot});}
   if(edges.length){const geo=new THREE.BoxGeometry(1,1,.075),mat=new THREE.MeshLambertMaterial({color:0x3d2d20}),fascia=new THREE.InstancedMesh(geo,mat,edges.length),matrix=new THREE.Matrix4(),position=new THREE.Vector3(),rotation=new THREE.Quaternion(),scale=new THREE.Vector3();edges.forEach((e,i)=>{const height=e.top-bottom;position.set(e.x,bottom+height/2,e.z);rotation.setFromAxisAngle(new THREE.Vector3(0,1,0),e.rot);scale.set(1.01,height,1);matrix.compose(position,rotation,scale);fascia.setMatrixAt(i,matrix);});fascia.instanceMatrix.needsUpdate=true;fascia.receiveShadow=true;state.terrainRoot.add(fascia);}
   const mapWidth=Math.max(...xs)-Math.min(...xs)+1,mapDepth=Math.max(...ys)-Math.min(...ys)+1,tableWidth=mapWidth+4.5,tableDepth=mapDepth+4.5;
-  const wood=new THREE.MeshLambertMaterial({color:0xffffff,map:texture(state,"tavern_table_oak.jpg",Math.max(1,tableWidth/7),Math.max(1,tableDepth/7))}),darkWood=new THREE.MeshLambertMaterial({color:0x3b2518}),plaster=new THREE.MeshLambertMaterial({color:0xffffff,map:texture(state,"tavern_plaster_timbers.jpg",5,3)}),floorMat=new THREE.MeshLambertMaterial({color:0xffffff});
+  const wood=new THREE.MeshLambertMaterial({color:0xffffff,map:texture(state,"tavern_table_oak.jpg",Math.max(1,tableWidth/7),Math.max(1,tableDepth/7))}),darkWood=new THREE.MeshLambertMaterial({color:0x3b2518}),plaster=new THREE.MeshLambertMaterial({color:0xffffff,map:texture(state,"tavern_plaster_timbers.jpg",2,1.5)}),floorMat=new THREE.MeshLambertMaterial({color:0xffffff});
   const top=new THREE.Mesh(new THREE.BoxGeometry(tableWidth,.34,tableDepth),wood);top.position.y=bottom-.17;top.receiveShadow=true;top.castShadow=state.quality==="decorative";state.terrainRoot.add(top);
   const apronY=bottom-.58,apronH=.72;for(const apron of [
     [tableWidth-.35,apronH,.22,0,apronY,-tableDepth/2+.22],[tableWidth-.35,apronH,.22,0,apronY,tableDepth/2-.22],
@@ -126,7 +126,7 @@ function buildTerrain(state,rows){
 function buildDecor(state,rows){
   const forests=rows.filter(r=>["forest","woodland"].includes(terrainName(r.terrain)));if(!forests.length)return;
   const trunkGeo=new THREE.CylinderGeometry(.065,.115,.72,6),lowerGeo=new THREE.ConeGeometry(.31,.72,7),upperGeo=new THREE.ConeGeometry(.23,.62,7);
-  const trunkMat=new THREE.MeshLambertMaterial({color:0x604027}),lowerMat=new THREE.MeshLambertMaterial({color:0x315f38}),upperMat=new THREE.MeshLambertMaterial({color:0x447848});
+  const trunkMat=new THREE.MeshLambertMaterial({color:0xffffff,map:texture(state,"bark.jpg",1,2)}),lowerMat=new THREE.MeshLambertMaterial({color:0x8eb58a,map:texture(state,"leaves.jpg",1.5,1.5)}),upperMat=new THREE.MeshLambertMaterial({color:0xa4c69b,map:texture(state,"leaves.jpg",1.5,1.5)});
   const trunks=new THREE.InstancedMesh(trunkGeo,trunkMat,forests.length),lower=new THREE.InstancedMesh(lowerGeo,lowerMat,forests.length),upper=new THREE.InstancedMesh(upperGeo,upperMat,forests.length);
   const matrix=new THREE.Matrix4(),position=new THREE.Vector3(),rotation=new THREE.Quaternion(),scale=new THREE.Vector3();
   forests.forEach((r,i)=>{
