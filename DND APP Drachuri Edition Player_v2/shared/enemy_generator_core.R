@@ -45,6 +45,7 @@ enemy_attack_catalog <- function() list(
   alchemical_flask=enemy_special_attack("Alchemical Flask",4L,"1d6","acid","chemical","special",range_ft=20L,long_range_ft=60L,ability="dex",rarity="uncommon",lore_status="provisional",requires="authored_alchemical_flask",usage="consumable",desc="A whitelisted authored alchemical substance."),
   tinkerer_device=enemy_special_attack("Discharge Device",5L,"1d8+2","force","magic","special",range_ft=30L,long_range_ft=60L,ability="bld_str",rarity="uncommon",lore_status="provisional",requires="authored_tinkerer_device",usage="recharge_5_6",desc="A specifically authored sorcerous device."),
   club=list(name="Club",hit=2L,dmg="1d4+1",type="bludgeoning",material="wood",loot_id="club"),
+  longsword=list(name="Longsword",hit=3L,dmg="1d8+1",type="slashing",material="",loot_id="longsword"),
   shortsword=list(name="Shortsword",hit=3L,dmg="1d6+1",type="slashing",material="",loot_id="shortsword"),
   dagger=list(name="Dagger",hit=3L,dmg="1d4+1",type="piercing",material="",loot_id="dagger"),
   battleaxe=list(name="Battleaxe",hit=4L,dmg="1d8+2",type="slashing",material="",loot_id="battleaxe"),
@@ -54,6 +55,7 @@ enemy_attack_catalog <- function() list(
 
 enemy_loot_catalog <- function() list(
   club=list(name="Club",type="weapon",desc="A plain wooden club or sturdy work tool.",value=1,weight=2,qty=1,meta=list(stat="str",adv="Normal",to_hit_bonus=0,damage1="1d4",dmg_type1="Bludgeoning",damage2="",dmg_type2="Other",material="wood",proficient=TRUE)),
+  longsword=list(name="Longsword",type="weapon",desc="A well-balanced martial blade associated with trained and wealthy bearers.",value=15,weight=3,qty=1,meta=list(stat="str",adv="Normal",to_hit_bonus=0,damage1="1d8",dmg_type1="Slashing",damage2="",dmg_type2="Other",proficient=TRUE)),
   shortsword=list(name="Shortsword",type="weapon",desc="A serviceable shortsword.",value=10,weight=2,qty=1,meta=list(stat="dex",adv="Normal",to_hit_bonus=0,damage1="1d6",dmg_type1="Slashing",damage2="",dmg_type2="Other",proficient=TRUE)),
   dagger=list(name="Dagger",type="weapon",desc="A balanced dagger.",value=5,weight=1,qty=1,meta=list(stat="dex",adv="Normal",to_hit_bonus=0,damage1="1d4",dmg_type1="Piercing",damage2="",dmg_type2="Other",proficient=TRUE)),
   battleaxe=list(name="Battleaxe",type="weapon",desc="A heavy battleaxe.",value=15,weight=4,qty=1,meta=list(stat="str",adv="Normal",to_hit_bonus=0,damage1="1d8",dmg_type1="Slashing",damage2="",dmg_type2="Other",proficient=TRUE)),

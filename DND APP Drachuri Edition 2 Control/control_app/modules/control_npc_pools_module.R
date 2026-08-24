@@ -8,7 +8,7 @@ npc_pool_attack_rule <- function(attack_id, chance=100, group="", required=FALSE
 }
 
 npc_default_pool_catalogue <- function() {
-  catalogue_version <- 5L
+  catalogue_version <- 6L
   rule <- npc_pool_rule
   make_pool <- function(id,name,base_type,features=character(),rules=list(),abilities=NULL,
                         resistances=NULL,immunities=NULL,vulnerabilities=NULL,condition_immunities=NULL,
@@ -59,7 +59,7 @@ npc_default_pool_catalogue <- function() {
       rule("spear",40,"mercenary_weapon",TRUE),rule("shortsword",35,"mercenary_weapon",TRUE),
       rule("battleaxe",25,"mercenary_weapon",TRUE),rule("shield",50),rule("healing_draught",10)),
       foundation="Predominantly Oldrin humanoid",description="A professional fighter whose allegiance is contractual.",restriction="No universal mercenary faction or culture."),
-    make_pool("oldrin_sorcerer","Oldrin Sorcerer","Custom",c("Spellcaster"),list(rule("club",35,"sorcerer_sidearm",TRUE),rule("dagger",65,"sorcerer_sidearm",TRUE),rule("healing_draught",20)),
+    make_pool("oldrin_sorcerer","Oldrin Sorcerer","Custom",c("Spellcaster"),list(rule("longsword",80,"sorcerer_sidearm",TRUE),rule("dagger",20,"sorcerer_sidearm",TRUE),rule("healing_draught",20)),
       abilities=c(str=9L,dex=12L,con=12L,int=15L,cha=13L,bld_str=16L),foundation="Oldrin humanoid",status="Core / uncommon",
       description="An Oldrin with magical capability connected to Annwn.",restriction="Sorcerer is not a species and does not imply blood drinking.",hp_max=25L,ac=12L,gold=c(5L,50L),attack_ids="unarmed_strike",attack_rules=list(npc_pool_attack_rule("mandred_push",30),npc_pool_attack_rule("mandred_grasp",20))),
     make_pool("oldrin_necromancer","Oldrin Necromancer","Custom",c("Spellcaster"),list(
@@ -140,6 +140,8 @@ controlNpcPoolsServer <- function(id) { moduleServer(id,function(input,output,se
   feature_path<-file.path("control_app","data","npc_features.rds")
   feature_choices<-reactive({invalidateLater(1500,session);x<-if(file.exists(feature_path))tryCatch(readRDS(feature_path),error=function(e)list())else list();if(length(x))setNames(vapply(x,`[[`,"","id"),vapply(x,`[[`,"","name"))else enemy_characteristic_labels()})
   feature_choice_sig<-reactiveVal("")
+  inventory_choice_sig<-reactiveVal("")
+  rule_choice_sig<-reactiveVal("")
   db_inventory<-get_control_catalogue_definitions()
   inventory<-reactive({invalidateLater(1500,session);saved<-if(file.exists(inv_path))tryCatch(readRDS(inv_path),error=function(e)list())else list();base<-lapply(names(enemy_loot_catalog()),function(k){x<-enemy_loot_catalog()[[k]];x$id<-k;x});all<-c(saved,db_inventory,base);seen<-character();Filter(function(x){id<-as.character(x$id%||%"");category<-as.character((x$meta%||%list())$category%||%"");keep<-nzchar(id)&&!id%in%seen&&!category%in%c("mundane_loot","food");seen<<-c(seen,id);keep},all)})
   pools<-reactiveVal({
@@ -151,10 +153,10 @@ controlNpcPoolsServer <- function(id) { moduleServer(id,function(input,output,se
   output$pool_context<-renderUI({p<-active();if(is.null(p))return(NULL);catalog<-enemy_attack_catalog();fixed<-vapply(p$attack_ids%||%character(),function(id)catalog[[id]]$name%||%id,character(1));optional<-vapply(p$attack_rules%||%list(),function(r)paste0(catalog[[r$item_id]]$name%||%r$item_id," ",r$chance,"%",if(nzchar(r$group%||%""))paste0(" [",r$group,"]")else""),character(1));div(class="trait-note",strong(paste(p$foundation%||%"Bespoke","·",p$status%||%"Custom")),tags$p(p$description%||%""),if(length(c(fixed,optional)))tags$p(strong("Special attacks: "),paste(c(fixed,optional),collapse=" · ")),if(nzchar(p$restriction%||%""))tags$small(strong("Generation rule: "),p$restriction))})
   observe({ps<-pools();vals<-vapply(ps,`[[`,"","id");keep<-input$pool_id%||%"";updateSelectInput(session,"pool_id",choices=setNames(vals,vapply(ps,`[[`,"","name")),selected=if(keep%in%vals)keep else if(length(vals))vals[1] else character())})
   observe({choices<-feature_choices();sig<-paste(names(choices),choices,collapse="|");if(identical(sig,feature_choice_sig()))return();feature_choice_sig(sig);updateSelectizeInput(session,"features",choices=choices,selected=isolate(input$features%||%character()),server=TRUE)})
-  observe({it<-inventory();vals<-vapply(it,`[[`,"","id");keep<-input$item_id%||%"";updateSelectInput(session,"item_id",choices=setNames(vals,vapply(it,`[[`,"","name")),selected=if(keep%in%vals)keep else if(length(vals))vals[1] else character())})
+  observe({it<-inventory();vals<-vapply(it,`[[`,"","id");labels<-vapply(it,`[[`,"","name");sig<-paste(vals,labels,collapse="|");if(identical(sig,inventory_choice_sig()))return();inventory_choice_sig(sig);keep<-isolate(input$item_id%||%"");updateSelectInput(session,"item_id",choices=setNames(vals,labels),selected=if(keep%in%vals)keep else if(length(vals))vals[1] else character())})
   hydrate_pool_fields<-function(p){base<-enemy_generator_types()[[p$base_type%||%"Custom"]];abilities<-p$abilities%||%base$abilities%||%list();for(stat in c("str","dex","con","int","cha","bld_str"))updateNumericInput(session,paste0("ability_",stat),value=as.integer(abilities[[stat]]%||%10L));for(f in c("resistances","immunities","vulnerabilities","condition_immunities"))updateSelectizeInput(session,f,selected=p[[f]]%||%base[[f]]%||%character())}
   observeEvent(input$pool_id,{p<-active();if(is.null(p))return();updateTextInput(session,"pool_name",value=p$name);updateSelectInput(session,"base_type",selected=p$base_type%||%"Custom");updateSelectizeInput(session,"features",selected=p$features);hydrate_pool_fields(p)},ignoreInit=TRUE)
-  observe({p<-active();if(is.null(p))return();it<-inventory();nm<-setNames(vapply(p$rules,function(r)r$item_id,character(1)),vapply(p$rules,function(r){item<-Filter(function(x)identical(x$id,r$item_id),it);name<-if(length(item))item[[1]]$name else r$item_id;paste0(name," — ",r$chance,"%",if(nzchar(r$group))paste0(" [",r$group,if(isTRUE(r$required))", required" else "","]")else"")},character(1)));updateSelectInput(session,"rule_id",choices=nm)})
+  observe({p<-active();if(is.null(p))return();it<-inventory();nm<-setNames(vapply(p$rules,function(r)r$item_id,character(1)),vapply(p$rules,function(r){item<-Filter(function(x)identical(x$id,r$item_id),it);name<-if(length(item))item[[1]]$name else r$item_id;paste0(name," — ",r$chance,"%",if(nzchar(r$group))paste0(" [",r$group,if(isTRUE(r$required))", required" else "","]")else"")},character(1)));sig<-paste(p$id,paste(names(nm),nm,collapse="|"),sep="::");if(identical(sig,rule_choice_sig()))return();rule_choice_sig(sig);keep<-isolate(input$rule_id%||%"");updateSelectInput(session,"rule_id",choices=nm,selected=if(keep%in%unname(nm))keep else if(length(nm))unname(nm)[1] else character())})
   observeEvent(input$rule_id,{r<-selected_rule();if(is.null(r))return();updateSelectInput(session,"item_id",selected=r$item_id);updateNumericInput(session,"chance",value=r$chance);updateTextInput(session,"group",value=r$group);updateCheckboxInput(session,"required",value=isTRUE(r$required))},ignoreInit=TRUE)
   alter<-function(remove=FALSE){ps<-pools();pi<-which(vapply(ps,function(p)identical(p$id,input$pool_id),logical(1)))[1];if(is.na(pi))return();rules<-ps[[pi]]$rules;id<-if(remove)input$rule_id else input$item_id;rules<-Filter(function(r)!identical(r$item_id,id),rules);if(!remove)rules<-c(rules,list(list(item_id=id,chance=as.numeric(input$chance%||%100),group=trimws(input$group%||%""),required=isTRUE(input$required))));ps[[pi]]$rules<-rules;pools(ps);saveRDS(ps,path)}
   observeEvent(input$add_rule,{alter(FALSE)});observeEvent(input$remove_rule,{alter(TRUE)})
