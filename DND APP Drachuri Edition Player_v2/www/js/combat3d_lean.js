@@ -51,8 +51,8 @@ function makeState(containerId,inputIds,quality){
   if(sun.castShadow){sun.shadow.mapSize.set(1024,1024);sun.shadow.camera.left=-30;sun.shadow.camera.right=30;sun.shadow.camera.top=30;sun.shadow.camera.bottom=-30;}scene.add(sun);
   const camera=new THREE.PerspectiveCamera(48,1,.1,500),controls=new OrbitControls(camera,renderer.domElement);
   controls.enableDamping=false;controls.maxPolarAngle=Math.PI*.47;controls.minPolarAngle=.12;controls.minDistance=4;controls.maxDistance=100;
-  const state={containerId,el,renderer,scene,camera,controls,inputIds:inputIds||{},quality,textures:{},terrainRoot:new THREE.Group(),tokenRoot:new THREE.Group(),decorRoot:new THREE.Group(),overlayRoot:new THREE.Group(),tiles:[],tileByKey:new Map(),signature:"",boundsSignature:"",centerX:0,centerY:0,renderPending:false};
-  scene.add(state.terrainRoot,state.decorRoot,state.overlayRoot,state.tokenRoot);controls.addEventListener("change",()=>requestRender(state));
+  const state={containerId,el,renderer,scene,camera,controls,inputIds:inputIds||{},quality,textures:{},terrainRoot:new THREE.Group(),tokenRoot:new THREE.Group(),decorRoot:new THREE.Group(),overlayRoot:new THREE.Group(),posterRoot:new THREE.Group(),tiles:[],tileByKey:new Map(),signature:"",posterSignature:"",boundsSignature:"",centerX:0,centerY:0,roomWidth:40,roomDepth:40,roomFloorY:-6.7,renderPending:false};
+  scene.add(state.terrainRoot,state.decorRoot,state.overlayRoot,state.tokenRoot,state.posterRoot);controls.addEventListener("change",()=>requestRender(state));
   const resize=()=>{const w=Math.max(1,el.clientWidth),h=Math.max(1,el.clientHeight);camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h,false);requestRender(state);};
   state.resizeObserver=new ResizeObserver(resize);state.resizeObserver.observe(el);states.set(containerId,state);setupPicking(state);resize();return state;
 }
@@ -83,6 +83,7 @@ function buildTabletop(state,rows,xs,ys){
   ]){const mesh=new THREE.Mesh(new THREE.BoxGeometry(apron[0],apron[1],apron[2]),darkWood);mesh.position.set(apron[3],apron[4],apron[5]);mesh.castShadow=true;state.terrainRoot.add(mesh);}
   const floorY=bottom-3.65,legH=3.15,legGeo=new THREE.BoxGeometry(.48,legH,.48);for(const x of [-tableWidth/2+.65,tableWidth/2-.65])for(const z of [-tableDepth/2+.65,tableDepth/2-.65]){const leg=new THREE.Mesh(legGeo,darkWood);leg.position.set(x,bottom-.34-legH/2,z);leg.castShadow=true;state.terrainRoot.add(leg);}
   const roomSpan=Math.max(40,Math.max(mapWidth,mapDepth)*3),roomWidth=roomSpan,roomDepth=roomSpan;
+  state.roomWidth=roomWidth;state.roomDepth=roomDepth;state.roomFloorY=floorY;state.posterSignature="";
   floorMat.map=texture(state,"tavern_floorboards.jpg",Math.max(2,roomWidth/8),Math.max(2,roomDepth/8));floorMat.needsUpdate=true;
   const floor=new THREE.Mesh(new THREE.BoxGeometry(roomWidth,.28,roomDepth),floorMat);floor.position.y=floorY;floor.receiveShadow=true;state.terrainRoot.add(floor);
   const wallH=18,wallY=floorY+wallH/2;for(const wall of [[roomWidth,wallH,.35,0,wallY,-roomDepth/2],[.35,wallH,roomDepth,-roomWidth/2,wallY,0],[.35,wallH,roomDepth,roomWidth/2,wallY,0]]){const mesh=new THREE.Mesh(new THREE.BoxGeometry(wall[0],wall[1],wall[2]),plaster);mesh.position.set(wall[3],wall[4],wall[5]);mesh.receiveShadow=true;state.terrainRoot.add(mesh);}
@@ -141,6 +142,24 @@ function buildDecor(state,rows){
   state.decorRoot.add(trunks,lower,upper);
 }
 function actorColour(id,player,self){if(self)return new THREE.Color(0x39c4e5);if(!player)return new THREE.Color(0xb54538);let hash=0;for(const c of String(id))hash=(hash*31+c.charCodeAt(0))|0;return new THREE.Color().setHSL(((Math.abs(hash)%300)+25)/360,.58,.48);}
+function firstValue(row,names,fallback=""){for(const name of names)if(row?.[name]!=null&&String(row[name])!=="")return row[name];return fallback;}
+function posterActors(rows){const seen=new Set(),actors=[];for(const row of rows){const id=String(row.occupant_id||"");if(!id||seen.has(id))continue;seen.add(id);actors.push(row);}return actors;}
+function posterConditions(row){const raw=firstValue(row,["occupant_conditions","conditions","status_effects","effects"],"");if(Array.isArray(raw))return raw.map(String).filter(Boolean);if(raw&&typeof raw==="object")return Object.keys(raw).filter(k=>truthy(raw[k]));return String(raw||"").split(/[,;|]/).map(x=>x.trim()).filter(Boolean);}
+function posterCanvas(row){
+  const canvas=document.createElement("canvas");canvas.width=384;canvas.height=480;const c=canvas.getContext("2d"),player=String(row.occupant_type)==="player",active=truthy(row.is_active_actor),self=truthy(row.is_self_actor),name=String(firstValue(row,["occupant_name","display_name","name"],player?"Unknown Adventurer":"Unknown Foe")),cur=Number(firstValue(row,["occupant_current_hp","current_hp","hp_current"],NaN)),max=Number(firstValue(row,["occupant_max_hp","max_hp","hp_max"],NaN)),temp=Number(firstValue(row,["occupant_temp_hp","temp_hp"],0)),conditions=posterConditions(row);
+  c.fillStyle="#d8bd82";c.fillRect(0,0,384,480);const stain=c.createRadialGradient(190,210,30,190,210,270);stain.addColorStop(0,"rgba(255,246,193,.46)");stain.addColorStop(1,"rgba(83,47,20,.24)");c.fillStyle=stain;c.fillRect(0,0,384,480);c.strokeStyle=active?"#c8392d":self?"#247b91":"#4b2f1b";c.lineWidth=active?18:10;c.strokeRect(12,12,360,456);c.strokeStyle="#6a4525";c.lineWidth=3;c.strokeRect(28,28,328,424);
+  c.fillStyle=player?"#315f76":"#8c3027";c.font="bold 25px Georgia";c.textAlign="center";c.fillText(player?(self?"YOUR COMPANY":"ADVENTURER"):"WANTED",192,68);
+  c.fillStyle="#2d2015";c.font="bold 34px Georgia";const words=name.split(/\s+/);let lines=[""];for(const word of words){const test=(lines.at(-1)+" "+word).trim();if(c.measureText(test).width>320&&lines.at(-1))lines.push(word);else lines[lines.length-1]=test;}lines.slice(0,2).forEach((line,i)=>c.fillText(line,192,128+i*40));
+  c.fillStyle=player?"#477d8d":"#86382e";c.beginPath();c.arc(192,246,62,0,Math.PI*2);c.fill();c.fillStyle="#eadcae";c.font="bold 58px Georgia";c.fillText(name.trim().charAt(0).toUpperCase()||"?",192,266);
+  if(Number.isFinite(cur)&&Number.isFinite(max)&&max>0){const pct=Math.max(0,Math.min(1,cur/max));c.fillStyle="#4d3725";c.fillRect(48,332,288,30);c.fillStyle=pct>.5?"#4b8a45":pct>.25?"#c28b32":"#a43a30";c.fillRect(52,336,280*pct,22);c.fillStyle="#2b1d13";c.font="bold 23px Georgia";c.fillText(`HP ${cur}/${max}${temp>0?` +${temp}`:""}`,192,398);}else{c.fillStyle="#39271a";c.font="italic 22px Georgia";c.fillText(player?"Member of the party":"Enemy combatant",192,375);}
+  c.fillStyle="#4a2f1d";c.font="bold 18px Georgia";const status=conditions.length?conditions.slice(0,3).map(x=>String(x).replaceAll("_"," ").toUpperCase()).join(" • "):(active?"ACTING NOW":"READY");c.fillText(status.length>42?status.slice(0,39)+"…":status,192,438);return canvas;
+}
+function updateWallPosters(state,rows){
+  const actors=posterActors(rows),sig=actors.map(r=>[r.occupant_id,r.occupant_name,r.occupant_type,r.is_active_actor,r.is_self_actor,firstValue(r,["occupant_current_hp","current_hp","hp_current"]),firstValue(r,["occupant_max_hp","max_hp","hp_max"]),posterConditions(r).join(",")].join("|")).join(";");if(sig===state.posterSignature)return;
+  for(const child of [...state.posterRoot.children]){child.material?.map?.dispose();state.posterRoot.remove(child);disposeObject(child);}state.posterSignature=sig;if(!actors.length)return;
+  const columns=Math.min(8,Math.max(1,Math.ceil(Math.sqrt(actors.length*1.8)))),cardW=Math.min(2.5,(state.roomWidth-8)/columns),cardH=cardW*1.25,gap=.25,totalW=columns*cardW+(columns-1)*gap,startX=-totalW/2+cardW/2,baseY=state.roomFloorY+3.1;
+  actors.forEach((row,i)=>{const tex=new THREE.CanvasTexture(posterCanvas(row));tex.colorSpace=THREE.SRGBColorSpace;const mat=new THREE.MeshBasicMaterial({map:tex,side:THREE.DoubleSide}),card=new THREE.Mesh(new THREE.PlaneGeometry(cardW,cardH),mat),col=i%columns,line=Math.floor(i/columns);card.position.set(startX+col*(cardW+gap),baseY+line*(cardH+.35),-state.roomDepth/2+.19);card.userData={actorId:String(row.occupant_id),actorType:row.occupant_type};state.posterRoot.add(card);const pin=new THREE.Mesh(new THREE.SphereGeometry(.055,7,5),new THREE.MeshBasicMaterial({color:0x4a3021}));pin.position.set(card.position.x,card.position.y+cardH*.43,card.position.z+.035);state.posterRoot.add(pin);});
+}
 function makeMiniature(row,active){const player=String(row.occupant_type)==="player",self=truthy(row.is_self_actor),colour=actorColour(row.occupant_id,player,self),group=new THREE.Group(),baseMat=new THREE.MeshLambertMaterial({color:active?0xe7b83f:0x342d2a}),bodyMat=new THREE.MeshLambertMaterial({color:colour}),headMat=new THREE.MeshLambertMaterial({color:player?0xc99472:colour.clone().multiplyScalar(.72)}),base=new THREE.Mesh(new THREE.CylinderGeometry(.27,.3,.085,12),baseMat),body=new THREE.Mesh(player?new THREE.ConeGeometry(.21,.42,8):new THREE.DodecahedronGeometry(.23,0),bodyMat),head=new THREE.Mesh(new THREE.SphereGeometry(.13,8,6),headMat);base.position.y=.045;body.position.y=player?.31:.34;head.position.y=player?.64:.65;group.add(base,body,head);if(active){const ring=new THREE.Mesh(new THREE.TorusGeometry(.33,.035,6,24),new THREE.MeshBasicMaterial({color:0xffdf62}));ring.rotation.x=Math.PI/2;ring.position.y=.04;group.add(ring);}return group;}
 function updateTokens(state,rows){
   clearGroup(state.tokenRoot);
@@ -159,7 +178,7 @@ function render(message){
   let state=states.get(message.containerId),el=document.getElementById(message.containerId);if(!el)return;
   if(!state||state.el!==el||state.quality!==quality)state=makeState(message.containerId,message.inputIds,quality);else state.inputIds=message.inputIds||state.inputIds;
   if(!state)return;const sig=signature(rows);if(sig!==state.signature){buildTerrain(state,rows);state.signature=sig;}else{state.tiles=rows;state.tileByKey=new Map(rows.map(r=>[`${r.x},${r.y}`,r]));}
-  updateTokens(state,rows);updateOverlays(state,rows,zones);requestRender(state);
+  updateTokens(state,rows);updateOverlays(state,rows,zones);updateWallPosters(state,rows);requestRender(state);
 }
 Shiny.addCustomMessageHandler("combat3d-lean-init",render);
 Shiny.addCustomMessageHandler("combat3d-lean-resize",m=>{const s=states.get(m.containerId);if(s){s.renderer.setSize(Math.max(1,s.el.clientWidth),Math.max(1,s.el.clientHeight),false);requestRender(s);}});

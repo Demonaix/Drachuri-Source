@@ -1497,6 +1497,17 @@ test("lean 3D renderer keeps costly features optional", {
   stopifnot(!grepl("function animate", js, fixed = TRUE))
 })
 
+test("lean 3D renderer pins live combatant posters to the tavern wall", {
+  js <- paste(readLines(file.path("DND APP Drachuri Edition Player_v2", "www", "js", "combat3d_lean.js"), warn = FALSE), collapse = "\n")
+  stopifnot(grepl("posterCanvas", js, fixed = TRUE))
+  stopifnot(grepl("updateWallPosters", js, fixed = TRUE))
+  stopifnot(grepl("occupant_current_hp", js, fixed = TRUE))
+  stopifnot(grepl("state.roomDepth/2", js, fixed = TRUE))
+  player_combat <- paste(readLines(file.path("DND APP Drachuri Edition Player_v2", "server", "debug_combat_module.R"), warn = FALSE), collapse = "\n")
+  control_combat <- paste(readLines(file.path("DND APP Drachuri Edition 2 Control", "control_app", "modules", "control_live_combat_module.R"), warn = FALSE), collapse = "\n")
+  stopifnot(all(vapply(c(player_combat, control_combat), function(src) grepl("occupant_conditions", src, fixed = TRUE), logical(1))))
+})
+
 test("control encounter workflow uses named selectors", {
   live <- paste(readLines(file.path("DND APP Drachuri Edition 2 Control", "control_app", "modules", "control_live_combat_module.R"), warn = FALSE), collapse = "\n")
   setup <- paste(readLines(file.path("DND APP Drachuri Edition 2 Control", "control_app", "modules", "control_encounter_setup_module.R"), warn = FALSE), collapse = "\n")

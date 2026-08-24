@@ -2431,6 +2431,10 @@ limit 1
       if (!"occupant_name" %in% names(render_df)) {
         render_df$occupant_name <- ""
       }
+      render_df$occupant_current_hp <- NA_integer_
+      render_df$occupant_max_hp <- NA_integer_
+      render_df$occupant_temp_hp <- 0L
+      render_df$occupant_conditions <- ""
       
       if (is.data.frame(actors_lookup) && nrow(actors_lookup) > 0) {
         for (i in seq_len(nrow(render_df))) {
@@ -2447,6 +2451,11 @@ limit 1
             render_df$occupant_name[i] <- as.character(
               row$display_name[1] %||% row$name[1] %||% oid
             )
+            render_df$occupant_current_hp[i] <- suppressWarnings(as.integer(row$current_hp[1] %||% row$hp_current[1] %||% NA))
+            render_df$occupant_max_hp[i] <- suppressWarnings(as.integer(row$max_hp[1] %||% row$hp_max[1] %||% NA))
+            render_df$occupant_temp_hp[i] <- suppressWarnings(as.integer(row$temp_hp[1] %||% 0L))
+            raw_conditions <- row$conditions[1] %||% row$status_effects[1] %||% ""
+            render_df$occupant_conditions[i] <- paste(as.character(unlist(raw_conditions)), collapse = ", ")
           }
         }
       }
