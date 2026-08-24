@@ -875,34 +875,34 @@ observeEvent(input$load_selected_map, {
       })
     })
     
+    send_3d_preview <- function(delay = 0) {
+      later::later(function() {
+        if (!identical(isolate(input$preview_mode %||% "2d"), "3d")) return()
+        tiles <- isolate(current_tiles())
+        if (!is.data.frame(tiles) || nrow(tiles) == 0) return()
+        render_df <- build_map_render_df(tiles = tiles, occupants = empty_map_occupants(), map_id = isolate(current_map_id()))
+        session$sendCustomMessage("combat3d-lean-init", list(
+          containerId = session$ns("combat_3d_container"),
+          mapData = jsonlite::toJSON(render_df, dataframe = "rows", auto_unbox = TRUE, null = "null"),
+          inputIds = list(), quality = "balanced"
+        ))
+      }, delay = delay)
+    }
+
+    observeEvent(session$rootScope()$input$combat3d_lean_ready, {
+      if (identical(input$preview_mode %||% "2d", "3d")) send_3d_preview(0.05)
+    }, ignoreInit = FALSE)
+
+    observeEvent(input$preview_mode, {
+      if (identical(input$preview_mode %||% "2d", "3d")) send_3d_preview(0.15)
+    }, ignoreInit = TRUE)
+
     output$map_preview_ui <- renderUI({
       mode <- input$preview_mode %||% "2d"
       
       if (identical(mode, "3d")) {
         session$onFlushed(function() {
-          tiles <- isolate(current_tiles())
-          if (!is.data.frame(tiles) || nrow(tiles) == 0) return()
-          
-          render_df <- build_map_render_df(
-            tiles = tiles,
-            occupants = empty_map_occupants(),
-            map_id = isolate(current_map_id())
-          )
-          
-          session$sendCustomMessage(
-            "combat3d-lean-init",
-            list(
-              containerId = session$ns("combat_3d_container"),
-              mapData = jsonlite::toJSON(
-                render_df,
-                dataframe = "rows",
-                auto_unbox = TRUE,
-                null = "null"
-              ),
-              inputIds = list(),
-              quality = "balanced"
-            )
-          )
+          send_3d_preview(0.05)
         }, once = TRUE)
         
         tagList(
@@ -932,30 +932,7 @@ observeEvent(input$load_selected_map, {
     
     observeEvent(input$refresh_3d_preview, {
       req(input$preview_mode == "3d")
-      
-      tiles <- isolate(current_tiles())
-      if (!is.data.frame(tiles) || nrow(tiles) == 0) return()
-      
-      render_df <- build_map_render_df(
-        tiles = tiles,
-        occupants = empty_map_occupants(),
-        map_id = isolate(current_map_id())
-      )
-      
-      session$sendCustomMessage(
-        "combat3d-lean-init",
-        list(
-          containerId = session$ns("combat_3d_container"),
-          mapData = jsonlite::toJSON(
-            render_df,
-            dataframe = "rows",
-            auto_unbox = TRUE,
-            null = "null"
-          ),
-          inputIds = list(),
-          quality = "balanced"
-        )
-      )
+      send_3d_preview()
     }, ignoreInit = TRUE)
   })
 }

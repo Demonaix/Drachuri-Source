@@ -1476,6 +1476,8 @@ test("lean 3D renderer keeps costly features optional", {
   js <- paste(readLines(js_path, warn = FALSE), collapse = "\n")
   stopifnot(grepl("InstancedMesh", js, fixed = TRUE))
   stopifnot(grepl("buildSurfaceGeometry", js, fixed = TRUE))
+  stopifnot(grepl("buildTabletop", js, fixed = TRUE))
+  stopifnot(grepl("controls.maxPolarAngle=Math.PI*.47", js, fixed = TRUE))
   stopifnot(grepl('ravine:{color:0x17151a,tex:"ravine.jpg",h:-2.65}', js, fixed = TRUE))
   stopifnot(grepl('const height=name==="wall"?2.35', js, fixed = TRUE))
   stopifnot(grepl("state.decorRoot.add(trunks,lower,upper)", js, fixed = TRUE))
@@ -1495,6 +1497,12 @@ test("control encounter workflow uses named selectors", {
   stopifnot(grepl('as.integer(input$encounter_select', live, fixed = TRUE))
   stopifnot(grepl('selectInput(ns("map_id"), "Map"', setup, fixed = TRUE))
   stopifnot(!grepl('numericInput(ns("map_id"), "Map ID"', setup, fixed = TRUE))
+})
+
+test("map builder retries 3D preview after renderer readiness", {
+  builder <- paste(readLines(file.path("DND APP Drachuri Edition 2 Control", "control_app", "modules", "control_map_builder_module.R"), warn = FALSE), collapse = "\n")
+  stopifnot(grepl("send_3d_preview <- function", builder, fixed = TRUE))
+  stopifnot(grepl("combat3d_lean_ready", builder, fixed = TRUE))
 })
 
 cat("\n", tests_run, " tests passed.\n", sep = "")
