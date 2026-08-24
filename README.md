@@ -120,7 +120,7 @@ Run the database integration test with:
 sh test-env/run_integration_test.sh
 ```
 
-Launch one control app and two independent player processes with:
+Launch one control app and four independent player processes with:
 
 ```sh
 sh test-env/run_local_apps.sh
@@ -132,7 +132,7 @@ Run the bounded three-server startup smoke test with:
 sh test-env/smoke_test_apps.sh
 ```
 
-Then open ports 3838, 3839, and 3840 as printed by the launcher. Stop the apps
+Then open ports 3838 through 3842 as printed by the launcher. Stop the apps
 and database with:
 
 ```sh

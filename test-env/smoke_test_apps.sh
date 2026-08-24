@@ -32,10 +32,14 @@ start_app "$player_dir" 3839 "$log_dir/player-one.log"
 player_one_pid=$last_pid
 start_app "$player_dir" 3840 "$log_dir/player-two.log"
 player_two_pid=$last_pid
+start_app "$player_dir" 3841 "$log_dir/player-three.log"
+player_three_pid=$last_pid
+start_app "$player_dir" 3842 "$log_dir/player-four.log"
+player_four_pid=$last_pid
 
 cleanup() {
-  kill "$control_pid" "$player_one_pid" "$player_two_pid" 2>/dev/null || true
-  wait "$control_pid" "$player_one_pid" "$player_two_pid" 2>/dev/null || true
+  kill "$control_pid" "$player_one_pid" "$player_two_pid" "$player_three_pid" "$player_four_pid" 2>/dev/null || true
+  wait "$control_pid" "$player_one_pid" "$player_two_pid" "$player_three_pid" "$player_four_pid" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 
@@ -54,7 +58,7 @@ check_port() {
 }
 
 failed=0
-for port in 3838 3839 3840; do
+for port in 3838 3839 3840 3841 3842; do
   if check_port "$port" "/tmp/drachuri-smoke-$port.html"; then
     bytes=$(wc -c < "/tmp/drachuri-smoke-$port.html")
     printf '%s\n' "PASS: port $port returned Shiny HTML ($bytes bytes)"
@@ -71,7 +75,11 @@ if [ "$failed" -ne 0 ]; then
   tail -80 "$log_dir/player-one.log" || true
   printf '\n%s\n' "Player two log:"
   tail -80 "$log_dir/player-two.log" || true
+  printf '\n%s\n' "Player three log:"
+  tail -80 "$log_dir/player-three.log" || true
+  printf '\n%s\n' "Player four log:"
+  tail -80 "$log_dir/player-four.log" || true
   exit 1
 fi
 
-printf '%s\n' "PASS: one control and two independent player servers started together."
+printf '%s\n' "PASS: one control and four independent player servers started together."

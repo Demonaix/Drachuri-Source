@@ -34,13 +34,17 @@ launch_app() {
 control_pid=$(launch_app "$control_dir" 3838 "$log_dir/control.log")
 player_one_pid=$(launch_app "$player_dir" 3839 "$log_dir/player-one.log")
 player_two_pid=$(launch_app "$player_dir" 3840 "$log_dir/player-two.log")
+player_three_pid=$(launch_app "$player_dir" 3841 "$log_dir/player-three.log")
+player_four_pid=$(launch_app "$player_dir" 3842 "$log_dir/player-four.log")
 
-printf '%s\n' "$control_pid" "$player_one_pid" "$player_two_pid" > "$log_dir/app.pids"
+printf '%s\n' "$control_pid" "$player_one_pid" "$player_two_pid" "$player_three_pid" "$player_four_pid" > "$log_dir/app.pids"
 
 printf '%s\n' \
   "Local apps starting:" \
   "  Control:  http://127.0.0.1:3838" \
   "  Player 1: http://127.0.0.1:3839" \
   "  Player 2: http://127.0.0.1:3840" \
+  "  Player 3: http://127.0.0.1:3841" \
+  "  Player 4: http://127.0.0.1:3842" \
   "Logs: $log_dir" \
   "Stop them with: sh test-env/stop_local_apps.sh"

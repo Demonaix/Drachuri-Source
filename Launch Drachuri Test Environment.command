@@ -6,7 +6,7 @@ cd "$project_dir" || exit 1
 
 printf '%s\n' \
   "Starting the isolated Drachuri test environment..." \
-  "This resets only the local drachuri_test database. Supabase is not used."
+  "The apps use only the local drachuri_test database. Supabase is not changed."
 
 if ! sh test-env/run_local_apps.sh; then
   printf '\n%s\n' "The test environment could not start. Check test-env/logs for details."
@@ -29,7 +29,7 @@ wait_for_app() {
 }
 
 failed=0
-for port in 3838 3839 3840; do
+for port in 3838 3839 3840 3841 3842; do
   if wait_for_app "$port"; then
     printf '%s\n' "Ready: http://127.0.0.1:$port"
   else
@@ -41,7 +41,7 @@ done
 if [ "$failed" -ne 0 ]; then
   printf '\n%s\n' \
     "One or more apps did not become ready." \
-    "Check test-env/logs/control.log and player-one.log/player-two.log."
+    "Check test-env/logs/control.log and player-one.log through player-four.log."
   printf 'Press Return to close...'
   read answer
   exit 1
@@ -50,12 +50,13 @@ fi
 open "http://127.0.0.1:3838"
 open "http://127.0.0.1:3839"
 open "http://127.0.0.1:3840"
+open "http://127.0.0.1:3841"
+open "http://127.0.0.1:3842"
 
 printf '\n%s\n' \
   "Drachuri Test Environment is ready." \
-  "Control and both player pages have been opened." \
+  "Control and all four player pages have been opened." \
   "Use 'Stop Drachuri Test Environment.command' when finished." \
   "You can now close this window; the apps will keep running."
 printf '\nPress Return to close this launcher window...'
 read answer
-
