@@ -3251,6 +3251,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       }
       
       phased_any <- isTRUE(movement_phase()) && isTRUE(can_use_phase())
+      shadow_step_used <- isTRUE(phased_any) && isTRUE(is_heart_eater())
       
       ok <- upsert_encounter_actor_position(
         encounter_id = eid,
@@ -3285,13 +3286,23 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       }
 
       if (!identical(cunning_mode(), "disengage")) {
-        attacker_parts <- lapply(2:nrow(chosen_path), function(path_i) tryCatch(
-          get_opportunity_attackers(
-            eid, actor_id, actor_type,
-            chosen_path$x[[path_i - 1L]], chosen_path$y[[path_i - 1L]],
-            chosen_path$x[[path_i]], chosen_path$y[[path_i]]
-          ), error = function(e) data.frame()
-        ))
+        # Shadow Step is a teleport: only creatures threatening the departure
+        # square may react. Creatures between origin and destination are never
+        # treated as having been passed in melee.
+        attacker_parts <- if (isTRUE(shadow_step_used)) {
+          list(tryCatch(
+            get_opportunity_attackers(eid, actor_id, actor_type, old_x, old_y, target_x, target_y),
+            error = function(e) data.frame()
+          ))
+        } else {
+          lapply(2:nrow(chosen_path), function(path_i) tryCatch(
+            get_opportunity_attackers(
+              eid, actor_id, actor_type,
+              chosen_path$x[[path_i - 1L]], chosen_path$y[[path_i - 1L]],
+              chosen_path$x[[path_i]], chosen_path$y[[path_i]]
+            ), error = function(e) data.frame()
+          ))
+        }
         attacker_parts <- Filter(function(x) is.data.frame(x) && nrow(x), attacker_parts)
         attackers <- if (length(attacker_parts)) do.call(rbind, attacker_parts) else data.frame()
         if (nrow(attackers)) attackers <- attackers[!duplicated(as.character(attackers$actor_id)), , drop = FALSE]
@@ -3316,6 +3327,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
           to = list(x = target_x, y = target_y),
           move_cost_ft = total_ft,
           phased = phased_any,
+          shadow_step = shadow_step_used,
           dash = isTRUE(movement_dash()),
           path = lapply(seq_len(nrow(chosen_path)), function(i) list(x = chosen_path$x[[i]], y = chosen_path$y[[i]])),
           atomic_click_move = TRUE
@@ -3383,12 +3395,28 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       speed_ft <- movement_allowance_ft()
       used_ft <- as.integer(turn_move_ft() %||% 0L)
       remaining_ft <- max(0L, speed_ft - used_ft)
-      path_result <- combat_grid_shortest_path(
-        map_tiles_rv(), map_occupants_rv(), old_x, old_y, target_x, target_y,
-        map_id = map_id(), exclude_actor_id = active_actor_id(),
-        allow_blocked = isTRUE(movement_phase()) && isTRUE(can_use_phase()),
-        max_cost_ft = remaining_ft
-      )
+      is_shadow_step <- isTRUE(movement_phase()) && isTRUE(can_use_phase()) && isTRUE(is_heart_eater())
+      if (isTRUE(is_shadow_step)) {
+        destination <- get_tile_row(map_tiles_rv(), target_x, target_y, map_id = map_id())
+        occupied <- tile_is_occupied(
+          map_occupants_rv(), target_x, target_y, map_id = map_id(),
+          exclude_actor_id = active_actor_id()
+        )
+        teleport_cost <- combat_grid_distance_ft(old_x, old_y, target_x, target_y)
+        path_result <- list(
+          ok = nrow(destination) > 0L && !isTRUE(occupied) && teleport_cost <= remaining_ft,
+          reason = if (isTRUE(occupied)) "occupied" else if (!nrow(destination)) "out_of_bounds" else if (teleport_cost > remaining_ft) "unreachable" else "ok",
+          cost_ft = teleport_cost,
+          path = data.frame(x = c(old_x, target_x), y = c(old_y, target_y), step = 0:1)
+        )
+      } else {
+        path_result <- combat_grid_shortest_path(
+          map_tiles_rv(), map_occupants_rv(), old_x, old_y, target_x, target_y,
+          map_id = map_id(), exclude_actor_id = active_actor_id(),
+          allow_blocked = isTRUE(movement_phase()) && isTRUE(can_use_phase()),
+          max_cost_ft = remaining_ft
+        )
+      }
       if (!isTRUE(path_result$ok)) {
         log_safe(if (identical(path_result$reason, "occupied")) "⚠️ You cannot end movement in an occupied space." else "⚠️ No legal path reaches that tile within your remaining movement.")
         pending_move(NULL)
@@ -3424,7 +3452,8 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         cost_ft = cost_ft,
         path = path_result$path,
         dash = isTRUE(movement_dash()),
-        phase = isTRUE(movement_phase()) && isTRUE(can_use_phase())
+        phase = isTRUE(movement_phase()) && isTRUE(can_use_phase()),
+        shadow_step = isTRUE(is_shadow_step)
       ))
       
       log_safe(paste0(
