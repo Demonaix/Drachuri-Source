@@ -15,6 +15,7 @@ renv_new/
 *.tmp
 backups/
 releases/
+installer/player/build/
 test-env/.postgres-data/
 test-env/.postgres-socket/
 test-env/logs/

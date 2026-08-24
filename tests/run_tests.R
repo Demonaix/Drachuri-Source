@@ -1649,4 +1649,25 @@ test("generated environment textures are shipped and wired into 3D", {
   stopifnot(grepl("import.meta.url", js, fixed=TRUE))
 })
 
+test("Windows player installer is self-contained and does not require RStudio", {
+  installer_dir <- file.path("installer", "player")
+  required <- c(
+    "DrachuriPlayer.iss", "build_player_installer.ps1", "restore_packages.R",
+    "installed_run.R", "Drachuri Player.cmd", "Drachuri Player.vbs", "README.md"
+  )
+  stopifnot(all(file.exists(file.path(installer_dir, required))))
+  stopifnot(file.exists("Build Drachuri Player Installer.cmd"))
+  iss <- paste(readLines(file.path(installer_dir, "DrachuriPlayer.iss"), warn = FALSE), collapse = "\n")
+  build <- paste(readLines(file.path(installer_dir, "build_player_installer.ps1"), warn = FALSE), collapse = "\n")
+  launch <- paste(readLines(file.path(installer_dir, "Drachuri Player.cmd"), warn = FALSE), collapse = "\n")
+  stopifnot(grepl("PrivilegesRequired=lowest", iss, fixed = TRUE))
+  stopifnot(grepl("runtime\\R\\*", iss, fixed = TRUE))
+  stopifnot(grepl("library\\*", iss, fixed = TRUE))
+  stopifnot(grepl('RVersion = "4.6.1"', build, fixed = TRUE))
+  stopifnot(grepl('"models"', build, fixed = TRUE))
+  stopifnot(grepl("R_HOME=%~dp0runtime\\R", launch, fixed = TRUE))
+  stopifnot(grepl("Rscript.exe", launch, fixed = TRUE))
+  stopifnot(!grepl("RStudio", launch, fixed = TRUE))
+})
+
 cat("\n", tests_run, " tests passed.\n", sep = "")
