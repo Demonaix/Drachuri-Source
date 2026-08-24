@@ -3,14 +3,17 @@ library(shiny)
 npc_pool_rule <- function(item_id, chance=100, group="", required=FALSE) {
   list(item_id=item_id,chance=as.numeric(chance),group=group,required=isTRUE(required))
 }
+npc_pool_attack_rule <- function(attack_id, chance=100, group="", required=FALSE) {
+  list(item_id=attack_id,chance=as.numeric(chance),group=group,required=isTRUE(required))
+}
 
 npc_default_pool_catalogue <- function() {
-  catalogue_version <- 3L
+  catalogue_version <- 4L
   rule <- npc_pool_rule
   make_pool <- function(id,name,base_type,features=character(),rules=list(),abilities=NULL,
                         resistances=NULL,immunities=NULL,vulnerabilities=NULL,condition_immunities=NULL,
                         foundation="",status="Core",description="",restriction="",hp_max=NULL,ac=NULL,
-                        movement_speed=NULL,gold=NULL,attack_ids=NULL) {
+                        movement_speed=NULL,gold=NULL,attack_ids=NULL,attack_rules=list()) {
     base <- enemy_generator_types()[[base_type]]
     list(
       id=id,name=name,base_type=base_type,features=features,catalogue_version=catalogue_version,
@@ -20,18 +23,18 @@ npc_default_pool_catalogue <- function() {
       vulnerabilities=vulnerabilities %||% base$vulnerabilities %||% character(),
       condition_immunities=condition_immunities %||% base$condition_immunities %||% character(),
       rules=rules,foundation=foundation,status=status,description=description,restriction=restriction,
-      hp_max=hp_max,ac=ac,movement_speed=movement_speed,gold=gold,attack_ids=attack_ids
+      hp_max=hp_max,ac=ac,movement_speed=movement_speed,gold=gold,attack_ids=attack_ids,attack_rules=attack_rules
     )
   }
   list(
     make_pool("custom","Custom Enemy","Custom",foundation="Bespoke",description="A blank mechanical foundation for an authored enemy."),
     make_pool("oldrin_civilian","Oldrin Civilian","Custom",rules=list(rule("dagger",20)),
       abilities=c(str=9L,dex=10L,con=10L,int=10L,cha=10L,bld_str=10L),foundation="Oldrin humanoid",
-      description="An ordinary inhabitant of a town, village, farm, estate or road.",restriction="Occupation should shape skills and possessions.",hp_max=7L,ac=10L,gold=c(0L,5L),attack_ids="unarmed"),
+      description="An ordinary inhabitant of a town, village, farm, estate or road.",restriction="Occupation should shape skills and possessions.",hp_max=7L,ac=10L,gold=c(0L,5L),attack_ids="unarmed_strike",attack_rules=list(npc_pool_attack_rule("desperate_shove",30))),
     make_pool("oldrin_bandit_raider","Bandit Raider","Bandit",rules=list(
       rule("leather_armor"),rule("shortsword",70,"sidearm",TRUE),rule("dagger",30,"sidearm",TRUE),
       rule("shortbow",45),rule("healing_draught",5)),foundation="Usually Oldrin humanoid",
-      description="A criminal, deserter, displaced person or opportunistic raider.",restriction="Bandit is an occupation, never a species or fixed faction."),
+      description="A criminal, deserter, displaced person or opportunistic raider.",restriction="Bandit is an occupation, never a species or fixed faction.",attack_rules=list(npc_pool_attack_rule("dirty_kick",30),npc_pool_attack_rule("pocket_sand",20))),
     make_pool("forest_outlaw","Forest Outlaw","Bandit",c("Archer"),list(
       rule("padded_armor",65,"outlaw_armour",TRUE),rule("studded_leather",35,"outlaw_armour",TRUE),
       rule("shortbow"),rule("dagger",75),rule("healing_draught",8)),foundation="Usually Oldrin humanoid",
@@ -58,14 +61,14 @@ npc_default_pool_catalogue <- function() {
       foundation="Predominantly Oldrin humanoid",description="A professional fighter whose allegiance is contractual.",restriction="No universal mercenary faction or culture."),
     make_pool("oldrin_sorcerer","Oldrin Sorcerer","Custom",c("Spellcaster"),list(rule("dagger",70),rule("healing_draught",20)),
       abilities=c(str=9L,dex=12L,con=12L,int=15L,cha=13L,bld_str=16L),foundation="Oldrin humanoid",status="Core / uncommon",
-      description="An Oldrin with magical capability connected to Annwn.",restriction="Sorcerer is not a species and does not imply blood drinking.",hp_max=25L,ac=12L,gold=c(5L,50L),attack_ids="unarmed"),
+      description="An Oldrin with magical capability connected to Annwn.",restriction="Sorcerer is not a species and does not imply blood drinking.",hp_max=25L,ac=12L,gold=c(5L,50L),attack_ids="unarmed_strike",attack_rules=list(npc_pool_attack_rule("mandred_push",30),npc_pool_attack_rule("mandred_grasp",20))),
     make_pool("oldrin_necromancer","Oldrin Necromancer","Custom",c("Spellcaster"),list(
       rule("dagger"),rule("bone_fragment",75),rule("healing_draught",20)),
       abilities=c(str=8L,dex=12L,con=13L,int=16L,cha=12L,bld_str=17L),foundation="Oldrin sorcerer",status="Core / rare",
-      description="A sorcerer specialising in necrotic magic and undead.",restriction="Necromancy does not automatically imply Abyss worship.",hp_max=34L,ac=13L,gold=c(10L,80L),attack_ids="necrotic_touch"),
+      description="A sorcerer specialising in necrotic magic and undead.",restriction="Necromancy does not automatically imply Abyss worship.",hp_max=34L,ac=13L,gold=c(10L,80L),attack_ids="withering_touch",attack_rules=list(npc_pool_attack_rule("grave_bolt",100),npc_pool_attack_rule("spectral_grasp",35),npc_pool_attack_rule("life_drain",20))),
     make_pool("fae_wanderer","Fae Wanderer","Custom",rules=list(rule("dagger",45)),
       abilities=c(str=10L,dex=15L,con=11L,int=13L,cha=14L,bld_str=14L),foundation="Tylwyth Teg / fae",
-      description="A traveller, displaced fae, scout or solitary survivor.",restriction="Do not default fae to whimsical tricksters or blood drinkers.",hp_max=18L,ac=13L,gold=c(0L,4L),attack_ids="unarmed"),
+      description="A traveller, displaced fae, scout or solitary survivor.",restriction="Do not default fae to whimsical tricksters or blood drinkers.",hp_max=18L,ac=13L,gold=c(0L,4L),attack_ids="unarmed_strike"),
     make_pool("fae_hunter","Fae Hunter / Scout","Bandit",c("Archer","Speedy"),list(
       rule("leather_armor"),rule("shortbow",65,"fae_hunter_weapon",TRUE),rule("spear",35,"fae_hunter_weapon",TRUE),rule("dagger")),
       abilities=c(str=12L,dex=16L,con=12L,int=12L,cha=12L,bld_str=15L),foundation="Tylwyth Teg / fae",
@@ -77,27 +80,27 @@ npc_default_pool_catalogue <- function() {
     make_pool("cythraul","Cythraul","Custom",c("Boss","Spellcaster"),list(),
       abilities=c(str=15L,dex=17L,con=16L,int=14L,cha=16L,bld_str=19L),foundation="Magically altered fae",status="Restricted / rare",
       description="A fae who restored lost magical power through blood drinking after the Tears of Time.",
-      restriction="Generate only deliberately. Never treat as a generic vampire, cultist or automatically evil addict.",hp_max=65L,ac=17L,gold=c(0L,20L),attack_ids=c("bite","fae_bolt")),
+      restriction="Generate only deliberately. Never treat as a generic vampire, cultist or automatically evil addict.",hp_max=65L,ac=17L,gold=c(0L,20L),attack_ids="mandred_bolt",attack_rules=list(npc_pool_attack_rule("blood_feed",70))),
     make_pool("restless_dead","Restless Dead","Undead",rules=list(
       rule("ring_mail",35),rule("bone_fragment"),rule("spear",55,"dead_weapon",TRUE),rule("dagger",45,"dead_weapon",TRUE)),
-      foundation="Undead",description="A corpse or spirit disturbed through necromantic influence.",restriction="Do not generate intelligent undead without an explicit subtype.",attack_ids=character()),
+      foundation="Undead",description="A corpse or spirit disturbed through necromantic influence.",restriction="Do not generate intelligent undead without an explicit subtype.",attack_ids="dead_grasp"),
     make_pool("necromantic_servitor","Necromantic Servitor","Undead",c("Regenerator"),list(
       rule("ring_mail",45),rule("spear",65,"servitor_weapon",TRUE),rule("shortsword",35,"servitor_weapon",TRUE),rule("bone_fragment")),
       foundation="Deliberately raised undead",description="An undead guard or minion controlled by a sorcerer.",
-      restriction="A plausible necromantic creator or history should exist.",hp_max=25L,attack_ids=character()),
+      restriction="A plausible necromantic creator or history should exist.",hp_max=25L,attack_ids="servitor_strike",attack_rules=list(npc_pool_attack_rule("restraining_grip",40))),
     make_pool("llechwyr","Llechwyr","Custom",c("Speedy","Spellcaster"),rules=list(),
       abilities=c(str=13L,dex=17L,con=14L,int=8L,cha=8L,bld_str=16L),foundation="Shadow creature",status="Restricted supernatural",
       description="An established shadow-creature of Annwn: hunter, omen and supernatural threat.",restriction="Never use as ordinary roadside wildlife; no automatic radiant vulnerability.",
-      hp_max=48L,ac=15L,movement_speed=40L,gold=c(0L,0L),attack_ids="necrotic_touch"),
+      hp_max=48L,ac=15L,movement_speed=40L,gold=c(0L,0L),attack_ids="shadow_strike",attack_rules=list(npc_pool_attack_rule("shadow_pounce",35),npc_pool_attack_rule("drag_into_darkness",30))),
     make_pool("wild_animal","Wild Animal","Animal",rules=list(rule("animal_pelt")),foundation="Animal",
-      description="Normal fauna of Annwn.",restriction="Keep mundane animals mundane."),
+      description="Normal fauna of Annwn.",restriction="Keep mundane animals mundane; select attacks that fit its anatomy.",attack_ids=character(),attack_rules=list(npc_pool_attack_rule("animal_bite",50,"animal_primary",TRUE),npc_pool_attack_rule("animal_claw",50,"animal_primary",TRUE))),
     make_pool("great_beast","Great Beast","Animal",c("Brute"),list(rule("bear_pelt")),
       abilities=c(str=18L,dex=13L,con=17L,int=3L,cha=7L,bld_str=11L),foundation="Exceptional natural animal",status="Core / uncommon",
-      description="A particularly large, old or dangerous natural animal.",restriction="A generator category, not necessarily an in-world taxonomic term.",hp_max=55L,ac=14L,gold=c(0L,0L)),
+      description="A particularly large, old or dangerous natural animal.",restriction="A generator category, not necessarily an in-world taxonomic term; check anatomy before saving.",hp_max=55L,ac=14L,gold=c(0L,0L),attack_ids=character(),attack_rules=list(npc_pool_attack_rule("great_beast_maul",60,"beast_primary",TRUE),npc_pool_attack_rule("great_beast_grab",40,"beast_primary",TRUE),npc_pool_attack_rule("great_beast_pounce",50,"beast_mobility",TRUE),npc_pool_attack_rule("great_beast_charge",50,"beast_mobility",TRUE))),
     make_pool("sorcerous_construct","Sorcerous Construct","Construct",rules=list(rule("glyph_mat_009",45)),
       abilities=c(str=17L,dex=9L,con=18L,int=5L,cha=3L,bld_str=12L),foundation="Oldrin sorcerous construct",status="Provisional / context restricted",
       description="An artificial guard, labourer or weapon associated with sorcery and tinkering.",
-      restriction="Only generate with a plausible sorcerous creator; not evidence of an ancient construct civilisation.",hp_max=55L,ac=16L,gold=c(0L,0L),attack_ids="stone_fist")
+      restriction="Only generate with a plausible sorcerous creator; not evidence of an ancient construct civilisation.",hp_max=55L,ac=16L,gold=c(0L,0L),attack_ids="integrated_strike")
   )
 }
 
@@ -144,7 +147,7 @@ controlNpcPoolsServer <- function(id) { moduleServer(id,function(input,output,se
     if(!identical(saved,merged))saveRDS(merged,path)
     merged
   }); active<-reactive({x<-Filter(function(p)identical(p$id,input$pool_id%||%""),pools());if(length(x))x[[1]]else NULL}); selected_rule<-reactive({p<-active();if(is.null(p))return(NULL);x<-Filter(function(r)identical(r$item_id,input$rule_id%||%""),p$rules);if(length(x))x[[1]]else NULL})
-  output$pool_context<-renderUI({p<-active();if(is.null(p))return(NULL);div(class="trait-note",strong(paste(p$foundation%||%"Bespoke","·",p$status%||%"Custom")),tags$p(p$description%||%""),if(nzchar(p$restriction%||%""))tags$small(strong("Generation rule: "),p$restriction))})
+  output$pool_context<-renderUI({p<-active();if(is.null(p))return(NULL);catalog<-enemy_attack_catalog();fixed<-vapply(p$attack_ids%||%character(),function(id)catalog[[id]]$name%||%id,character(1));optional<-vapply(p$attack_rules%||%list(),function(r)paste0(catalog[[r$item_id]]$name%||%r$item_id," ",r$chance,"%",if(nzchar(r$group%||%""))paste0(" [",r$group,"]")else""),character(1));div(class="trait-note",strong(paste(p$foundation%||%"Bespoke","·",p$status%||%"Custom")),tags$p(p$description%||%""),if(length(c(fixed,optional)))tags$p(strong("Special attacks: "),paste(c(fixed,optional),collapse=" · ")),if(nzchar(p$restriction%||%""))tags$small(strong("Generation rule: "),p$restriction))})
   observe({ps<-pools();vals<-vapply(ps,`[[`,"","id");keep<-input$pool_id%||%"";updateSelectInput(session,"pool_id",choices=setNames(vals,vapply(ps,`[[`,"","name")),selected=if(keep%in%vals)keep else if(length(vals))vals[1] else character())})
   observe({choices<-feature_choices();sig<-paste(names(choices),choices,collapse="|");if(identical(sig,feature_choice_sig()))return();feature_choice_sig(sig);updateSelectizeInput(session,"features",choices=choices,selected=isolate(input$features%||%character()),server=TRUE)})
   observe({it<-inventory();vals<-vapply(it,`[[`,"","id");keep<-input$item_id%||%"";updateSelectInput(session,"item_id",choices=setNames(vals,vapply(it,`[[`,"","name")),selected=if(keep%in%vals)keep else if(length(vals))vals[1] else character())})

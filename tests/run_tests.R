@@ -60,7 +60,7 @@ load_functions(global_file, c(
   "combat_attack_geometry", "combat_hide_dc"
 ))
 load_functions(relational_inventory_file, c("equipment_material_is_eligible", "inventory_item_category", "equipment_adjusted_value"))
-load_functions(enemy_generator_file, c("resolve_layered_damage_traits", "enemy_is_animal", "roll_enemy_mundane_loot", "roll_enemy_food_loot"))
+load_functions(enemy_generator_file, c("enemy_special_attack", "enemy_attack_catalog", "resolve_layered_damage_traits", "enemy_is_animal", "roll_enemy_mundane_loot", "roll_enemy_food_loot"))
 load_functions(glyph_core_file,c("GLYPH_PHYSICAL_TYPES","glyph_character_level","glyph_unlocked_ranks","glyph_mastery_level","glyph_material_requirement","glyph_counter_outcome","glyph_default_identity","normalize_weapon_enchantments","validate_ward_resistances","glyph_zone_colour"))
 load_functions(
   session_file,
@@ -1399,6 +1399,16 @@ test("layered NPC damage traits escalate duplicates and resolve conflicts", {
   stopifnot("fire"%in%traits$immunities,"poison"%in%traits$immunities)
   stopifnot("cold"%in%traits$resistances,!"acid"%in%traits$resistances,!"acid"%in%traits$vulnerabilities)
   stopifnot("frightened"%in%traits$condition_immunities)
+})
+
+test("Annwn NPC attacks retain lore, range and effect contracts", {
+  attacks<-test_env$enemy_attack_catalog()
+  forbidden<-c("fae_bolt","fire_breath","necrotic_touch","stone_fist","claw","bite")
+  stopifnot(!any(forbidden%in%names(attacks)))
+  stopifnot(attacks$mandred_bolt$ability=="bld_str",attacks$mandred_bolt$range_ft==60L)
+  stopifnot(attacks$blood_feed$requires=="target_grappled_restrained_or_incapacitated",attacks$blood_feed$heal_fraction==1)
+  stopifnot(attacks$great_beast_grab$on_hit_condition=="grappled")
+  stopifnot(attacks$integrated_projectile$lore_status=="provisional")
 })
 
 test("glyph rules cover rune, ward, and replenishable enhancement contracts", {

@@ -1572,7 +1572,7 @@ limit 1
     
     build_enemy_attack_preview <- function(attacker_char, target_char, attacker_name, target_name,
                                            attacker_id, target_id, attacker_type = "enemy",
-                                           target_type = NULL, chosen_attack = NULL) {
+                                           target_type = NULL, chosen_attack = NULL, attack_advantage="Normal") {
       `%||%` <- get("%||%", inherits = TRUE)
       
       target_type <- as.character(target_type %||% get_actor_type_by_id(target_id) %||% "player")
@@ -1599,7 +1599,7 @@ limit 1
       
       if (is.null(atk)) atk <- attacks[[1]]
       
-      roll_obj <- roll_attack_d20(adv = "Normal")
+      roll_obj <- roll_attack_d20(adv = attack_advantage)
       attack_roll <- as.integer(roll_obj$roll)
       attack_bonus <- as.integer(atk$attack_bonus %||% 0L)
       attack_total <- as.integer(attack_roll + attack_bonus)
@@ -1646,7 +1646,8 @@ limit 1
         sneak_available = FALSE,
         sneak_part = NULL,
         target_traits = get_character_damage_traits(target_char),
-        primary_damage_type = as.character(atk$damage_type %||% "")
+        primary_damage_type = as.character(atk$damage_type %||% ""),
+        attack_effect = atk
       )
     }
     
@@ -2117,13 +2118,15 @@ limit 1
           if (is.na(hit)) hit <- 0L
           if (!nzchar(dmg)) next
           
-          out[[length(out) + 1L]] <- list(
-            id = paste0("atk_", i),
+          out[[length(out) + 1L]] <- modifyList(a,list(
+            id = as.character(a$id %||% paste0("atk_", i)),
             name = nm,
             attack_bonus = hit,
             damage_expr = dmg,
-            damage_type = typ
-          )
+            damage_type = typ,
+            range_ft = as.integer(a$range_ft %||% 5L),
+            long_range_ft = as.integer(a$long_range_ft %||% a$range_ft %||% 5L)
+          ))
         }
       }
       
@@ -3435,6 +3438,35 @@ limit 1
         log_safe("Could not load combatants.", type = "error")
         return()
       }
+
+      attacks <- attacker_char$combat_profile$attacks %||% list()
+      chosen <- Filter(function(a) identical(as.character(a$id %||% ""), chosen_attack), attacks)
+      chosen <- if (length(chosen)) chosen[[1]] else attacks[[1]]
+      attacker_row <- get_actor_row(attacker_id, "enemy")
+      target_row <- get_actor_row(target_id, target_type)
+      if (!nrow(attacker_row) || !nrow(target_row)) {
+        log_safe("Attacker and target both need map positions.", type="error")
+        return()
+      }
+      geometry <- combat_attack_geometry(
+        map_tiles_r(), attacker_row$x[[1L]], attacker_row$y[[1L]], target_row$x[[1L]], target_row$y[[1L]],
+        chosen$range_ft %||% 5L, chosen$long_range_ft %||% chosen$range_ft %||% 5L,
+        map_id=current_map_id()
+      )
+      if (!isTRUE(geometry$in_range)) {
+        log_safe(paste0("Target is ",geometry$distance_ft," ft away and outside ",chosen$name%||%"this attack"," range."),type="error")
+        return()
+      }
+      if (!isTRUE(geometry$line_clear)) {
+        log_safe("A wall or other sight-blocking obstacle blocks this attack.",type="error")
+        return()
+      }
+      requirement <- as.character(chosen$requires %||% "")
+      if (identical(requirement,"target_grappled_restrained_or_incapacitated") &&
+          !any(active_conditions(target_id) %in% c("grappled","restrained","incapacitated","unconscious"))) {
+        log_safe("Drink Blood requires a grappled, restrained or incapacitated target.",type="warning")
+        return()
+      }
       
       preview <- build_enemy_attack_preview(
         attacker_char = attacker_char,
@@ -3445,8 +3477,10 @@ limit 1
         target_id = target_id,
         attacker_type = "enemy",
         target_type = target_type,
-        chosen_attack = chosen_attack
+        chosen_attack = chosen_attack,
+        attack_advantage = if(isTRUE(geometry$normal_range))"Normal" else "Disadvantage"
       )
+      if(!isTRUE(geometry$normal_range))log_safe("Target is beyond normal range: the enemy attack has disadvantage.",type="warning")
       
       pending_attack(preview)
     }, ignoreInit = TRUE)
@@ -3565,6 +3599,18 @@ limit 1
         } else {
           log_safe("Attack landed, but damage could not be applied.", type = "error")
         }
+      }
+
+      effect <- preview$attack_effect %||% list()
+      if (isTRUE(preview$is_hit) && nzchar(as.character(effect$on_hit_condition %||% ""))) {
+        add_control_condition(as.character(effect$on_hit_condition),preview$target_id,preview$target_type,
+                              paste0("npc_attack_",preview$weapon_id),list(duration=effect$duration %||% ""))
+      }
+      heal_fraction <- as.numeric(effect$heal_fraction %||% 0)
+      if (isTRUE(preview$is_hit) && final_damage > 0L && heal_fraction > 0) {
+        heal_amount <- max(1L,as.integer(floor(final_damage*heal_fraction)))
+        if (identical(preview$attacker_type,"player")) heal_player_in_encounter(eid,preview$attacker_id,heal_amount) else heal_encounter_enemy(eid,preview$attacker_id,heal_amount)
+        log_safe(paste0(preview$attacker_name," recovers ",heal_amount," HP from ",preview$weapon_name,"."))
       }
       
       ac_hint <- if (identical(preview$target_type, "enemy")) {

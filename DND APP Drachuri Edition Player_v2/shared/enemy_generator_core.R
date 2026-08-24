@@ -1,5 +1,5 @@
 enemy_damage_types <- function() c("slashing","piercing","bludgeoning","fire","cold","lightning","acid","poison","necrotic","radiant","psychic","force","thunder","iron","silver")
-enemy_materials <- function() c("natural","wood","stone","bronze","iron","steel","silver","bone","magic")
+enemy_materials <- function() c("natural","wood","stone","metal","bronze","iron","steel","silver","bone","chemical","magic")
 enemy_conditions <- function() c("blinded","charmed","deafened","frightened","grappled","incapacitated","paralysed","petrified","poisoned","prone","restrained","stunned","unconscious")
 resolve_layered_damage_traits <- function(layers=list()) {
   layers<-Filter(is.list,layers);res_layers<-lapply(layers,function(x)unique(tolower(as.character(x$resistances%||%character()))));imm<-unique(unlist(lapply(layers,function(x)tolower(as.character(x$immunities%||%character())))));vul<-unique(unlist(lapply(layers,function(x)tolower(as.character(x$vulnerabilities%||%character())))))
@@ -7,19 +7,48 @@ resolve_layered_damage_traits <- function(layers=list()) {
   list(resistances=res,immunities=imm,vulnerabilities=vul,condition_immunities=conditions)
 }
 
+enemy_special_attack <- function(name,hit=2L,dmg="1d4",type="bludgeoning",material="natural",kind="natural",action="action",range_ft=5L,long_range_ft=5L,ability="str",rarity="core",lore_status="canonical",desc="",requires="",on_hit_condition="",duration="",push_ft=0L,heal_fraction=0,usage="unlimited") {
+  list(name=name,hit=as.integer(hit),dmg=dmg,type=type,material=material,kind=kind,action=action,range_ft=as.integer(range_ft),long_range_ft=as.integer(long_range_ft),ability=ability,rarity=rarity,lore_status=lore_status,desc=desc,requires=requires,on_hit_condition=on_hit_condition,duration=duration,push_ft=as.integer(push_ft),heal_fraction=as.numeric(heal_fraction),usage=usage)
+}
+
 enemy_attack_catalog <- function() list(
-  unarmed=list(name="Unarmed Strike",hit=2L,dmg="1d4",type="bludgeoning",material="natural"),
-  claw=list(name="Claw",hit=4L,dmg="1d6+2",type="slashing",material="natural"),
-  bite=list(name="Bite",hit=4L,dmg="1d6+2",type="piercing",material="natural"),
+  unarmed_strike=enemy_special_attack("Unarmed Strike",2L,"1",desc="An ordinary physical fallback."),
+  animal_claw=enemy_special_attack("Claw",4L,"1d6+2","slashing",desc="Only for animals with effective claws."),
+  animal_bite=enemy_special_attack("Bite",4L,"1d6+2","piercing",desc="Only for animals with an appropriate bite."),
+  animal_gore=enemy_special_attack("Gore",4L,"1d8+2","piercing",desc="Only for horned or tusked animals."),
+  animal_kick=enemy_special_attack("Kick",4L,"1d6+2","bludgeoning",desc="Only for hoofed or suitably large animals."),
+  great_beast_maul=enemy_special_attack("Maul",6L,"2d8+4","slashing",rarity="elite",desc="A heavy predator attack."),
+  great_beast_grab=enemy_special_attack("Seizing Bite",6L,"2d6+4","piercing",rarity="elite",on_hit_condition="grappled",duration="until_escape",usage="once_per_turn",desc="Seizes and grapples its target."),
+  great_beast_pounce=enemy_special_attack("Pounce",6L,"2d6+4","slashing",rarity="elite",requires="moved_20ft_straight",on_hit_condition="prone",usage="once_per_turn",desc="An anatomy-dependent running pounce."),
+  great_beast_charge=enemy_special_attack("Charge",6L,"2d8+4","piercing",rarity="elite",requires="moved_20ft_straight",on_hit_condition="prone",push_ft=10L,usage="once_per_turn",desc="An anatomy-dependent charge."),
+  desperate_shove=enemy_special_attack("Desperate Shove",2L,"0","bludgeoning",kind="tactical",on_hit_condition="prone",push_ft=5L,desc="A mundane attempt to create an escape route."),
+  dirty_kick=enemy_special_attack("Dirty Kick",3L,"1","bludgeoning",kind="tactical",action="bonus",on_hit_condition="slowed",duration="end_next_turn",usage="once_per_turn",rarity="uncommon",desc="Reduces the target's speed until its next turn."),
+  pocket_sand=enemy_special_attack("Throw Dirt",3L,"0","bludgeoning",kind="tactical",requires="loose_dirt",on_hit_condition="distracted",duration="end_next_turn",usage="once_per_encounter",rarity="uncommon",desc="Imposes disadvantage on the target's next attack."),
+  dead_grasp=enemy_special_attack("Dead Grasp",3L,"1d4+2","bludgeoning",on_hit_condition="grappled",duration="until_escape",desc="A restless corpse closes its grip."),
+  servitor_strike=enemy_special_attack("Servitor Strike",4L,"1d6+2","bludgeoning",desc="A raised servitor's basic strike."),
+  restraining_grip=enemy_special_attack("Restraining Grip",4L,"1d4+2","bludgeoning",on_hit_condition="grappled",duration="until_escape",rarity="uncommon",desc="A servitor seizes its target."),
+  mandred_bolt=enemy_special_attack("Mandred Bolt",5L,"1d8+3","force","magic","magical",range_ft=60L,long_range_ft=120L,ability="bld_str",desc="A direct projection of manipulated mandred."),
+  mandred_push=enemy_special_attack("Mandred Push",5L,"0","force","magic","magical",range_ft=30L,long_range_ft=30L,ability="bld_str",rarity="uncommon",push_ft=10L,desc="Mandred force drives the target backwards."),
+  mandred_grasp=enemy_special_attack("Mandred Grasp",5L,"0","force","magic","magical",range_ft=30L,long_range_ft=30L,ability="bld_str",rarity="uncommon",on_hit_condition="grappled",duration="end_next_turn",usage="recharge_5_6",desc="Mandred holds the target in place."),
+  withering_touch=enemy_special_attack("Withering Touch",5L,"2d6+3","necrotic","magic","magical",ability="bld_str",on_hit_condition="healing_blocked",duration="start_attacker_next_turn",desc="A necromantic touch that briefly prevents healing."),
+  grave_bolt=enemy_special_attack("Grave Bolt",6L,"1d10+3","necrotic","magic","magical",range_ft=60L,long_range_ft=120L,ability="bld_str",desc="Necrotic force lashes from the caster."),
+  spectral_grasp=enemy_special_attack("Spectral Grasp",6L,"1d6+3","necrotic","magic","magical",range_ft=30L,long_range_ft=30L,ability="bld_str",rarity="uncommon",on_hit_condition="grappled",duration="until_escape",usage="recharge_5_6",desc="A spectral grip catches the target."),
+  life_drain=enemy_special_attack("Life Drain",7L,"2d8+4","necrotic","magic","magical",range_ft=30L,long_range_ft=30L,ability="bld_str",rarity="elite",heal_fraction=.5,usage="once_per_encounter",desc="Life bleeds into the necromancer."),
+  blood_feed=enemy_special_attack("Drink Blood",7L,"1d6+2d6","necrotic","natural","special",ability="bld_str",rarity="elite",requires="target_grappled_restrained_or_incapacitated",heal_fraction=1,usage="once_per_turn",desc="A Cythraul feeds from a vulnerable biological target."),
+  overwhelming_mandred=enemy_special_attack("Overwhelming Mandred",8L,"3d8+4","force","magic","magical",range_ft=15L,long_range_ft=15L,ability="bld_str",rarity="boss",lore_status="provisional",push_ft=10L,usage="recharge_5_6",desc="A deliberately enabled cone of restored mandred force."),
+  shadow_strike=enemy_special_attack("Shadow Strike",7L,"2d6+4","slashing",ability="dex",desc="The Llechwyr strikes from darkness."),
+  shadow_pounce=enemy_special_attack("Shadow Pounce",7L,"3d6+4","slashing",ability="dex",rarity="elite",requires="hidden_in_dim_or_dark",usage="once_per_encounter",desc="The Llechwyr springs from darkness."),
+  drag_into_darkness=enemy_special_attack("Drag into Darkness",7L,"1d6+4","slashing",ability="str",rarity="elite",on_hit_condition="grappled",duration="until_escape",usage="recharge_5_6",desc="The Llechwyr seizes a victim."),
+  integrated_strike=enemy_special_attack("Integrated Strike",6L,"2d8+4","bludgeoning","metal",ability="str",desc="A weapon or limb built into a sorcerous construct."),
+  integrated_projectile=enemy_special_attack("Integrated Projectile",5L,"1d8+2","piercing","metal",range_ft=30L,long_range_ft=90L,ability="dex",rarity="uncommon",lore_status="provisional",requires="authored_projectile_mechanism",usage="ammunition",desc="A specifically authored projectile mechanism."),
+  mandred_discharge=enemy_special_attack("Mandred Discharge",6L,"2d8+3","force","magic","magical",range_ft=30L,long_range_ft=60L,ability="bld_str",rarity="uncommon",lore_status="provisional",requires="sorcerous_power_mechanism",usage="recharge_5_6",desc="A construct releases stored mandred."),
+  alchemical_flask=enemy_special_attack("Alchemical Flask",4L,"1d6","acid","chemical","special",range_ft=20L,long_range_ft=60L,ability="dex",rarity="uncommon",lore_status="provisional",requires="authored_alchemical_flask",usage="consumable",desc="A whitelisted authored alchemical substance."),
+  tinkerer_device=enemy_special_attack("Discharge Device",5L,"1d8+2","force","magic","special",range_ft=30L,long_range_ft=60L,ability="bld_str",rarity="uncommon",lore_status="provisional",requires="authored_tinkerer_device",usage="recharge_5_6",desc="A specifically authored sorcerous device."),
   shortsword=list(name="Shortsword",hit=3L,dmg="1d6+1",type="slashing",material="",loot_id="shortsword"),
   dagger=list(name="Dagger",hit=3L,dmg="1d4+1",type="piercing",material="",loot_id="dagger"),
   battleaxe=list(name="Battleaxe",hit=4L,dmg="1d8+2",type="slashing",material="",loot_id="battleaxe"),
   spear=list(name="Spear",hit=3L,dmg="1d6+1",type="piercing",material="",loot_id="spear"),
-  shortbow=list(name="Shortbow",hit=3L,dmg="1d6+1",type="piercing",material="wood",loot_id="shortbow"),
-  fae_bolt=list(name="Fae Bolt",hit=4L,dmg="1d6+2",type="force",material="magic"),
-  fire_breath=list(name="Fire Breath",hit=5L,dmg="2d6",type="fire",material="natural"),
-  necrotic_touch=list(name="Necrotic Touch",hit=4L,dmg="1d8+2",type="necrotic",material="magic"),
-  stone_fist=list(name="Stone Fist",hit=5L,dmg="1d10+3",type="bludgeoning",material="stone")
+  shortbow=list(name="Shortbow",hit=3L,dmg="1d6+1",type="piercing",material="wood",loot_id="shortbow")
 )
 
 enemy_loot_catalog <- function() list(
@@ -66,15 +95,14 @@ enemy_armor_catalog <- function() list(
 )
 
 enemy_generator_types <- function() list(
-  Custom=list(desc="A neutral foundation for a bespoke enemy.",hp_max=10L,ac=10L,armor_id="unarmoured",movement_speed=30L,abilities=c(str=10L,dex=10L,con=10L,int=10L,cha=10L,bld_str=10L),attack_ids="unarmed",loot_ids=character(),gold=c(1L,6L)),
+  Custom=list(desc="A neutral foundation for a bespoke enemy.",hp_max=10L,ac=10L,armor_id="unarmoured",movement_speed=30L,abilities=c(str=10L,dex=10L,con=10L,int=10L,cha=10L,bld_str=10L),attack_ids="unarmed_strike",loot_ids=character(),gold=c(1L,6L)),
   Bandit=list(desc="A lightly armoured opportunist with blade and coin.",hp_max=12L,ac=13L,armor_id="leather",movement_speed=30L,abilities=c(str=12L,dex=14L,con=12L,int=10L,cha=10L,bld_str=10L),attack_ids=c("shortsword","shortbow"),loot_ids=character(),gold=c(3L,12L)),
   Guard=list(desc="A trained defensive humanoid carrying practical equipment.",hp_max=18L,ac=14L,armor_id="chain_shirt",movement_speed=30L,abilities=c(str=14L,dex=12L,con=14L,int=10L,cha=10L,bld_str=10L),attack_ids="spear",loot_ids=character(),gold=c(4L,10L)),
-  Cultist=list(desc="A blood-strength devotee using a dagger and dark magic.",hp_max=14L,ac=12L,armor_id="leather",movement_speed=30L,abilities=c(str=10L,dex=12L,con=12L,int=11L,cha=13L,bld_str=15L),attack_ids=c("dagger","necrotic_touch"),loot_ids=character(),gold=c(5L,15L)),
-  Animal=list(desc="A natural beast; carries no gold or manufactured equipment.",hp_max=11L,ac=12L,armor_id="unarmoured",movement_speed=40L,abilities=c(str=12L,dex=14L,con=12L,int=3L,cha=6L,bld_str=8L),attack_ids=c("claw","bite"),loot_ids="animal_pelt",gold=c(0L,0L)),
-  Fae=list(desc="An elusive magical creature vulnerable to iron.",hp_max=10L,ac=12L,armor_id="unarmoured",movement_speed=30L,abilities=c(str=8L,dex=14L,con=10L,int=12L,cha=14L,bld_str=12L),attack_ids="fae_bolt",loot_ids="fae_dust",gold=c(2L,10L),vulnerabilities="iron"),
-  Undead=list(desc="A deathless creature resistant to decay and immune to poison.",hp_max=16L,ac=14L,armor_id="ring_mail",movement_speed=25L,abilities=c(str=13L,dex=8L,con=15L,int=6L,cha=5L,bld_str=4L),attack_ids="necrotic_touch",loot_ids="bone_fragment",gold=c(0L,8L),immunities="poison",condition_immunities=c("poisoned","frightened")),
-  Construct=list(desc="A made creature with a stone body and no purse.",hp_max=24L,ac=16L,armor_id="unarmoured",movement_speed=20L,abilities=c(str=16L,dex=6L,con=18L,int=5L,cha=3L,bld_str=2L),attack_ids="stone_fist",loot_ids=character(),gold=c(0L,0L),resistances=c("slashing","piercing"),immunities="poison",condition_immunities=c("poisoned","charmed")),
-  Dragonkin=list(desc="A powerful scaled predator with elemental breath.",hp_max=30L,ac=16L,armor_id="unarmoured",movement_speed=35L,abilities=c(str=18L,dex=12L,con=16L,int=12L,cha=14L,bld_str=15L),attack_ids=c("bite","fire_breath"),loot_ids=character(),gold=c(10L,30L),resistances="fire")
+  Cultist=list(desc="Legacy magical humanoid foundation; prefer an authored Oldrin sorcerer pool.",hp_max=14L,ac=12L,armor_id="leather",movement_speed=30L,abilities=c(str=10L,dex=12L,con=12L,int=11L,cha=13L,bld_str=15L),attack_ids=c("dagger","mandred_bolt"),loot_ids=character(),gold=c(5L,15L)),
+  Animal=list(desc="A natural beast; carries no gold or manufactured equipment.",hp_max=11L,ac=12L,armor_id="unarmoured",movement_speed=40L,abilities=c(str=12L,dex=14L,con=12L,int=3L,cha=6L,bld_str=8L),attack_ids=c("animal_claw","animal_bite"),loot_ids="animal_pelt",gold=c(0L,0L)),
+  Fae=list(desc="A fae foundation for deliberately magical or altered fae only.",hp_max=10L,ac=12L,armor_id="unarmoured",movement_speed=30L,abilities=c(str=8L,dex=14L,con=10L,int=12L,cha=14L,bld_str=12L),attack_ids="unarmed_strike",loot_ids=character(),gold=c(0L,4L)),
+  Undead=list(desc="A deathless creature resistant to decay and immune to poison.",hp_max=16L,ac=14L,armor_id="ring_mail",movement_speed=25L,abilities=c(str=13L,dex=8L,con=15L,int=6L,cha=5L,bld_str=4L),attack_ids="dead_grasp",loot_ids="bone_fragment",gold=c(0L,8L),immunities="poison",condition_immunities=c("poisoned","frightened")),
+  Construct=list(desc="A context-restricted sorcerous or tinkered creation.",hp_max=24L,ac=16L,armor_id="unarmoured",movement_speed=20L,abilities=c(str=16L,dex=6L,con=18L,int=5L,cha=3L,bld_str=8L),attack_ids="integrated_strike",loot_ids=character(),gold=c(0L,0L),resistances=c("slashing","piercing"),immunities="poison",condition_immunities=c("poisoned","charmed"))
 )
 
 enemy_generator_characteristics <- function() list(
@@ -82,15 +110,15 @@ enemy_generator_characteristics <- function() list(
   Speedy=list(desc="+2 DEX and +10 ft movement.",ability_bonus=c(dex=2L),movement_bonus=10L),
   Boss=list(desc="Double HP, +1 AC and +2 to every attribute.",ability_bonus=c(str=2L,dex=2L,con=2L,int=2L,cha=2L,bld_str=2L),hp_multiplier=2,ac_bonus=1L,gold_multiplier=2),
   Fae=list(desc="Adds vulnerability to iron and immunity to being charmed.",vulnerabilities="iron",condition_immunities="charmed"),
-  Animal=list(desc="Adds claw and bite attacks, a pelt, and removes gold.",attack_ids=c("claw","bite"),loot_ids="animal_pelt",no_gold=TRUE),
+  Animal=list(desc="Adds anatomy-dependent claw and bite attacks, a pelt, and removes gold.",attack_ids=c("animal_claw","animal_bite"),loot_ids="animal_pelt",no_gold=TRUE),
   Armoured=list(desc="+3 AC and guarantees lootable leather armour.",ac_bonus=3L,loot_ids="leather_armor"),
   Brute=list(desc="+4 STR, +2 CON, +50% HP, but -2 DEX and 10 ft speed.",ability_bonus=c(str=4L,con=2L,dex=-2L),hp_multiplier=1.5,movement_bonus=-10L),
   Archer=list(desc="+2 DEX and adds a lootable shortbow attack.",ability_bonus=c(dex=2L),attack_ids="shortbow"),
-  Venomous=list(desc="Adds poison resistance and a poisonous bite.",resistances="poison",attack_ids="bite"),
+  Venomous=list(desc="Adds poison resistance; any poison attack still requires an authored anatomy.",resistances="poison",attack_ids="animal_bite"),
   Undead=list(desc="Poison immune; cannot be poisoned or frightened.",immunities="poison",condition_immunities=c("poisoned","frightened")),
-  Fire_Touched=list(name="Fire-touched",desc="Resists fire, is vulnerable to cold, and gains fire breath.",resistances="fire",vulnerabilities="cold",attack_ids="fire_breath"),
+  Fire_Touched=list(name="Fire-touched",desc="Resists fire and is vulnerable to cold; it does not grant fire breath.",resistances="fire",vulnerabilities="cold"),
   Regenerator=list(desc="A durable creature: +50% HP and +2 CON.",ability_bonus=c(con=2L),hp_multiplier=1.5),
-  Spellcaster=list(desc="+2 Blood Strength and adds a magical necrotic attack.",ability_bonus=c(bld_str=2L),attack_ids="necrotic_touch")
+  Spellcaster=list(desc="+2 Blood Strength and adds a basic Mandred Bolt.",ability_bonus=c(bld_str=2L),attack_ids="mandred_bolt")
 )
 
 enemy_characteristic_labels <- function() {
