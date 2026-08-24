@@ -721,6 +721,7 @@ limit 1
     
 
     
+    model_profile_cache <- new.env(parent = emptyenv())
     add_3d_models_to_render_df <- function(render_df) {
       if (!is.data.frame(render_df) || nrow(render_df) == 0) return(render_df)
       
@@ -750,7 +751,7 @@ limit 1
       
       for (i in player_rows) {
         actor_id <- as.character(render_df$occupant_id[i])
-        char_obj <- tryCatch(load_character_from_db(actor_id), error = function(e) NULL)
+        char_obj <- if (exists(actor_id, envir=model_profile_cache, inherits=FALSE)) get(actor_id, envir=model_profile_cache) else { loaded<-tryCatch(load_character_from_db(actor_id), error=function(e) NULL);assign(actor_id,loaded,envir=model_profile_cache);loaded }
         if (is.null(char_obj)) next
         char_obj <- tryCatch(validate_character(char_obj), error = function(e) char_obj)
         char3d <- char_obj$character_3d %||% list()
@@ -2423,7 +2424,7 @@ limit 1
       )
       if (!is.data.frame(render_df) || nrow(render_df) == 0) return()
       
-     # render_df <- add_3d_models_to_render_df(render_df)
+      if (identical(isolate(input$map_render_mode %||% "2d"), "3d") && identical(isolate(input$map_3d_quality %||% "balanced"), "decorative")) render_df <- add_3d_models_to_render_df(render_df)
       
       actors_lookup <- encounter_actors_r()
       

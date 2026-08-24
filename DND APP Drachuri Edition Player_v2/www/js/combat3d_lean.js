@@ -1,7 +1,10 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { clone as cloneSkeleton } from "three/addons/utils/SkeletonUtils.js";
 
 const states = new Map();
+const modelLoader=new GLTFLoader(),modelAssetCache=new Map(),characterTemplateCache=new Map();
 const TERRAIN = {
   grass:{color:0x719a58,tex:"grass.jpg",h:.10}, sand:{color:0xc7ad70,tex:"dirt.jpg",h:.02},
   forest:{color:0x315f38,tex:"forest.jpg",h:.14}, woodland:{color:0x315f38,tex:"forest.jpg",h:.14},
@@ -21,6 +24,8 @@ function normalise(value) {
 function truthy(v){return v===true||v===1||v==="1"||v==="true";}
 function terrainName(v){const t=String(v||"grass").toLowerCase();return TERRAIN[t]?t:"grass";}
 function seeded(x,y,salt=0){const n=Math.sin(Number(x)*12.9898+Number(y)*78.233+salt*37.719)*43758.5453;return n-Math.floor(n);}
+function modelUrl(path){if(/^https?:/i.test(path))return path;return new URL(`../${String(path).replace(/^\/+/,"")}`,import.meta.url).href;}
+function loadModelAsset(path){const url=modelUrl(path);if(!modelAssetCache.has(url))modelAssetCache.set(url,new Promise((resolve,reject)=>modelLoader.load(url,g=>resolve(g.scene),undefined,reject)));return modelAssetCache.get(url);}
 function elevation(row){const name=terrainName(row?.terrain),base=TERRAIN[name].h;if(["road","water","ravine","pit","wall"].includes(name))return base;return base+(seeded(row.x,row.y,9)-.5)*.13;}
 function signature(rows){return rows.map(t=>[t.x,t.y,t.terrain,t.blocks_movement,t.light,t.fog].join(",")).sort().join("|");}
 function disposeObject(root){
@@ -139,10 +144,17 @@ function buildDecor(state,rows){
   for(const mesh of [trunks,lower,upper]){mesh.instanceMatrix.needsUpdate=true;mesh.castShadow=true;mesh.receiveShadow=true;}
   state.decorRoot.add(trunks,lower,upper);
 }
+function modelParts(row){return [row.model_base,row.model_hair,row.model_body,row.model_arms,row.model_legs,row.model_feet,row.model_headgear,row.model_accessory].map(x=>String(x||"")).filter(Boolean);}
+function characterTemplate(row){
+  const parts=modelParts(row),hair=String(row.hair_color||"#3b2416"),key=`${parts.join("|")}|${hair}`;if(!parts.length)return null;
+  if(!characterTemplateCache.has(key))characterTemplateCache.set(key,Promise.all(parts.map(loadModelAsset)).then(assets=>{const group=new THREE.Group();assets.forEach((asset,i)=>{const part=cloneSkeleton(asset);part.traverse(obj=>{if(!obj.isMesh)return;obj.castShadow=false;obj.receiveShadow=true;if(/hair|beard/i.test(parts[i])){obj.material=Array.isArray(obj.material)?obj.material.map(m=>m.clone()):obj.material?.clone();const mats=Array.isArray(obj.material)?obj.material:[obj.material];mats.filter(Boolean).forEach(m=>{if(m.color)m.color.set(hair);});}});group.add(part);});const box=new THREE.Box3().setFromObject(group),size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3());group.position.set(-center.x,-box.min.y,-center.z);if(size.y>0)group.scale.setScalar(.78/size.y);group.rotation.y=Math.PI;return group;}));
+  return characterTemplateCache.get(key);
+}
+function attachCharacterModel(state,token,row){const pending=characterTemplate(row);if(!pending)return;pending.then(template=>{if(token.parent!==state.tokenRoot)return;const model=cloneSkeleton(template);token.add(model);token.userData.characterModel=model;if(token.userData.fallback)token.userData.fallback.visible=false;requestRender(state);}).catch(error=>console.warn("3D miniature failed; using fallback token.",error));}
 function updateTokens(state,rows){
   clearGroup(state.tokenRoot);const geo=new THREE.CylinderGeometry(.25,.30,.62,8);
   for(const row of rows){if(!row.occupant_id)continue;const player=String(row.occupant_type)==="player",active=truthy(row.is_active_actor),mat=new THREE.MeshLambertMaterial({color:active?0xffd34d:player?0x48b9df:0xd65b42});
-    const token=new THREE.Mesh(geo,mat);token.position.set(Number(row.x)-state.centerX,elevation(row)+.34,Number(row.y)-state.centerY);token.userData={actorId:String(row.occupant_id),actorType:row.occupant_type,x:Number(row.x),y:Number(row.y)};state.tokenRoot.add(token);
+    const token=new THREE.Group(),fallback=new THREE.Mesh(geo,mat);fallback.position.y=.34;token.add(fallback);token.position.set(Number(row.x)-state.centerX,elevation(row),Number(row.y)-state.centerY);token.userData={actorId:String(row.occupant_id),actorType:row.occupant_type,x:Number(row.x),y:Number(row.y),fallback};state.tokenRoot.add(token);if(state.quality==="decorative"&&player)attachCharacterModel(state,token,row);
   }
 }
 function addCylinderBetween(group,a,b,radius,material){const delta=b.clone().sub(a),length=delta.length();if(!length)return;const mesh=new THREE.Mesh(new THREE.CylinderGeometry(radius,radius,length,8),material);mesh.position.copy(a).add(b).multiplyScalar(.5);mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),delta.normalize());group.add(mesh);}

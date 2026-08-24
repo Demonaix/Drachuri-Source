@@ -1323,6 +1323,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       if (!is.data.frame(tiles)) data.frame() else tiles
     })
     
+    model_profile_cache <- new.env(parent = emptyenv())
     add_3d_models_to_render_df <- function(render_df) {
       if (!is.data.frame(render_df) || nrow(render_df) == 0) return(render_df)
       
@@ -1361,12 +1362,9 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       for (i in player_rows) {
         actor_id <- as.character(render_df$occupant_id[i])
         
-        char_obj <- NULL
-        
-        if (identical(actor_id, as.character(core$state$char_id %||% ""))) {
-          char_obj <- core$state$char
-        } else {
-          char_obj <- tryCatch(load_character_from_db(actor_id), error = function(e) NULL)
+        char_obj <- if (exists(actor_id, envir=model_profile_cache, inherits=FALSE)) get(actor_id, envir=model_profile_cache) else {
+          loaded <- if (identical(actor_id, as.character(core$state$char_id %||% ""))) core$state$char else tryCatch(load_character_from_db(actor_id), error = function(e) NULL)
+          assign(actor_id, loaded, envir=model_profile_cache); loaded
         }
         
         if (is.null(char_obj)) next
@@ -2730,7 +2728,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       )
       
       
-     # render_df <- add_3d_models_to_render_df(render_df)
+      if (identical(isolate(input$map_render_mode %||% "2d"), "3d") && identical(isolate(input$map_3d_quality %||% "balanced"), "decorative")) render_df <- add_3d_models_to_render_df(render_df)
       
       actors_lookup <- encounter_actors_tbl()
       
