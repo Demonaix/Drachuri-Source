@@ -1167,6 +1167,12 @@ damage_session_player <- function(session_id, character_id, amount) {
 
 next_combat_turn <- function(actors, combat) {
   if (!is.data.frame(actors) || nrow(actors) == 0) return(FALSE)
+
+  if ("is_active" %in% names(actors)) actors <- actors[is.na(actors$is_active) | actors$is_active %in% TRUE, , drop=FALSE]
+  hp <- suppressWarnings(as.integer(actors$current_hp %||% actors$hp_current %||% NA_integer_))
+  defeated_non_players <- as.character(actors$actor_type %||% "") %in% c("enemy","summon") & !is.na(hp) & hp <= 0L
+  actors <- actors[!defeated_non_players, , drop=FALSE]
+  if (!nrow(actors)) return(FALSE)
   
   actors <- actors[order(actors$turn_order, actors$actor_type, actors$actor_id, na.last = TRUE), , drop = FALSE]
   actors <- actors[!is.na(actors$turn_order), , drop = FALSE]

@@ -1770,6 +1770,11 @@ weapon_meta_defaults_global <- function(meta = NULL) {
   meta$dmg_type2 <- as.character(meta$dmg_type2 %||% "Other")
   meta$proficient <- isTRUE(meta$proficient)
 
+  modes <- meta$attack_modes %||% list()
+  if (is.data.frame(modes)) modes <- lapply(seq_len(nrow(modes)), function(i) as.list(modes[i, , drop = FALSE]))
+  if (!is.list(modes)) modes <- list()
+  meta$attack_modes <- modes
+
   meta$equipment_slot <- tolower(as.character(meta$equipment_slot %||%
     if (identical(meta$type, "Shield")) "shield" else "body"))
   if (!meta$equipment_slot %in% c("body", "shield", "head", "accessory")) {
@@ -1781,6 +1786,35 @@ weapon_meta_defaults_global <- function(meta = NULL) {
   if (is.na(meta$ac_bonus)) meta$ac_bonus <- 0
   
   meta
+}
+
+standard_spear_attack_modes <- function() list(
+  list(id="one_handed", name="One-handed", damage="1d6", damage_type="Piercing", stat="str", hands=1L, range_ft=5L),
+  list(id="two_handed", name="Two-handed", damage="1d8", damage_type="Piercing", stat="str", hands=2L, range_ft=5L),
+  list(id="thrown", name="Thrown (20/60 ft)", damage="1d6", damage_type="Piercing", stat="str", hands=1L, range_ft=20L, long_range_ft=60L)
+)
+
+normalise_weapon_attack_modes <- function(name, meta=list()) {
+  meta <- weapon_meta_defaults_global(meta)
+  if (!length(meta$attack_modes) && grepl("^spear(?:\\s*\\(.*\\))?$", trimws(as.character(name%||%"")), ignore.case=TRUE, perl=TRUE)) meta$attack_modes <- standard_spear_attack_modes()
+  meta
+}
+
+merge_legacy_weapon_mode_items <- function(items) {
+  inv <- inventory_normalize(items); if (!nrow(inv)) return(inv)
+  names_low <- tolower(trimws(inv$name)); spear <- grepl("^spear(?:\\s*\\((?:thrown|two hands|two handed|two-handed)\\))?$", names_low, perl=TRUE)
+  variants <- spear & grepl("(", names_low, fixed=TRUE)
+  if (sum(spear) > 1L && any(variants)) {
+    idx <- which(spear); exact <- idx[names_low[idx]=="spear"]; thrown <- idx[grepl("thrown",names_low[idx],fixed=TRUE)]
+    keep <- if(length(exact))exact[[1L]] else if(length(thrown))thrown[[1L]] else idx[[1L]]
+    meta <- normalise_weapon_attack_modes("Spear",inv$meta[[keep]]%||%list())
+    meta$merged_mode_instance_ids <- unique(c(as.character(meta$merged_mode_instance_ids%||%character()),as.character(inv$id[setdiff(idx,keep)])))
+    inv$name[[keep]] <- "Spear"; inv$desc[[keep]] <- if(nzchar(inv$desc[[keep]]))inv$desc[[keep]] else "A versatile spear usable one-handed, two-handed, or thrown."
+    inv$equipped[[keep]] <- any(inv$equipped[idx]%in%TRUE); inv$in_bag[[keep]] <- all(inv$in_bag[idx]%in%TRUE); inv$qty[[keep]] <- 1; inv$meta[[keep]] <- meta
+    inv <- inv[-setdiff(idx,keep),,drop=FALSE]
+  }
+  if(nrow(inv))for(i in which(inv$type=="weapon"))inv$meta[[i]]<-normalise_weapon_attack_modes(inv$name[[i]],inv$meta[[i]])
+  inventory_normalize(inv)
 }
 
 get_character_prof_bonus <- function(char) {
@@ -1821,7 +1855,7 @@ get_equipped_weapons_for_combat <- function(char) {
   
   rows <- lapply(seq_len(nrow(df)), function(i) {
     row <- df[i, , drop = FALSE]
-    meta <- weapon_meta_defaults_global(row$meta[[1]])
+    meta <- normalise_weapon_attack_modes(row$name[[1]],row$meta[[1]])
     glyph_until <- suppressWarnings(as.integer(meta$glyph_active_until_day %||% NA_integer_))
     current_day <- suppressWarnings(as.integer(char$meta$day %||% 1L))
     glyph_active <- !is.na(glyph_until) && current_day <= glyph_until && nzchar(as.character(meta$glyph_damage %||% ""))
@@ -1832,8 +1866,12 @@ get_equipped_weapons_for_combat <- function(char) {
       meta$dmg_type2 <- as.character(meta$glyph_damage_type %||% "Other")
     }
     
-    data.frame(
+    base <- data.frame(
       id = as.character(row$id[1] %||% paste0("weapon_", i)),
+      physical_id = as.character(row$id[1] %||% paste0("weapon_", i)),
+      mode_id = "default",
+      range_ft = NA_integer_,
+      long_range_ft = NA_integer_,
       name = as.character(row$name[1] %||% "Weapon"),
       stat = as.character(meta$stat),
       adv = as.character(meta$adv),
@@ -1850,6 +1888,8 @@ get_equipped_weapons_for_combat <- function(char) {
       proficient = isTRUE(meta$proficient),
       stringsAsFactors = FALSE
     )
+    modes<-meta$attack_modes%||%list();if(!length(modes))return(base)
+    do.call(rbind,lapply(modes,function(mode){out<-base;mid<-as.character(mode$id%||%"mode");out$id<-paste0(base$physical_id,"::",mid);out$mode_id<-mid;out$name<-paste0(base$name," — ",as.character(mode$name%||%mid));out$damage1<-as.character(mode$damage%||%base$damage1);out$dmg_type1<-as.character(mode$damage_type%||%base$dmg_type1);out$stat<-as.character(mode$stat%||%base$stat);out$range_ft<-as.integer(mode$range_ft%||%NA_integer_);out$long_range_ft<-as.integer(mode$long_range_ft%||%out$range_ft);out}))
   })
   
   out <- do.call(rbind, rows)
@@ -2898,7 +2938,7 @@ validate_character <- function(x) {
     x$inventory$gold <- 0
   }
   
-  x$inventory$items <- inventory_normalize(x$inventory$items)
+  x$inventory$items <- merge_legacy_weapon_mode_items(x$inventory$items)
   
   # ----------------------------
   # Migrate old combat inventory

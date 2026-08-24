@@ -249,6 +249,8 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
     
     hud_rows <- reactiveVal(data.frame())
     hud_sig  <- reactiveVal("init")
+    hud_combat <- reactiveVal(data.frame())
+    hud_combat_sig <- reactiveVal("init")
     
     resolved_session_id <- reactive({
       sid <- suppressWarnings(as.integer(state$active_session_id %||% NA))
@@ -480,7 +482,7 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
       
       cols <- intersect(
         c("actor_id", "actor_type", "display_name", "current_hp", "temp_hp",
-          "max_hp", "initiative", "turn_order", "is_active", "conditions", "updated_at"),
+          "max_hp", "initiative", "turn_order", "is_active", "conditions"),
         names(rows)
       )
       
@@ -500,6 +502,24 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
         hud_sig(sig)
         hud_rows(rows)
       }
+
+      snapshot <- if (is.function(live_snapshot)) live_snapshot() else empty_player_live_snapshot()
+      combat <- snapshot$combat %||% data.frame()
+      combat_cols <- intersect(
+        c("phase", "round_number", "active_actor_id", "active_actor_type", "current_turn_order"),
+        names(combat)
+      )
+      combat_sig <- if (!is.data.frame(combat) || !nrow(combat)) {
+        "empty"
+      } else if (!length(combat_cols)) {
+        "no-cols"
+      } else {
+        paste(as.character(unlist(combat[1, combat_cols, drop = FALSE])), collapse = "||")
+      }
+      if (!identical(combat_sig, hud_combat_sig())) {
+        hud_combat_sig(combat_sig)
+        hud_combat(combat)
+      }
     })
     
     output$party_cards <- renderUI({
@@ -513,8 +533,7 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
       
       rows <- hud_rows()
 
-      snapshot <- if (is.function(live_snapshot)) live_snapshot() else empty_player_live_snapshot()
-      combat <- snapshot$combat %||% data.frame()
+      combat <- hud_combat()
       in_combat <- is.data.frame(combat) && nrow(combat) > 0 &&
         identical(as.character(combat$phase[1] %||% ""), "combat")
       active_actor_id <- if (in_combat) {

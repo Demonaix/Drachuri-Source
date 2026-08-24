@@ -499,6 +499,7 @@ CLASS_FEATURE_MECHANICS <- list(
       name = "Water Channeler",
       group = "water_channeler",
       target = "enemy",
+      required_target_condition = "grappled",
       action_type = "action",
       damage = list(mode = "dice", value = "1d8", type = "necrotic"),
       resource = list(name = "sindre", cost = 10L)
@@ -510,6 +511,7 @@ CLASS_FEATURE_MECHANICS <- list(
       name = "Improved Water Channeler",
       group = "water_channeler",
       target = "enemy",
+      required_target_condition = "grappled",
       action_type = "action",
       damage = list(mode = "dice", value = "2d8", type = "necrotic"),
       resource = list(name = "sindre", cost = 10L)

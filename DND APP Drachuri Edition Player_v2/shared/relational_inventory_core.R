@@ -99,13 +99,13 @@ inventory_definition_id <- function(con, kind, item) {
     damage_type_2 <- tolower(as.character(meta$dmg_type2 %||% meta$damage_type_2 %||% "other"))
     if (!damage_type_2 %in% enemy_damage_types() && damage_type_2 != "other") damage_type_2 <- "other"
     DBI::dbExecute(con, paste(
-      "INSERT INTO weapons(id,name,description,value,weight,stat,advantage,to_hit_bonus,damage_1,damage_type_1,damage_2,damage_type_2,proficient)",
-      "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT(id) DO NOTHING"
+      "INSERT INTO weapons(id,name,description,value,weight,stat,advantage,to_hit_bonus,damage_1,damage_type_1,damage_2,damage_type_2,proficient,attack_modes)",
+      "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb) ON CONFLICT(id) DO NOTHING"
     ), params = list(id, name, desc, value, weight,
       tolower(as.character(meta$stat %||% "str")), as.character(meta$adv %||% "Normal"),
       as.integer(meta$to_hit_bonus %||% 0L), as.character(meta$damage1 %||% "1d4"), damage_type,
       as.character(meta$damage2 %||% ""), damage_type_2,
-      isTRUE(meta$proficient %||% TRUE)))
+      isTRUE(meta$proficient %||% TRUE),inventory_json(meta$attack_modes%||%list())))
   } else if (kind == "armour") {
     armour_type <- as.character(meta$type %||% meta$armour_type %||% "Light")
     if (!armour_type %in% c("Light", "Medium", "Heavy", "Shield", "Unarmoured")) armour_type <- "Light"
@@ -142,9 +142,9 @@ save_control_catalogue_definition <- function(entry) {
       type1 <- tolower(as.character(meta$dmg_type1 %||% "other")); type2 <- tolower(as.character(meta$dmg_type2 %||% "other"))
       valid <- c(enemy_damage_types(), "other"); if (!type1 %in% valid) type1 <- "other"; if (!type2 %in% valid) type2 <- "other"
       DBI::dbExecute(con, paste(
-        "INSERT INTO weapons(id,name,description,value,weight,stat,advantage,to_hit_bonus,damage_1,damage_type_1,damage_2,damage_type_2,proficient,pools,updated_at)",
-        "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::text[],now()) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,description=EXCLUDED.description,value=EXCLUDED.value,weight=EXCLUDED.weight,stat=EXCLUDED.stat,advantage=EXCLUDED.advantage,to_hit_bonus=EXCLUDED.to_hit_bonus,damage_1=EXCLUDED.damage_1,damage_type_1=EXCLUDED.damage_type_1,damage_2=EXCLUDED.damage_2,damage_type_2=EXCLUDED.damage_type_2,proficient=EXCLUDED.proficient,pools=EXCLUDED.pools,updated_at=now()"
-      ), params=list(id,name,desc,value,weight,tolower(as.character(meta$stat%||%"str")),as.character(meta$adv%||%"Normal"),as.integer(meta$to_hit_bonus%||%0L),as.character(meta$damage1%||%"1d4"),type1,as.character(meta$damage2%||%""),type2,isTRUE(meta$proficient%||%TRUE),enemy_pg_array(pools)))
+        "INSERT INTO weapons(id,name,description,value,weight,stat,advantage,to_hit_bonus,damage_1,damage_type_1,damage_2,damage_type_2,proficient,pools,attack_modes,updated_at)",
+        "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::text[],$15::jsonb,now()) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,description=EXCLUDED.description,value=EXCLUDED.value,weight=EXCLUDED.weight,stat=EXCLUDED.stat,advantage=EXCLUDED.advantage,to_hit_bonus=EXCLUDED.to_hit_bonus,damage_1=EXCLUDED.damage_1,damage_type_1=EXCLUDED.damage_type_1,damage_2=EXCLUDED.damage_2,damage_type_2=EXCLUDED.damage_type_2,proficient=EXCLUDED.proficient,pools=EXCLUDED.pools,attack_modes=EXCLUDED.attack_modes,updated_at=now()"
+      ), params=list(id,name,desc,value,weight,tolower(as.character(meta$stat%||%"str")),as.character(meta$adv%||%"Normal"),as.integer(meta$to_hit_bonus%||%0L),as.character(meta$damage1%||%"1d4"),type1,as.character(meta$damage2%||%""),type2,isTRUE(meta$proficient%||%TRUE),enemy_pg_array(pools),inventory_json(meta$attack_modes%||%list())))
     } else if (kind == "armour") {
       armour_type <- as.character(meta$type %||% "Light"); if (!armour_type %in% c("Light","Medium","Heavy","Shield","Unarmoured")) armour_type <- "Light"
       DBI::dbExecute(con, paste(
@@ -166,7 +166,7 @@ get_control_catalogue_definitions <- function() {
   tryCatch({
     weapons<-DBI::dbGetQuery(con,"SELECT * FROM weapons ORDER BY lower(name)");armour<-DBI::dbGetQuery(con,"SELECT * FROM armour ORDER BY lower(name)");items<-DBI::dbGetQuery(con,"SELECT * FROM items ORDER BY lower(name)");animals<-if(animal_catalogue_ready(con))DBI::dbGetQuery(con,"SELECT * FROM animals ORDER BY lower(name)")else data.frame()
     out<-list()
-    if(nrow(weapons))for(i in seq_len(nrow(weapons))){x<-weapons[i,,drop=FALSE];magic<-enemy_db_json(x$magical_properties[[1L]]%||%NULL,list());meta<-c(list(stat=as.character(x$stat[[1L]]%||%"str"),adv=as.character(x$advantage[[1L]]%||%"Normal"),to_hit_bonus=as.integer(x$to_hit_bonus[[1L]]%||%0L),damage1=as.character(x$damage_1[[1L]]%||%"1d4"),dmg_type1=as.character(x$damage_type_1[[1L]]%||%"other"),damage2=as.character(x$damage_2[[1L]]%||%""),dmg_type2=as.character(x$damage_type_2[[1L]]%||%"other"),proficient=isTRUE(x$proficient[[1L]])),magic);out[[length(out)+1L]]<-list(id=as.character(x$id[[1L]]),name=as.character(x$name[[1L]]),type="weapon",desc=as.character(x$description[[1L]]%||%""),value=as.numeric(x$value[[1L]]%||%0),weight=as.numeric(x$weight[[1L]]%||%0),qty=1,pools=enemy_db_values(x$pools[[1L]]%||%character()),meta=meta)}
+    if(nrow(weapons))for(i in seq_len(nrow(weapons))){x<-weapons[i,,drop=FALSE];magic<-enemy_db_json(x$magical_properties[[1L]]%||%NULL,list());meta<-c(list(stat=as.character(x$stat[[1L]]%||%"str"),adv=as.character(x$advantage[[1L]]%||%"Normal"),to_hit_bonus=as.integer(x$to_hit_bonus[[1L]]%||%0L),damage1=as.character(x$damage_1[[1L]]%||%"1d4"),dmg_type1=as.character(x$damage_type_1[[1L]]%||%"other"),damage2=as.character(x$damage_2[[1L]]%||%""),dmg_type2=as.character(x$damage_type_2[[1L]]%||%"other"),proficient=isTRUE(x$proficient[[1L]]),attack_modes=enemy_db_json(x$attack_modes[[1L]]%||%NULL,list())),magic);out[[length(out)+1L]]<-list(id=as.character(x$id[[1L]]),name=as.character(x$name[[1L]]),type="weapon",desc=as.character(x$description[[1L]]%||%""),value=as.numeric(x$value[[1L]]%||%0),weight=as.numeric(x$weight[[1L]]%||%0),qty=1,pools=enemy_db_values(x$pools[[1L]]%||%character()),meta=meta)}
     if(nrow(armour))for(i in seq_len(nrow(armour))){x<-armour[i,,drop=FALSE];magic<-enemy_db_json(x$magical_properties[[1L]]%||%NULL,list());meta<-c(list(base_ac=as.integer(x$base_ac[[1L]]%||%10L),type=as.character(x$armour_type[[1L]]%||%"Light"),custom_max_dex=as.integer(x$max_dex_bonus[[1L]]%||%0L),proficient=isTRUE(x$proficient[[1L]]),equipment_slot=as.character(x$equipment_slot[[1L]]%||%if(as.character(x$armour_type[[1L]])=="Shield")"shield"else"body"),ac_bonus=as.integer(x$ac_bonus[[1L]]%||%0L)),magic);out[[length(out)+1L]]<-list(id=as.character(x$id[[1L]]),name=as.character(x$name[[1L]]),type="armor",desc=as.character(x$description[[1L]]%||%""),value=as.numeric(x$value[[1L]]%||%0),weight=as.numeric(x$weight[[1L]]%||%0),qty=1,pools=enemy_db_values(x$pools[[1L]]%||%character()),meta=meta)}
     if(nrow(items))for(i in seq_len(nrow(items))){x<-items[i,,drop=FALSE];category<-as.character(x$category[[1L]]%||%"mundane_loot");magic<-enemy_db_json(x$magical_properties[[1L]]%||%NULL,list());meta<-c(list(category=category,effect=as.character(x$effect[[1L]]%||%""),effect_amount=as.character(x$effect_amount[[1L]]%||%""),ration_value=as.integer(x$ration_value[[1L]]%||%0L),shelf_life_days=as.integer(x$shelf_life_days[[1L]]%||%0L)),magic);out[[length(out)+1L]]<-list(id=as.character(x$id[[1L]]),name=as.character(x$name[[1L]]),type=if(category%in%c("food","consumable"))"consumable"else"item",desc=as.character(x$description[[1L]]%||%""),value=as.numeric(x$value[[1L]]%||%0),weight=as.numeric(x$weight[[1L]]%||%0),qty=1,pools=enemy_db_values(x$pools[[1L]]%||%character()),meta=meta)}
     if(nrow(animals))for(i in seq_len(nrow(animals))){x<-animals[i,,drop=FALSE];out[[length(out)+1L]]<-list(id=as.character(x$id[[1L]]),name=as.character(x$name[[1L]]),type="animal",desc=as.character(x$description[[1L]]%||%""),value=as.numeric(x$gold_value[[1L]]%||%0),weight=0,qty=1,pools=character(),meta=list(category="animal",species=as.character(x$species[[1L]]),speed=as.integer(x$speed[[1L]]),armour_class=as.integer(x$armour_class[[1L]]),max_hp=as.integer(x$max_hp[[1L]]),mountable=isTRUE(x$mountable[[1L]])))}
@@ -388,14 +388,14 @@ roll_equipment_assignment <- function(character_id, instance_id, assignment_sour
         source <- if (isTRUE(material$is_wood[[1L]])) "forced_wood" else assignment_source
         roll <- NA_real_; weights <- list()
       } else {
-        choices <- DBI::dbGetQuery(con, "SELECT * FROM item_materials WHERE NOT is_wood AND COALESCE(drop_rate,0)>0 ORDER BY id")
+        choices <- DBI::dbGetQuery(con, "SELECT * FROM item_materials WHERE NOT is_wood AND COALESCE(drop_rate,0)>0 AND ($1<>'player_roll' OR lower(name)<>'titanium copper') ORDER BY id",params=list(assignment_source))
         picked <- weighted_equipment_choice(choices); material <- picked$row; source <- assignment_source; roll <- picked$roll; weights <- as.list(picked$weights)
       }
       DBI::dbExecute(con, "UPDATE character_inventory_items SET material_id=$3,material_assignment=$4,updated_at=now() WHERE character_id=$1 AND instance_id=$2", params = list(as.character(character_id),as.character(instance_id),material$id[[1L]],source))
       DBI::dbExecute(con, "INSERT INTO equipment_assignment_log(character_id,instance_id,assignment_type,definition_id,roll_value,eligible_weights,assignment_source) VALUES($1,$2,'material',$3,$4,$5::jsonb,$6)", params = list(as.character(character_id),as.character(instance_id),material$id[[1L]],roll,inventory_json(weights),source))
     }
     if (is.na(item$condition_id[[1L]])) {
-      choices <- DBI::dbGetQuery(con, "SELECT * FROM item_conditions WHERE COALESCE(drop_rate,0)>0 ORDER BY id")
+      choices <- DBI::dbGetQuery(con, "SELECT * FROM item_conditions WHERE COALESCE(drop_rate,0)>0 AND ($1<>'player_roll' OR lower(name)<>'master-crafted') ORDER BY id",params=list(assignment_source))
       picked <- weighted_equipment_choice(choices); quality <- picked$row
       DBI::dbExecute(con, "UPDATE character_inventory_items SET condition_id=$3,condition_assignment=$4,updated_at=now() WHERE character_id=$1 AND instance_id=$2", params = list(as.character(character_id),as.character(instance_id),quality$id[[1L]],assignment_source))
       DBI::dbExecute(con, "INSERT INTO equipment_assignment_log(character_id,instance_id,assignment_type,definition_id,roll_value,eligible_weights,assignment_source) VALUES($1,$2,'build_quality',$3,$4,$5::jsonb,$6)", params = list(as.character(character_id),as.character(instance_id),quality$id[[1L]],picked$roll,inventory_json(as.list(picked$weights)),assignment_source))

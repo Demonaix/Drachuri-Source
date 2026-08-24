@@ -28,6 +28,7 @@ window.combat2dState = {
   tileMap: {},
   tokenMap: {},
   currentTiles: [],
+  zoom: 1,
   fullscreenHandlerAttached: false,
   cssInjected: false,
   resizeHandlerAttached: false
@@ -191,6 +192,7 @@ function injectCombat2DCSS() {
     }
 
     .combat-2d-grid{
+      --combat-cell-size:42px;
       display:grid;
       gap:2px;
       width:max-content;
@@ -204,10 +206,10 @@ function injectCombat2DCSS() {
 
     .combat-2d-tile{
       position:relative;
-      width:42px;
-      height:42px;
-      min-width:42px;
-      min-height:42px;
+      width:var(--combat-cell-size);
+      height:var(--combat-cell-size);
+      min-width:var(--combat-cell-size);
+      min-height:var(--combat-cell-size);
       box-sizing:border-box;
       border-radius:7px;
       border:1px solid rgba(0,0,0,0.22);
@@ -434,13 +436,6 @@ function injectCombat2DCSS() {
     }
 
     @media (max-width: 900px){
-      .combat-2d-tile{
-        width:38px;
-        height:38px;
-        min-width:38px;
-        min-height:38px;
-      }
-
       .combat-2d-token{
         width:25px;
         height:25px;
@@ -516,8 +511,12 @@ function buildCombat2DMap(el, tiles) {
 
   const grid = document.createElement("div");
   grid.className = "combat-2d-grid";
-  grid.style.gridTemplateColumns = `repeat(${cols}, 42px)`;
-  grid.style.gridTemplateRows = `repeat(${rows}, 42px)`;
+  const cellSize = Math.round(42 * (Number(state.zoom) || 1));
+  grid.style.setProperty("--combat-cell-size", `${cellSize}px`);
+  grid.style.gridTemplateColumns = `repeat(${cols}, ${cellSize}px)`;
+  grid.style.gridTemplateRows = `repeat(${rows}, ${cellSize}px)`;
+  grid.dataset.cols = String(cols);
+  grid.dataset.rows = String(rows);
   grid.dataset.minX = String(minX);
   grid.dataset.minY = String(minY);
   grid.dataset.maxX = String(maxX);
@@ -769,6 +768,21 @@ function setupFullscreen2DHandler() {
   if (state.fullscreenHandlerAttached) return;
 
   document.addEventListener("click", async function(e) {
+    const zoomBtn = e.target.closest("[id$='map_zoom_in'], [id$='map_zoom_out']");
+    if (zoomBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      const direction = zoomBtn.id.endsWith("map_zoom_in") ? 0.15 : -0.15;
+      state.zoom = Math.max(0.55, Math.min(1.9, (Number(state.zoom) || 1) + direction));
+      const grid = state.containerId ? document.getElementById(state.containerId)?.querySelector(".combat-2d-grid") : null;
+      if (grid) {
+        const cellSize = Math.round(42 * state.zoom);
+        grid.style.setProperty("--combat-cell-size", `${cellSize}px`);
+        grid.style.gridTemplateColumns = `repeat(${Number(grid.dataset.cols || 1)}, ${cellSize}px)`;
+        grid.style.gridTemplateRows = `repeat(${Number(grid.dataset.rows || 1)}, ${cellSize}px)`;
+      }
+      return;
+    }
     const btn = e.target.closest("[id$='map_3d_fullscreen'], [id$='map_2d_fullscreen']");
     if (!btn) return;
 
@@ -879,7 +893,7 @@ Shiny.addCustomMessageHandler("combat3d-update-tokens", function(message) {
   });
 });
 
-Shiny.addCustomMessageHandler("combat3d-resize", function() {
+Shiny.addCustomMessageHandler("combat3d-resize", function(message) {
   setTimeout(() => scrollActiveTokenIntoView2D(), 80);
   setTimeout(() => scrollActiveTokenIntoView2D(), 300);
 });

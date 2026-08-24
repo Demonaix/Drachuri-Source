@@ -2640,6 +2640,8 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         tags$div(
           class = "combat-map-toolbar",
           div(class = "combat-section-title", "2D Combat Map"),
+          actionButton(session$ns("map_zoom_out"), "− Zoom", class = "btn btn-default"),
+          actionButton(session$ns("map_zoom_in"), "+ Zoom", class = "btn btn-default"),
           actionButton(
             session$ns("map_3d_fullscreen"),
             "Fullscreen Map",
@@ -3537,6 +3539,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       idx <- suppressWarnings(as.integer(input$class_action_index %||% 1L))
       if (is.na(idx) || idx < 1L || idx > length(actions)) return(NULL)
       action <- actions[[idx]]$action
+      required_condition<-tolower(as.character(action$required_target_condition%||%""))
       if (identical(as.character(action$target %||% "enemy"), "self")) {
         return(tags$p(class = "confirm-note", "Target: Self"))
       }
@@ -3545,8 +3548,14 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       }
       actors <- encounter_actors_tbl()
       targets <- actors[as.character(actors$actor_type %||% "") == "enemy", , drop = FALSE]
+      if(nzchar(required_condition)&&nrow(targets))targets<-targets[vapply(as.character(targets$actor_id),function(id)required_condition%in%tolower(actor_conditions(id)),logical(1)),,drop=FALSE]
       if (!is.data.frame(targets) || nrow(targets) == 0L) {
-        return(tags$p(class = "confirm-note", "No enemy targets are available."))
+        message <- if (nzchar(required_condition)) {
+          paste0("No ", required_condition, " enemy targets are available.")
+        } else {
+          "No enemy targets are available."
+        }
+        return(tags$p(class = "confirm-note", message))
       }
       selectInput(
         session$ns("class_action_target"), "Target",
@@ -3568,7 +3577,13 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         if (length(resource)) tags$p(
           tags$strong("Cost: "), resource$cost %||% 0L, " ", tools::toTitleCase(resource$name %||% "resource")
         ),
-        if (nzchar(action$note %||% "")) tags$p(class = "confirm-note", action$note)
+        if (nzchar(action$note %||% "")) tags$p(class = "confirm-note", action$note),
+        if (nzchar(as.character(action$required_target_condition %||% ""))) {
+          tags$p(
+            class = "confirm-note",
+            paste("Requires target condition:", tools::toTitleCase(action$required_target_condition))
+          )
+        }
       )
     })
 
@@ -3585,6 +3600,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         as.character(core$state$char_id %||% "self")
       } else as.character(input$class_action_target %||% "")
       if (!nzchar(target_id)) return()
+      required_condition<-tolower(as.character(action$required_target_condition%||%""));if(nzchar(required_condition)&&!required_condition%in%tolower(actor_conditions(target_id))){log_safe(paste0("⚠️ ",action$name%||%feature$name," requires the target to be ",required_condition,"."));return()}
       damage <- action$damage %||% list()
 
       char <- validate_character(core$state$char)
@@ -4417,6 +4433,13 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         log_safe("⚠️ Could not find selected weapon.")
         return()
       }
+
+      attacker_row<-get_actor_row(attacker_id,"player");target_row_for_range<-get_actor_row(target_id,target_type)
+      if(nrow(attacker_row)&&nrow(target_row_for_range)&&!is.na(weapon_row$range_ft[[1L]])){
+        distance_ft<-max(abs(as.integer(attacker_row$x[[1L]])-as.integer(target_row_for_range$x[[1L]])),abs(as.integer(attacker_row$y[[1L]])-as.integer(target_row_for_range$y[[1L]])))*5L
+        max_range<-as.integer(weapon_row$long_range_ft[[1L]]%||%weapon_row$range_ft[[1L]])
+        if(!is.na(distance_ft)&&distance_ft>max_range){log_safe(paste0("⚠️ Target is ",distance_ft," ft away; ",weapon_row$name[[1L]]," reaches ",max_range," ft."));return()}
+      }
       
       attacker_name <- get_actor_display_name(attacker_id)
       target_name <- get_actor_display_name(target_id)
@@ -4429,6 +4452,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         attacker_id = attacker_id,
         target_id = target_id
       )
+      if(exists("distance_ft")&&!is.na(distance_ft)&&!is.na(weapon_row$range_ft[[1L]])&&distance_ft>as.integer(weapon_row$range_ft[[1L]]))adv_mode<-"Disadvantage"
       if (character_has_feature(attacker_char, "assassinate") &&
           as.integer(combat_tbl()$round_number[1] %||% 1L) == 1L) {
         target_row <- get_actor_row(target_id, target_type)
@@ -4461,7 +4485,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       preview$attack_mode <- attack_mode
       if (identical(attack_mode, "action") && !isTRUE(reaction_attack) && weapon_is_light_melee(weapon_row)) {
         other_light <- weapons[
-          as.character(weapons$id) != weapon_id &
+          as.character(weapons$physical_id%||%weapons$id) != as.character(weapon_row$physical_id[[1L]]%||%weapon_id) &
             vapply(seq_len(nrow(weapons)), function(i) weapon_is_light_melee(weapons[i, , drop = FALSE]), logical(1)),
           , drop = FALSE
         ]

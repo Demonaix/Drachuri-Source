@@ -2349,6 +2349,8 @@ limit 1
         
         tags$div(
           class = "combat-map-toolbar combat-2d-toolbar",
+          actionButton(session$ns("map_zoom_out"), "− Zoom", class = "btn btn-default"),
+          actionButton(session$ns("map_zoom_in"), "+ Zoom", class = "btn btn-default"),
           actionButton(session$ns("map_3d_fullscreen"), "Fullscreen Map", class = "btn btn-default")
         ),
         

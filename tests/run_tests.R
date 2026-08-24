@@ -28,6 +28,7 @@ glyph_core_file <- file.path(project_dir,"DND APP Drachuri Edition Player_v2","s
 
 test_env <- new.env(parent = baseenv())
 test_env$`%||%` <- function(a, b) if (!is.null(a)) a else b
+test_env$COMBAT_WEAPON_STATS <- c("str", "dex", "con", "int", "bld_str", "cha")
 sys.source(magic_data_file,envir=test_env)
 
 load_functions <- function(path, names) {
@@ -51,7 +52,9 @@ load_functions(global_file, c(
   "merchant_item_stock_weight", "merchant_haggle_terms",
   "food_item_meta", "food_rations_available", "consume_food_ration", "spoil_character_food",
   "camp_foraging_reward", "merchant_stock_category", "merchant_select_stock",
-  "equipped_magical_traits", "new_character", "validate_character", "inventory_normalize"
+  "equipped_magical_traits", "new_character", "validate_character", "inventory_empty", "inventory_normalize",
+  "weapon_meta_defaults_global", "standard_spear_attack_modes",
+  "normalise_weapon_attack_modes", "merge_legacy_weapon_mode_items"
 ))
 load_functions(relational_inventory_file, c("equipment_material_is_eligible", "inventory_item_category", "equipment_adjusted_value"))
 load_functions(enemy_generator_file, c("resolve_layered_damage_traits", "enemy_is_animal", "roll_enemy_mundane_loot", "roll_enemy_food_loot"))
@@ -245,6 +248,31 @@ test("combat wraps to a new round", {
   stopifnot(identical(result$turn_order, 1L))
   stopifnot(identical(result$actor_id, "p1"))
   stopifnot(identical(result$round_number, 5L))
+})
+
+test("combat skips defeated enemies but retains downed players", {
+  defeated <- data.frame(
+    actor_id = c("p1", "e1", "p2"), actor_type = c("player", "enemy", "player"),
+    turn_order = c(1L, 2L, 3L), current_hp = c(0L, 0L, 5L), is_active = TRUE,
+    stringsAsFactors = FALSE
+  )
+  result <- test_env$next_combat_turn(defeated, data.frame(current_turn_order = 1L, round_number = 2L))
+  stopifnot(identical(result$actor_id, "p2"))
+  result <- test_env$next_combat_turn(defeated, data.frame(current_turn_order = 3L, round_number = 2L))
+  stopifnot(identical(result$actor_id, "p1"), identical(result$round_number, 3L))
+})
+
+test("legacy spear variants become one weapon with three attack modes", {
+  items <- data.frame(
+    id = c("thrown", "two"), name = c("Spear (Thrown)", "Spear (Two-handed)"),
+    type = "weapon", desc = "", value = 0, weight = 3, qty = 1,
+    equipped = c(TRUE, FALSE), in_bag = FALSE, edit = FALSE,
+    stringsAsFactors = FALSE
+  )
+  items$meta <- list(list(), list())
+  merged <- test_env$merge_legacy_weapon_mode_items(items)
+  stopifnot(nrow(merged) == 1L, identical(merged$name[[1L]], "Spear"))
+  stopifnot(length(merged$meta[[1L]]$attack_modes) == 3L)
 })
 
 test("combat does not skip actors tied on turn order", {
@@ -976,6 +1004,7 @@ test("class features receive tags and explicit combat actions", {
   stopifnot(identical(actions[[1L]]$action$name, "Improved Water Channeler"))
   stopifnot(identical(actions[[1L]]$action$damage$mode, "dice"))
   stopifnot(identical(actions[[1L]]$action$damage$value, "2d8"))
+  stopifnot(identical(actions[[1L]]$action$required_target_condition, "grappled"))
   stopifnot(all(c("ability", "combat", "spell") %in% actions[[1L]]$tags))
 })
 

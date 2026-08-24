@@ -276,6 +276,7 @@ inventoryTabServer <- function(id, state, restoring, add_log, char_rev, session_
       if(nzchar(as.character(meta$effect%||%"")))parts<-c(parts,paste0("Effect: ",gsub("_"," ",meta$effect),if(nzchar(as.character(meta$effect_amount%||%"")))paste0(" ",meta$effect_amount)else""))
       if(length(meta$resistances%||%character()))parts<-c(parts,paste0("Resistance: ",paste(meta$resistances,collapse=", ")))
       if(length(meta$condition_immunities%||%character()))parts<-c(parts,paste0("Condition immunity: ",paste(meta$condition_immunities,collapse=", ")))
+      modes<-meta$attack_modes%||%list();if(length(modes))parts<-c(parts,paste0("Attack modes: ",paste(vapply(modes,function(m)paste0(m$name%||%m$id," ",m$damage%||%"",if(!is.null(m$range_ft)&&as.integer(m$range_ft)>5L)paste0(" · ",m$range_ft,"/",m$long_range_ft%||%m$range_ft,"ft")else""),character(1)),collapse="; ")))
       if(identical(as.character(i$type[[1L]]%||%""),"glyph")){
         parts<-c(parts,paste(tools::toTitleCase(as.character(meta$glyph_type%||%"glyph")),meta$rank%||%""),paste("Status",meta$status%||%"ready"),paste("Arcane Score",meta$arcane_score%||%"?"))
         if(nzchar(as.character(meta$damage_type%||%"")))parts<-c(parts,paste(meta$damage%||%"",meta$damage_type,"damage",if(!is.null(meta$radius_ft))paste0("in ",meta$radius_ft,"ft")else""))
