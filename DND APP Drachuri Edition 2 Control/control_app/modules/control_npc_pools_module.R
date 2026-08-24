@@ -8,7 +8,7 @@ npc_pool_attack_rule <- function(attack_id, chance=100, group="", required=FALSE
 }
 
 npc_default_pool_catalogue <- function() {
-  catalogue_version <- 4L
+  catalogue_version <- 5L
   rule <- npc_pool_rule
   make_pool <- function(id,name,base_type,features=character(),rules=list(),abilities=NULL,
                         resistances=NULL,immunities=NULL,vulnerabilities=NULL,condition_immunities=NULL,
@@ -28,7 +28,7 @@ npc_default_pool_catalogue <- function() {
   }
   list(
     make_pool("custom","Custom Enemy","Custom",foundation="Bespoke",description="A blank mechanical foundation for an authored enemy."),
-    make_pool("oldrin_civilian","Oldrin Civilian","Custom",rules=list(rule("dagger",20)),
+    make_pool("oldrin_civilian","Oldrin Civilian","Custom",rules=list(rule("club",65,"civilian_weapon",TRUE),rule("dagger",35,"civilian_weapon",TRUE)),
       abilities=c(str=9L,dex=10L,con=10L,int=10L,cha=10L,bld_str=10L),foundation="Oldrin humanoid",
       description="An ordinary inhabitant of a town, village, farm, estate or road.",restriction="Occupation should shape skills and possessions.",hp_max=7L,ac=10L,gold=c(0L,5L),attack_ids="unarmed_strike",attack_rules=list(npc_pool_attack_rule("desperate_shove",30))),
     make_pool("oldrin_bandit_raider","Bandit Raider","Bandit",rules=list(
@@ -59,14 +59,14 @@ npc_default_pool_catalogue <- function() {
       rule("spear",40,"mercenary_weapon",TRUE),rule("shortsword",35,"mercenary_weapon",TRUE),
       rule("battleaxe",25,"mercenary_weapon",TRUE),rule("shield",50),rule("healing_draught",10)),
       foundation="Predominantly Oldrin humanoid",description="A professional fighter whose allegiance is contractual.",restriction="No universal mercenary faction or culture."),
-    make_pool("oldrin_sorcerer","Oldrin Sorcerer","Custom",c("Spellcaster"),list(rule("dagger",70),rule("healing_draught",20)),
+    make_pool("oldrin_sorcerer","Oldrin Sorcerer","Custom",c("Spellcaster"),list(rule("club",35,"sorcerer_sidearm",TRUE),rule("dagger",65,"sorcerer_sidearm",TRUE),rule("healing_draught",20)),
       abilities=c(str=9L,dex=12L,con=12L,int=15L,cha=13L,bld_str=16L),foundation="Oldrin humanoid",status="Core / uncommon",
       description="An Oldrin with magical capability connected to Annwn.",restriction="Sorcerer is not a species and does not imply blood drinking.",hp_max=25L,ac=12L,gold=c(5L,50L),attack_ids="unarmed_strike",attack_rules=list(npc_pool_attack_rule("mandred_push",30),npc_pool_attack_rule("mandred_grasp",20))),
     make_pool("oldrin_necromancer","Oldrin Necromancer","Custom",c("Spellcaster"),list(
       rule("dagger"),rule("bone_fragment",75),rule("healing_draught",20)),
       abilities=c(str=8L,dex=12L,con=13L,int=16L,cha=12L,bld_str=17L),foundation="Oldrin sorcerer",status="Core / rare",
       description="A sorcerer specialising in necrotic magic and undead.",restriction="Necromancy does not automatically imply Abyss worship.",hp_max=34L,ac=13L,gold=c(10L,80L),attack_ids="withering_touch",attack_rules=list(npc_pool_attack_rule("grave_bolt",100),npc_pool_attack_rule("spectral_grasp",35),npc_pool_attack_rule("life_drain",20))),
-    make_pool("fae_wanderer","Fae Wanderer","Custom",rules=list(rule("dagger",45)),
+    make_pool("fae_wanderer","Fae Wanderer","Custom",rules=list(rule("club",30,"wanderer_weapon",TRUE),rule("dagger",70,"wanderer_weapon",TRUE)),
       abilities=c(str=10L,dex=15L,con=11L,int=13L,cha=14L,bld_str=14L),foundation="Tylwyth Teg / fae",
       description="A traveller, displaced fae, scout or solitary survivor.",restriction="Do not default fae to whimsical tricksters or blood drinkers.",hp_max=18L,ac=13L,gold=c(0L,4L),attack_ids="unarmed_strike"),
     make_pool("fae_hunter","Fae Hunter / Scout","Bandit",c("Archer","Speedy"),list(
@@ -77,7 +77,8 @@ npc_default_pool_catalogue <- function() {
       rule("studded_leather"),rule("spear",55,"fae_weapon",TRUE),rule("shortsword",45,"fae_weapon",TRUE),rule("shortbow",50),rule("shield",35)),
       abilities=c(str=14L,dex=15L,con=13L,int=12L,cha=13L,bld_str=15L),foundation="Tylwyth Teg / fae",
       description="An armed Tylwyth Teg combatant.",restriction="Do not automatically make fae warriors Cythraul.",hp_max=36L,ac=15L,gold=c(0L,6L)),
-    make_pool("cythraul","Cythraul","Custom",c("Boss","Spellcaster"),list(),
+    make_pool("cythraul","Cythraul","Custom",c("Boss","Spellcaster"),list(
+      rule("shortsword",45,"cythraul_weapon",TRUE),rule("spear",30,"cythraul_weapon",TRUE),rule("dagger",25,"cythraul_weapon",TRUE)),
       abilities=c(str=15L,dex=17L,con=16L,int=14L,cha=16L,bld_str=19L),foundation="Magically altered fae",status="Restricted / rare",
       description="A fae who restored lost magical power through blood drinking after the Tears of Time.",
       restriction="Generate only deliberately. Never treat as a generic vampire, cultist or automatically evil addict.",hp_max=65L,ac=17L,gold=c(0L,20L),attack_ids="mandred_bolt",attack_rules=list(npc_pool_attack_rule("blood_feed",70))),
