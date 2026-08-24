@@ -15,6 +15,7 @@ enemy_attack_catalog <- function() list(
   unarmed_strike=enemy_special_attack("Unarmed Strike",2L,"1",desc="An ordinary physical fallback."),
   animal_claw=enemy_special_attack("Claw",4L,"1d6+2","slashing",desc="Only for animals with effective claws."),
   animal_bite=enemy_special_attack("Bite",4L,"1d6+2","piercing",desc="Only for animals with an appropriate bite."),
+  venomous_bite=enemy_special_attack("Venomous Bite",4L,"1d6+2","piercing",kind="natural",on_hit_condition="poisoned",duration="until_save",usage="once_per_turn",rarity="uncommon",desc="An anatomy-approved bite that poisons its target until it saves."),
   animal_gore=enemy_special_attack("Gore",4L,"1d8+2","piercing",desc="Only for horned or tusked animals."),
   animal_kick=enemy_special_attack("Kick",4L,"1d6+2","bludgeoning",desc="Only for hoofed or suitably large animals."),
   great_beast_maul=enemy_special_attack("Maul",6L,"2d8+4","slashing",rarity="elite",desc="A heavy predator attack."),
@@ -24,6 +25,7 @@ enemy_attack_catalog <- function() list(
   desperate_shove=enemy_special_attack("Desperate Shove",2L,"0","bludgeoning",kind="tactical",on_hit_condition="prone",push_ft=5L,desc="A mundane attempt to create an escape route."),
   dirty_kick=enemy_special_attack("Dirty Kick",3L,"1","bludgeoning",kind="tactical",action="bonus",on_hit_condition="slowed",duration="end_next_turn",usage="once_per_turn",rarity="uncommon",desc="Reduces the target's speed until its next turn."),
   pocket_sand=enemy_special_attack("Throw Dirt",3L,"0","bludgeoning",kind="tactical",requires="loose_dirt",on_hit_condition="distracted",duration="end_next_turn",usage="once_per_encounter",rarity="uncommon",desc="Imposes disadvantage on the target's next attack."),
+  set_hunting_trap=enemy_special_attack("Spring Hunting Trap",4L,"1d4","piercing","metal","tactical",range_ft=5L,long_range_ft=5L,ability="dex",rarity="uncommon",requires="carried_hunting_trap_and_adjacent_target",on_hit_condition="restrained",duration="until_escape",usage="once_per_encounter",desc="Uses a carried hunting trap against an adjacent target, dealing damage and restraining it until escape."),
   dead_grasp=enemy_special_attack("Dead Grasp",3L,"1d4+2","bludgeoning",on_hit_condition="grappled",duration="until_escape",desc="A restless corpse closes its grip."),
   servitor_strike=enemy_special_attack("Servitor Strike",4L,"1d6+2","bludgeoning",desc="A raised servitor's basic strike."),
   restraining_grip=enemy_special_attack("Restraining Grip",4L,"1d4+2","bludgeoning",on_hit_condition="grappled",duration="until_escape",rarity="uncommon",desc="A servitor seizes its target."),
@@ -139,7 +141,7 @@ npc_feature_definition <- function(id,name,category,desc="",compatible_pools=cha
        initiative_bonus=as.integer(initiative_bonus),gold_multiplier=as.numeric(gold_multiplier),attacks=attacks,
        loot_ids=loot_ids,resistances=resistances,immunities=immunities,vulnerabilities=vulnerabilities,
        condition_immunities=condition_immunities,ai_tags=ai_tags,display_name_rule=display_name_rule,
-       enabled_for_generation=isTRUE(enabled_for_generation),feature_version=1L)
+       enabled_for_generation=isTRUE(enabled_for_generation),feature_version=3L)
 }
 
 npc_feature_catalogue <- function() {
@@ -156,14 +158,14 @@ npc_feature_catalogue <- function() {
     dirty_fighter=f("dirty_fighter","Dirty Fighter","training","Mundane fighting methods that exploit distraction and terrain.",c("oldrin_bandit_raider","forest_outlaw","mercenary_soldier"),rarity="uncommon",generation_weight=30,ability_bonus=c(dex=1),attacks=c("dirty_kick","pocket_sand"),ai_tags="exploit_weakness"),
     reckless_fighter=f("reckless_fighter","Reckless Fighter","training","An aggressive fighting style, not a culture or player class.",c("oldrin_bandit_raider","mercenary_soldier","house_soldier","fae_warrior"),exclusive_group="combat_style",rarity="uncommon",generation_weight=15,ability_bonus=c(str=2,con=1,dex=-1),hp_multiplier=1.1,ai_tags="close_aggressively"),
     skirmisher_training=f("skirmisher_training","Skirmisher","training","Mobile training intended to avoid being pinned.",c("oldrin_bandit_raider","forest_outlaw","oldrin_hunter","mercenary_soldier","fae_hunter","fae_warrior"),rarity="uncommon",generation_weight=30,ability_bonus=c(dex=1),movement_bonus=5,ai_tags="reposition"),
-    trap_setter=f("trap_setter","Trapper","training","Preparation and placement of mundane traps.",c("forest_outlaw","oldrin_hunter","fae_hunter"),requires_equipment="mundane_043",rarity="uncommon",generation_weight=30,ability_bonus=c(dex=1,int=1),loot_ids="mundane_043",ai_tags="prepare_terrain"),
+    trap_setter=f("trap_setter","Trapper","training","Carries a hunting trap and can spring it once per encounter against an adjacent target.",c("forest_outlaw","oldrin_hunter","fae_hunter"),requires_equipment="mundane_043",rarity="uncommon",generation_weight=30,ability_bonus=c(dex=1,int=1),attacks="set_hunting_trap",loot_ids="mundane_043",ai_tags="prepare_terrain"),
     trained_archer=f("trained_archer","Trained Archer","training","Formal or practical bow training.",c("forest_outlaw","oldrin_hunter","town_guard","house_soldier","mercenary_soldier","fae_hunter","fae_warrior"),requires_equipment="shortbow",generation_weight=65,ability_bonus=c(dex=1),loot_ids="shortbow",ai_tags=c("maintain_range","seek_cover")),
     tracker=f("tracker","Tracker","training","Reading signs and following trails without magical certainty.",c("forest_outlaw","oldrin_hunter","fae_hunter"),generation_weight=60,ability_bonus=c(bld_str=1),ai_tags="track"),
     wilderness_survivor=f("wilderness_survivor","Wilderness Survivor","training","Practical survival in Annwn's wilderness.",c("forest_outlaw","oldrin_hunter","fae_wanderer","fae_hunter"),generation_weight=55,ability_bonus=c(con=1,bld_str=1),ai_tags="terrain_confident"),
     scout_training=f("scout_training","Scout","training","Observation, light equipment and cautious movement.",c("oldrin_hunter","house_soldier","mercenary_soldier","fae_hunter"),rarity="uncommon",generation_weight=30,ability_bonus=c(dex=1,bld_str=1),ai_tags="observe_first"),
     guard_training=f("guard_training","Guard Training","training","Training to arrest, contain and raise an alarm.","town_guard",generation_weight=100,ability_bonus=c(str=1,con=1),ai_tags=c("arrest","hold_position")),
     soldier_training=f("soldier_training","Soldier Training","training","Professional military discipline.",c("house_soldier","mercenary_soldier"),generation_weight=100,ability_bonus=c(str=1,con=1),hp_multiplier=1.1,ai_tags="hold_objective"),
-    formation_training=f("formation_training","Formation Training","training","Disciplined coordination with adjacent allies.",c("house_soldier","veteran_house_guard"),rarity="uncommon",generation_weight=55,ai_tags="stay_in_formation"),
+    formation_training=f("formation_training","Formation Training","training","Disciplined coordination represented by +1 AC while using the current simplified NPC rules.",c("house_soldier","veteran_house_guard"),rarity="uncommon",generation_weight=55,ac_bonus=1,ai_tags="stay_in_formation"),
     shield_training=f("shield_training","Shield Training","training","Training enabled by an actual carried shield.",c("town_guard","house_soldier","veteran_house_guard","mercenary_soldier","fae_warrior"),requires_equipment="shield",rarity="uncommon",generation_weight=40,loot_ids="shield",ai_tags="protect_flank"),
     spear_training=f("spear_training","Spear Training","training","Training in bracing and disciplined spear use.",c("town_guard","house_soldier","veteran_house_guard","mercenary_soldier","oldrin_hunter","fae_warrior"),requires_equipment="spear",generation_weight=45,ability_bonus=c(str=1),loot_ids="spear"),
     bodyguard_training=f("bodyguard_training","Bodyguard","training","Training to remain near and protect an assigned person.",c("veteran_house_guard","mercenary_soldier","fae_warrior"),rarity="elite",generation_weight=30,ability_bonus=c(con=1),hp_multiplier=1.1,ai_tags="protect_assigned_target",display_name_rule="role"),
@@ -186,7 +188,7 @@ npc_feature_catalogue <- function() {
     alchemy=f("alchemy","Alchemy","magical_discipline","An established discipline whose combat items remain finite and authored.","oldrin_sorcerer",requires_features="mandred_sorcery",exclusive_group="primary_sorcerous_discipline",lore_status="canonical",rarity="uncommon",generation_weight=15,ability_bonus=c(int=2,dex=1),attacks="alchemical_flask"),
     tinkering=f("tinkering","Tinkering","magical_discipline","An established discipline using deliberately authored devices.","oldrin_sorcerer",requires_features="mandred_sorcery",exclusive_group="primary_sorcerous_discipline",lore_status="canonical",rarity="uncommon",generation_weight=15,ability_bonus=c(int=2,bld_str=1),attacks="tinkerer_device"),
     mandred_control=f("mandred_control","Mandred Control","magical_discipline","Focused manipulation of mandred.","oldrin_sorcerer",requires_features="mandred_sorcery",exclusive_group="primary_sorcerous_discipline",generation_weight=50,ability_bonus=c(bld_str=1),attacks=c("mandred_push","mandred_grasp")),
-    undead_controller=f("undead_controller","Undead Controller","training","A necromancer trained to direct nearby undead.","oldrin_necromancer",requires_features="necromancy",rarity="uncommon",generation_weight=60,ai_tags="command_undead"),
+    undead_controller=f("undead_controller","Undead Controller","training","A necromancer trained to direct nearby undead; gains Mandred Grasp as its concrete control action.","oldrin_necromancer",requires_features="necromancy",rarity="uncommon",generation_weight=60,attacks="mandred_grasp",ai_tags="command_undead"),
     life_drain_adept=f("life_drain_adept","Life-Drain Adept","magical_discipline","Elite necromantic life-draining practice.","oldrin_necromancer",requires_features="necromancy",rarity="elite",generation_weight=15,attacks="life_drain"),
     fae_survivor=f("fae_survivor","Survivor","training","Fae survival experience rather than a racial power.",c("fae_wanderer","fae_hunter","fae_warrior"),generation_weight=55,ability_bonus=c(con=1,bld_str=1),ai_tags="survive"),
     fae_hunter_training=f("fae_hunter_training","Fae Hunter Training","training","Practical hunting and ambush training.","fae_hunter",generation_weight=100,ability_bonus=c(dex=1),ai_tags="hunt"),
@@ -196,9 +198,9 @@ npc_feature_catalogue <- function() {
     blood_fuelled_recovery=f("blood_fuelled_recovery","Blood-Fuelled Recovery","supernatural_state","Drink Blood restores health; this is not passive regeneration.","cythraul",requires_features="cythraul_restoration",rarity="uncommon",generation_weight=40,attacks="blood_feed"),
     degraded_corpse=f("degraded_corpse","Degraded","physical","A physically degraded corpse, not a new undead species.",c("restless_dead","necromantic_servitor"),exclusive_group="corpse_condition",generation_weight=40,ability_bonus=c(str=-1,dex=-2),hp_multiplier=.85,ac_bonus=-1),
     fresh_corpse=f("fresh_corpse","Recently Dead","physical","A relatively fresh corpse.",c("restless_dead","necromantic_servitor"),exclusive_group="corpse_condition",generation_weight=20,ability_bonus=c(dex=1)),
-    relentless_dead=f("relentless_dead","Relentless","supernatural_state","Uncontrolled persistence through debris and obstruction.","restless_dead",generation_weight=30,ai_tags="relentless_advance"),
-    tenacious_dead=f("tenacious_dead","Tenacious Dead","supernatural_state","An elite corpse that may refuse to fall once.","restless_dead",rarity="elite",generation_weight=8,ai_tags="refuse_to_fall"),
-    bound_servitor=f("bound_servitor","Bound Servitor","supernatural_state","A servitor bound to a controller and simple commands.","necromantic_servitor",generation_weight=100,ai_tags="obey_command"),
+    relentless_dead=f("relentless_dead","Relentless","supernatural_state","Persistent advance grants +5 ft movement despite the corpse's normal slowness.","restless_dead",generation_weight=30,movement_bonus=5,ai_tags="relentless_advance"),
+    tenacious_dead=f("tenacious_dead","Tenacious Dead","supernatural_state","An elite corpse represented by 25% additional HP.","restless_dead",rarity="elite",generation_weight=8,hp_multiplier=1.25,ai_tags="refuse_to_fall"),
+    bound_servitor=f("bound_servitor","Bound Servitor","supernatural_state","A servitor bound to simple commands; immune to being charmed by others.","necromantic_servitor",generation_weight=100,condition_immunities="charmed",ai_tags="obey_command"),
     guardian_servitor=f("guardian_servitor","Guardian Servitor","behaviour","A bound servitor assigned to protect its controller.","necromantic_servitor",requires_features="bound_servitor",rarity="uncommon",generation_weight=20,hp_multiplier=1.15,ai_tags="interpose_for_master"),
     restraining_servitor=f("restraining_servitor","Restraining Servitor","design","A servitor built or trained to seize targets.","necromantic_servitor",rarity="uncommon",generation_weight=30,ability_bonus=c(str=1),attacks="restraining_grip"),
     shadow_stalker=f("shadow_stalker","Shadow Stalker","behaviour","Llechwyr stalking behaviour, not a subspecies.","llechwyr",generation_weight=70,ability_bonus=c(dex=1),ai_tags=c("fade_in_shadow","stalk_unseen")),
@@ -209,7 +211,7 @@ npc_feature_catalogue <- function() {
     clawed=f("clawed","Clawed","anatomy","An anatomy-approved claw attack.",c("wild_animal","great_beast"),generation_weight=0,attacks="animal_claw",enabled_for_generation=FALSE),
     horned_or_tusked=f("horned_or_tusked","Horned / Tusked","anatomy","An anatomy-approved gore attack.",c("wild_animal","great_beast"),generation_weight=0,attacks="animal_gore",enabled_for_generation=FALSE),
     powerful_kick=f("powerful_kick","Powerful Kick","anatomy","An anatomy-approved kick.",c("wild_animal","great_beast"),generation_weight=0,attacks="animal_kick",enabled_for_generation=FALSE),
-    venomous_anatomy=f("venomous_anatomy","Venomous","anatomy","Only for a species profile explicitly marked venomous.",c("wild_animal","great_beast"),generation_weight=0,enabled_for_generation=FALSE),
+    venomous_anatomy=f("venomous_anatomy","Venomous","anatomy","Only for a species profile explicitly marked venomous; grants a venomous bite.",c("wild_animal","great_beast"),generation_weight=0,attacks="venomous_bite",enabled_for_generation=FALSE),
     massive_beast=f("massive_beast","Massive","physical","An exceptionally large specimen of an established animal.","great_beast",generation_weight=100,ability_bonus=c(str=3,con=2),hp_multiplier=1.5),
     pouncing_beast=f("pouncing_beast","Pouncing Predator","anatomy","Requires a pouncing predator body plan.","great_beast",exclusive_group="great_beast_mobility",generation_weight=0,ability_bonus=c(dex=1),attacks="great_beast_pounce",enabled_for_generation=FALSE),
     charging_beast=f("charging_beast","Charging Beast","anatomy","Requires a horned or heavy charging body plan.","great_beast",exclusive_group="great_beast_mobility",generation_weight=0,ability_bonus=c(str=2),attacks="great_beast_charge",enabled_for_generation=FALSE),
@@ -218,11 +220,29 @@ npc_feature_catalogue <- function() {
     elite_combatant=f("elite_combatant","Elite","encounter_modifier","Improves existing legitimate capabilities without granting new magic or anatomy.",character(),rarity="elite",generation_weight=5,ability_bonus=c(str=1,con=1),hp_multiplier=1.35,ac_bonus=1,initiative_bonus=1),
     leader=f("leader","Leader","rank","Coordinates allies without inventing a faction or rank title.",character(),rarity="elite",generation_weight=5,ability_bonus=c(cha=2,int=1),hp_multiplier=1.15,initiative_bonus=1,ai_tags="coordinate_allies",display_name_rule="role"),
     boss_encounter=f("boss_encounter","Boss Encounter","encounter_modifier","Encounter importance only; grants no new magic, anatomy or supernatural state.",character(),rarity="boss",generation_weight=0,ability_bonus=c(str=1,dex=1,con=1),hp_multiplier=2,ac_bonus=1,initiative_bonus=2,enabled_for_generation=FALSE),
-    injured=f("injured","Injured","temporary_state","Begins combat below maximum HP.",character(),exclusive_group="injury_state",generation_weight=8,ai_tags="cautious"),
+    injured=f("injured","Injured","temporary_state","Uses 65% of the normal HP pool to represent beginning the encounter wounded.",character(),exclusive_group="injury_state",generation_weight=8,hp_multiplier=.65,ai_tags="cautious"),
     badly_injured=f("badly_injured","Badly Injured","temporary_state","Begins badly wounded and avoids direct combat.",character(),exclusive_group="injury_state",generation_weight=3,ability_bonus=c(str=-1,dex=-1),movement_bonus=-5,ai_tags="avoid_combat"),
     exhausted=f("exhausted","Exhausted","temporary_state","A tired living creature with reduced movement and reactions.",character(),incompatible_pools=c("restless_dead","necromantic_servitor","sorcerous_construct"),generation_weight=5,ability_bonus=c(con=-1,dex=-1),movement_bonus=-5,initiative_bonus=-2),
     desperate=f("desperate","Desperate","behaviour","Accepts greater tactical risk because safer choices have failed.",character(),generation_weight=8,ability_bonus=c(cha=-1),initiative_bonus=1,ai_tags="take_risks")
   )
+}
+
+npc_feature_effect_summary <- function(feature,attack_catalogue=enemy_attack_catalog(),loot_catalogue=enemy_loot_catalog()) {
+  x<-feature%||%list();out<-character();bonuses<-x$ability_bonus%||%numeric()
+  if(length(bonuses))out<-c(out,paste0("Abilities: ",paste(paste0(toupper(names(bonuses)),ifelse(bonuses>=0," +"," "),bonuses),collapse=", "),"."))
+  if(as.numeric(x$hp_multiplier%||%1)!=1)out<-c(out,paste0("HP: ",round(as.numeric(x$hp_multiplier)*100),"% of the pool's normal HP."))
+  if(as.integer(x$ac_bonus%||%0)!=0)out<-c(out,paste0("AC: ",if(as.integer(x$ac_bonus)>0)"+"else"",as.integer(x$ac_bonus),"."))
+  if(as.integer(x$movement_bonus%||%0)!=0)out<-c(out,paste0("Movement: ",if(as.integer(x$movement_bonus)>0)"+"else"",as.integer(x$movement_bonus)," ft."))
+  if(as.integer(x$initiative_bonus%||%0)!=0)out<-c(out,paste0("Initiative: ",if(as.integer(x$initiative_bonus)>0)"+"else"",as.integer(x$initiative_bonus),"."))
+  if(as.numeric(x$gold_multiplier%||%1)!=1)out<-c(out,paste0("Gold: x",format(as.numeric(x$gold_multiplier),trim=TRUE),"."))
+  for(id in as.character(x$attacks%||%character())){a<-attack_catalogue[[id]];if(is.null(a)){out<-c(out,paste0("Attack: ",id," [missing definition]."));next};details<-c(paste0(a$dmg%||%"0"," ",a$type%||%"damage"),paste0(a$range_ft%||%5," ft"),a$usage%||%"unlimited");if(nzchar(a$on_hit_condition%||%""))details<-c(details,paste0("inflicts ",a$on_hit_condition));if(nzchar(a$requires%||%""))details<-c(details,paste0("requires ",gsub("_"," ",a$requires)));out<-c(out,paste0("Attack: ",a$name%||%id," — ",paste(details,collapse="; "),"."))}
+  for(id in as.character(x$loot_ids%||%character())){item<-loot_catalogue[[id]];out<-c(out,paste0("Equipment: ",item$name%||%gsub("_"," ",id)," (carried and lootable)."))}
+  for(field in c("resistances","immunities","vulnerabilities","condition_immunities")){values<-as.character(x[[field]]%||%character());if(length(values))out<-c(out,paste0(gsub("_"," ",tools::toTitleCase(field)),": ",paste(values,collapse=", "),"."))}
+  if(length(x$requires_features%||%character()))out<-c(out,paste0("Requires feature: ",paste(gsub("_"," ",x$requires_features),collapse=", "),"."))
+  if(length(x$requires_equipment%||%character()))out<-c(out,paste0("Requires equipment: ",paste(gsub("_"," ",x$requires_equipment),collapse=", "),"."))
+  if(length(x$ai_tags%||%character()))out<-c(out,paste0("Tactical guidance: ",paste(gsub("_"," ",x$ai_tags),collapse=", "),"."))
+  if(!length(out))out<-"No implemented mechanical effect. This feature is descriptive only."
+  out
 }
 
 enemy_characteristic_labels <- function() {

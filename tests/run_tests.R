@@ -60,7 +60,7 @@ load_functions(global_file, c(
   "combat_attack_geometry", "combat_hide_dc"
 ))
 load_functions(relational_inventory_file, c("equipment_material_is_eligible", "inventory_item_category", "equipment_adjusted_value"))
-load_functions(enemy_generator_file, c("enemy_special_attack", "enemy_attack_catalog", "resolve_layered_damage_traits", "enemy_is_animal", "roll_enemy_mundane_loot", "roll_enemy_food_loot", "npc_feature_definition", "npc_feature_catalogue"))
+load_functions(enemy_generator_file, c("enemy_special_attack", "enemy_attack_catalog", "enemy_loot_catalog", "resolve_layered_damage_traits", "enemy_is_animal", "roll_enemy_mundane_loot", "roll_enemy_food_loot", "npc_feature_definition", "npc_feature_catalogue", "npc_feature_effect_summary"))
 load_functions(glyph_core_file,c("GLYPH_PHYSICAL_TYPES","glyph_character_level","glyph_unlocked_ranks","glyph_mastery_level","glyph_material_requirement","glyph_counter_outcome","glyph_default_identity","normalize_weapon_enchantments","validate_ward_resistances","glyph_zone_colour"))
 load_functions(
   session_file,
@@ -1420,6 +1420,12 @@ test("Annwn NPC features replace generic traits with layered lore-safe definitio
   stopifnot(features$boss_encounter$category=="encounter_modifier",!features$boss_encounter$enabled_for_generation)
   attacks<-test_env$enemy_attack_catalog()
   stopifnot(!length(unique(unlist(lapply(features,function(x)setdiff(x$attacks,names(attacks)))))))
+  trap<-attacks$set_hunting_trap
+  stopifnot("set_hunting_trap"%in%features$trap_setter$attacks,trap$on_hit_condition=="restrained",trap$usage=="once_per_encounter")
+  concrete<-function(x)length(x$ability_bonus)||x$hp_multiplier!=1||x$ac_bonus!=0||x$movement_bonus!=0||x$initiative_bonus!=0||x$gold_multiplier!=1||length(x$attacks)||length(x$loot_ids)||length(x$resistances)||length(x$immunities)||length(x$vulnerabilities)||length(x$condition_immunities)
+  stopifnot(all(vapply(features,concrete,logical(1))))
+  summary<-test_env$npc_feature_effect_summary(features$trap_setter)
+  stopifnot(any(grepl("Spring Hunting Trap",summary,fixed=TRUE)),any(grepl("DEX +1",summary,fixed=TRUE)))
 })
 
 test("glyph rules cover rune, ward, and replenishable enhancement contracts", {
