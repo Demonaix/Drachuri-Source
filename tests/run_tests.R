@@ -1556,6 +1556,15 @@ test("Dracnos wanted sketch is pinned away from the live HUD wall", {
   stopifnot(grepl("dracnos.rotation.y=Math.PI/2", js, fixed = TRUE))
 })
 
+test("Lord Blacklyn dangerous Fae ally notice joins the wanted wall", {
+  js <- paste(readLines(file.path("DND APP Drachuri Edition Player_v2", "www", "js", "combat3d_lean.js"), warn = FALSE), collapse = "\n")
+  poster <- file.path("DND APP Drachuri Edition Player_v2", "www", "assets", "textures", "wanted_lord_blacklyn.png")
+  stopifnot(file.exists(poster), file.info(poster)$size > 100000)
+  stopifnot(grepl("wanted_lord_blacklyn.png", js, fixed = TRUE))
+  stopifnot(all(vapply(c('"DANGEROUS"', '"LORD BLACKLYN"', '"FAE ALLY"'), function(label) grepl(label, js, fixed = TRUE), logical(1))))
+  stopifnot(grepl("blacklynX=-roomWidth/2", js, fixed = TRUE))
+})
+
 test("control encounter workflow uses named selectors", {
   live <- paste(readLines(file.path("DND APP Drachuri Edition 2 Control", "control_app", "modules", "control_live_combat_module.R"), warn = FALSE), collapse = "\n")
   setup <- paste(readLines(file.path("DND APP Drachuri Edition 2 Control", "control_app", "modules", "control_encounter_setup_module.R"), warn = FALSE), collapse = "\n")
