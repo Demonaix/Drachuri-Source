@@ -1477,6 +1477,7 @@ test("lean 3D renderer keeps costly features optional", {
   stopifnot(grepl("InstancedMesh", js, fixed = TRUE))
   stopifnot(grepl("buildSurfaceGeometry", js, fixed = TRUE))
   stopifnot(grepl("buildTabletop", js, fixed = TRUE))
+  stopifnot(grepl("tableWidth", js, fixed = TRUE), grepl("wallH=18", js, fixed = TRUE))
   stopifnot(grepl("controls.maxPolarAngle=Math.PI*.47", js, fixed = TRUE))
   stopifnot(grepl('ravine:{color:0x17151a,tex:"ravine.jpg",h:-2.65}', js, fixed = TRUE))
   stopifnot(grepl('const height=name==="wall"?2.35', js, fixed = TRUE))
@@ -1503,6 +1504,13 @@ test("map builder retries 3D preview after renderer readiness", {
   builder <- paste(readLines(file.path("DND APP Drachuri Edition 2 Control", "control_app", "modules", "control_map_builder_module.R"), warn = FALSE), collapse = "\n")
   stopifnot(grepl("send_3d_preview <- function", builder, fixed = TRUE))
   stopifnot(grepl("combat3d_lean_ready", builder, fixed = TRUE))
+  stopifnot(grepl("preview_3d_quality", builder, fixed = TRUE))
+})
+
+test("local launch configures a feature-rich visual map", {
+  visual_map <- paste(readLines(file.path("test-env", "configure_visual_test_map.R"), warn = FALSE), collapse = "\n")
+  stopifnot(grepl("3D Visual Test — Forest Crossing", visual_map, fixed = TRUE))
+  stopifnot(all(vapply(c("forest", "road", "ravine", "water", "wall"), function(x) grepl(paste0('"', x, '"'), visual_map, fixed = TRUE), logical(1))))
 })
 
 cat("\n", tests_run, " tests passed.\n", sep = "")

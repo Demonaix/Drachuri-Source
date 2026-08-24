@@ -274,6 +274,7 @@ controlMapBuilderUI <- function(id) {
               selected = "2d",
               inline = TRUE
             ),
+            selectInput(ns("preview_3d_quality"), "3D Detail", choices = c("Low"="low", "Balanced"="balanced", "Decorative"="decorative"), selected = "decorative", width = "180px"),
             uiOutput(ns("map_preview_ui"))
           )
         )
@@ -884,7 +885,7 @@ observeEvent(input$load_selected_map, {
         session$sendCustomMessage("combat3d-lean-init", list(
           containerId = session$ns("combat_3d_container"),
           mapData = jsonlite::toJSON(render_df, dataframe = "rows", auto_unbox = TRUE, null = "null"),
-          inputIds = list(), quality = "balanced"
+          inputIds = list(), quality = isolate(input$preview_3d_quality %||% "decorative")
         ))
       }, delay = delay)
     }
@@ -895,6 +896,10 @@ observeEvent(input$load_selected_map, {
 
     observeEvent(input$preview_mode, {
       if (identical(input$preview_mode %||% "2d", "3d")) send_3d_preview(0.15)
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$preview_3d_quality, {
+      if (identical(input$preview_mode %||% "2d", "3d")) send_3d_preview(0.05)
     }, ignoreInit = TRUE)
 
     output$map_preview_ui <- renderUI({

@@ -46,7 +46,7 @@ function makeState(containerId,inputIds,quality){
   const renderer=new THREE.WebGLRenderer({antialias:quality!=="low",powerPreference:"high-performance"});
   renderer.setPixelRatio(quality==="low"?1:Math.min(devicePixelRatio||1,1.5));renderer.setSize(Math.max(1,el.clientWidth),Math.max(1,el.clientHeight),false);
   renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.shadowMap.enabled=quality==="decorative";el.replaceChildren(renderer.domElement);
-  const scene=new THREE.Scene();scene.background=new THREE.Color(0x607684);scene.add(new THREE.HemisphereLight(0xf4f7ff,0x75644c,1.65));scene.add(new THREE.AmbientLight(0xffffff,.42));
+  const scene=new THREE.Scene();scene.background=new THREE.Color(0x241b17);scene.add(new THREE.HemisphereLight(0xffe8c7,0x4b3325,1.55));scene.add(new THREE.AmbientLight(0xffe8cc,.48));
   const sun=new THREE.DirectionalLight(0xffefd2,quality==="low"?.95:1.35);sun.position.set(14,24,10);sun.castShadow=quality==="decorative";
   if(sun.castShadow){sun.shadow.mapSize.set(1024,1024);sun.shadow.camera.left=-30;sun.shadow.camera.right=30;sun.shadow.camera.top=30;sun.shadow.camera.bottom=-30;}scene.add(sun);
   const camera=new THREE.PerspectiveCamera(48,1,.1,500),controls=new OrbitControls(camera,renderer.domElement);
@@ -74,7 +74,17 @@ function buildTabletop(state,rows,xs,ys){
   const bottom=-3.05,tileMap=state.tileByKey,edges=[];
   for(const row of rows){const x=Number(row.x),y=Number(row.y),top=Math.max(elevation(row),-.05);for(const [dx,dy,rot] of [[-1,0,Math.PI/2],[1,0,Math.PI/2],[0,-1,0],[0,1,0]])if(!tileMap.has(`${x+dx},${y+dy}`))edges.push({x:x-state.centerX+dx*.5,z:y-state.centerY+dy*.5,top,rot});}
   if(edges.length){const geo=new THREE.BoxGeometry(1,1,.075),mat=new THREE.MeshLambertMaterial({color:0x3d2d20}),fascia=new THREE.InstancedMesh(geo,mat,edges.length),matrix=new THREE.Matrix4(),position=new THREE.Vector3(),rotation=new THREE.Quaternion(),scale=new THREE.Vector3();edges.forEach((e,i)=>{const height=e.top-bottom;position.set(e.x,bottom+height/2,e.z);rotation.setFromAxisAngle(new THREE.Vector3(0,1,0),e.rot);scale.set(1.01,height,1);matrix.compose(position,rotation,scale);fascia.setMatrixAt(i,matrix);});fascia.instanceMatrix.needsUpdate=true;fascia.receiveShadow=true;state.terrainRoot.add(fascia);}
-  const width=Math.max(...xs)-Math.min(...xs)+1.18,depth=Math.max(...ys)-Math.min(...ys)+1.18,base=new THREE.Mesh(new THREE.BoxGeometry(width,.28,depth),new THREE.MeshLambertMaterial({color:0x2a211b}));base.position.y=bottom-.14;base.receiveShadow=true;state.terrainRoot.add(base);
+  const mapWidth=Math.max(...xs)-Math.min(...xs)+1,mapDepth=Math.max(...ys)-Math.min(...ys)+1,tableWidth=mapWidth+4.5,tableDepth=mapDepth+4.5;
+  const wood=new THREE.MeshLambertMaterial({color:0x704727,map:texture(state,"bark.jpg")}),darkWood=new THREE.MeshLambertMaterial({color:0x3b2518}),plaster=new THREE.MeshLambertMaterial({color:0x9a7955}),floorMat=new THREE.MeshLambertMaterial({color:0x4b3020,map:texture(state,"bark.jpg")});
+  const top=new THREE.Mesh(new THREE.BoxGeometry(tableWidth,.34,tableDepth),wood);top.position.y=bottom-.17;top.receiveShadow=true;top.castShadow=state.quality==="decorative";state.terrainRoot.add(top);
+  const apronY=bottom-.58,apronH=.72;for(const apron of [
+    [tableWidth-.35,apronH,.22,0,apronY,-tableDepth/2+.22],[tableWidth-.35,apronH,.22,0,apronY,tableDepth/2-.22],
+    [.22,apronH,tableDepth-.35,-tableWidth/2+.22,apronY,0],[.22,apronH,tableDepth-.35,tableWidth/2-.22,apronY,0]
+  ]){const mesh=new THREE.Mesh(new THREE.BoxGeometry(apron[0],apron[1],apron[2]),darkWood);mesh.position.set(apron[3],apron[4],apron[5]);mesh.castShadow=true;state.terrainRoot.add(mesh);}
+  const floorY=bottom-3.65,legH=3.15,legGeo=new THREE.BoxGeometry(.48,legH,.48);for(const x of [-tableWidth/2+.65,tableWidth/2-.65])for(const z of [-tableDepth/2+.65,tableDepth/2-.65]){const leg=new THREE.Mesh(legGeo,darkWood);leg.position.set(x,bottom-.34-legH/2,z);leg.castShadow=true;state.terrainRoot.add(leg);}
+  const roomSpan=Math.max(40,Math.max(mapWidth,mapDepth)*3),roomWidth=roomSpan,roomDepth=roomSpan,floor=new THREE.Mesh(new THREE.BoxGeometry(roomWidth,.28,roomDepth),floorMat);floor.position.y=floorY;floor.receiveShadow=true;state.terrainRoot.add(floor);
+  const wallH=18,wallY=floorY+wallH/2;for(const wall of [[roomWidth,wallH,.35,0,wallY,-roomDepth/2],[.35,wallH,roomDepth,-roomWidth/2,wallY,0],[.35,wallH,roomDepth,roomWidth/2,wallY,0]]){const mesh=new THREE.Mesh(new THREE.BoxGeometry(wall[0],wall[1],wall[2]),plaster);mesh.position.set(wall[3],wall[4],wall[5]);mesh.receiveShadow=true;state.terrainRoot.add(mesh);}
+  const beamMat=new THREE.MeshLambertMaterial({color:0x352116});for(const x of [-roomWidth/2+2,0,roomWidth/2-2]){const beam=new THREE.Mesh(new THREE.BoxGeometry(.34,wallH,.38),beamMat);beam.position.set(x,wallY,-roomDepth/2+.18);state.terrainRoot.add(beam);}for(const x of [-roomWidth/2+.18,roomWidth/2-.18])for(const z of [-roomDepth/2+2,0,roomDepth/2-2]){const beam=new THREE.Mesh(new THREE.BoxGeometry(.38,wallH,.34),beamMat);beam.position.set(x,wallY,z);state.terrainRoot.add(beam);}
 }
 function buildSurfaceGeometry(items,tileMap,centerX,centerY){
   const positions=[],uvs=[],indices=[];
@@ -108,7 +118,7 @@ function buildTerrain(state,rows){
     }
   }
   buildTabletop(state,rows,xs,ys);
-  if(state.quality==="decorative")buildDecor(state,rows);
+  if(state.quality!=="low")buildDecor(state,rows);
   const size=Math.max(Math.max(...xs)-Math.min(...xs)+1,Math.max(...ys)-Math.min(...ys)+1),dist=Math.max(12,size*1.25);state.controls.target.set(0,0,0);state.camera.position.set(dist,dist*.78,dist);state.controls.update();
 }
 function buildDecor(state,rows){

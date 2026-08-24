@@ -19,6 +19,8 @@ set -a
 . "$project_dir/test-env/test.env"
 set +a
 
+R_LIBS="$r_library" Rscript --no-init-file --no-environ "$project_dir/test-env/configure_visual_test_map.R"
+
 launch_app() {
   app_dir=$1
   port=$2
