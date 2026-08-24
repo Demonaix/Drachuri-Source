@@ -1482,4 +1482,13 @@ test("lean 3D renderer keeps costly features optional", {
   stopifnot(!grepl("function animate", js, fixed = TRUE))
 })
 
+test("control encounter workflow uses named selectors", {
+  live <- paste(readLines(file.path("DND APP Drachuri Edition 2 Control", "control_app", "modules", "control_live_combat_module.R"), warn = FALSE), collapse = "\n")
+  setup <- paste(readLines(file.path("DND APP Drachuri Edition 2 Control", "control_app", "modules", "control_encounter_setup_module.R"), warn = FALSE), collapse = "\n")
+  stopifnot(grepl('selectInput(ns("encounter_select"), "Encounter"', live, fixed = TRUE))
+  stopifnot(grepl('as.integer(input$encounter_select', live, fixed = TRUE))
+  stopifnot(grepl('selectInput(ns("map_id"), "Map"', setup, fixed = TRUE))
+  stopifnot(!grepl('numericInput(ns("map_id"), "Map ID"', setup, fixed = TRUE))
+})
+
 cat("\n", tests_run, " tests passed.\n", sep = "")

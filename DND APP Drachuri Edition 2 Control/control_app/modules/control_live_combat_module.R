@@ -347,6 +347,7 @@ controlLiveCombatUI <- function(id) {
           
           div(
             class = "live-combat-actions",
+            selectInput(ns("encounter_select"), "Encounter", choices = c(), width = "300px"),
             actionButton(ns("bind_encounter"), "Set Active Encounter", class = "btn btn-default"),
             actionButton(ns("reveal_map"), "Reveal Map", class = "btn btn-info"),
             actionButton(ns("start_combat"), "Start Combat", class = "btn btn-primary"),
@@ -681,6 +682,31 @@ limit 1
       eid <- suppressWarnings(as.integer(ctrl$active_encounter_id %||% ctrl$encounter_id %||% NA))
       if (is.na(eid) || eid < 1) return(NA_integer_)
       eid
+    })
+
+    observe({
+      ctrl$refresh_key
+      sid <- current_session_id()
+      if (is.na(sid)) {
+        updateSelectInput(session, "encounter_select", choices = c())
+        return()
+      }
+      encounters <- tryCatch(get_session_encounters(sid), error = function(e) data.frame())
+      if (!is.data.frame(encounters) || !nrow(encounters)) {
+        updateSelectInput(session, "encounter_select", choices = c())
+        return()
+      }
+      id_col <- if ("encounter_id" %in% names(encounters)) "encounter_id" else if ("id" %in% names(encounters)) "id" else NULL
+      if (is.null(id_col)) return()
+      ids <- as.character(encounters[[id_col]])
+      names <- if ("name" %in% names(encounters)) as.character(encounters$name) else paste("Encounter", ids)
+      status <- if ("status" %in% names(encounters)) as.character(encounters$status) else rep("", length(ids))
+      names[is.na(names) | !nzchar(names)] <- paste("Encounter", ids[is.na(names) | !nzchar(names)])
+      status[is.na(status)] <- ""
+      labels <- paste0(names, " (#", ids, ")", ifelse(nzchar(status), paste0(" • ", status), ""))
+      selected <- as.character(input$encounter_select %||% current_encounter_id() %||% "")
+      if (!selected %in% ids) selected <- if (as.character(current_encounter_id()) %in% ids) as.character(current_encounter_id()) else ids[[1L]]
+      updateSelectInput(session, "encounter_select", choices = stats::setNames(ids, labels), selected = selected)
     })
     
     current_map_id <- reactive({
@@ -2574,7 +2600,7 @@ limit 1
     }, ignoreInit = TRUE)
     
     observeEvent(input$bind_encounter, {
-      eid <- current_encounter_id()
+      eid <- suppressWarnings(as.integer(input$encounter_select %||% NA))
       
       if (is.na(eid)) {
         log_safe("Choose an encounter first.", type = "error")

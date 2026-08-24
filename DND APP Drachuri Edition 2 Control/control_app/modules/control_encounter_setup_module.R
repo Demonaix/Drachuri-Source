@@ -82,7 +82,7 @@ controlEncounterSetupUI <- function(id) {
           ),
           column(
             3,
-            numericInput(ns("map_id"), "Map ID", value = 1, min = 1)
+            selectInput(ns("map_id"), "Map", choices = c(), width = "100%")
           ),
           column(
             3,
@@ -161,6 +161,19 @@ controlEncounterSetupServer <- function(
     
     enemy_obs_ids <- reactiveVal(character())
     npc_templates_rv <- reactiveVal(data.frame())
+
+    list_encounter_maps <- function() {
+      con <- get_db_connection()
+      if (is.null(con)) return(data.frame())
+      on.exit(release_db_connection(con), add = TRUE)
+      tryCatch(
+        DBI::dbGetQuery(con, "select id as map_id, name as map_name, width, height from maps order by lower(name), id"),
+        error = function(e) {
+          message("list_encounter_maps failed: ", e$message)
+          data.frame()
+        }
+      )
+    }
     
     list_npc_templates <- function() {
       con <- get_db_connection()
@@ -304,6 +317,26 @@ controlEncounterSetupServer <- function(
       )
       
       if (!is.data.frame(df)) data.frame() else df
+    })
+
+    encounter_maps <- reactive({
+      ctrl$refresh_key
+      maps <- list_encounter_maps()
+      if (!is.data.frame(maps)) data.frame() else maps
+    })
+
+    observe({
+      maps <- encounter_maps()
+      if (!nrow(maps)) {
+        updateSelectInput(session, "map_id", choices = c())
+        return()
+      }
+      ids <- as.character(maps$map_id)
+      dimensions <- if (all(c("width", "height") %in% names(maps))) paste0(" • ", maps$width, "×", maps$height) else ""
+      labels <- paste0(maps$map_name, " (#", ids, ")", dimensions)
+      selected <- as.character(input$map_id %||% ctrl$map_id %||% "")
+      if (!selected %in% ids) selected <- ids[[1L]]
+      updateSelectInput(session, "map_id", choices = stats::setNames(ids, labels), selected = selected)
     })
     
     current_players <- reactive({
@@ -637,7 +670,6 @@ controlEncounterSetupServer <- function(
       sid <- current_session_id()
       
       ctrl$encounter_id <- eid
-      ctrl$active_encounter_id <- eid
       
       if (!is.na(sid) && sid > 0L) {
         ctrl$session_id <- sid
@@ -660,7 +692,7 @@ controlEncounterSetupServer <- function(
       if (is.na(map_val) || map_val < 1) map_val <- 1L
       
       ctrl$map_id <- map_val
-      updateNumericInput(session, "map_id", value = map_val)
+      updateSelectInput(session, "map_id", selected = as.character(map_val))
     }, ignoreInit = FALSE)
     
     observeEvent(input$create_encounter, {
@@ -675,8 +707,11 @@ controlEncounterSetupServer <- function(
         nm <- paste0("Encounter ", format(Sys.time(), "%Y-%m-%d %H:%M"))
       }
       
-      map_id <- suppressWarnings(as.integer(input$map_id %||% 1L))
-      if (is.na(map_id) || map_id < 1) map_id <- 1L
+      map_id <- suppressWarnings(as.integer(input$map_id %||% NA))
+      if (is.na(map_id) || map_id < 1) {
+        showNotification("Choose a map first.", type = "error")
+        return()
+      }
       
       eid <- tryCatch(
         create_encounter(
@@ -698,7 +733,6 @@ controlEncounterSetupServer <- function(
       
       ctrl$encounter_id <- as.integer(eid)
       ctrl$map_id <- map_id
-      ctrl$active_encounter_id <- as.integer(eid)
       ctrl$active_session_id <- sid
       enemy_obs_ids(character())
       bump_refresh()
@@ -1017,7 +1051,7 @@ controlEncounterSetupServer <- function(
     observeEvent(input$save_encounter, {
       sid <- current_session_id()
       eid <- current_encounter_id()
-      map_id <- suppressWarnings(as.integer(input$map_id %||% 1L))
+      map_id <- suppressWarnings(as.integer(input$map_id %||% NA))
       
       if (is.na(sid) || sid < 1) {
         showNotification("Choose a valid session first.", type = "error")
@@ -1029,7 +1063,10 @@ controlEncounterSetupServer <- function(
         return()
       }
       
-      if (is.na(map_id) || map_id < 1) map_id <- 1L
+      if (is.na(map_id) || map_id < 1) {
+        showNotification("Choose a valid map first.", type = "error")
+        return()
+      }
       
       players <- current_players()
       enemies <- current_enemies()
@@ -1126,8 +1163,8 @@ controlEncounterSetupServer <- function(
     
     output$map_preview_ui <- renderUI({
       eid <- current_encounter_id()
-      mid <- suppressWarnings(as.integer(ctrl$map_id %||% input$map_id %||% 1L))
-      if (is.na(mid) || mid < 1) mid <- 1L
+      mid <- suppressWarnings(as.integer(input$map_id %||% ctrl$map_id %||% NA))
+      if (is.na(mid) || mid < 1) return(tags$em("Choose a map to preview it."))
       
       tiles <- tryCatch(get_map_tiles(mid), error = function(e) data.frame())
       if (!is.data.frame(tiles) || nrow(tiles) == 0) {
