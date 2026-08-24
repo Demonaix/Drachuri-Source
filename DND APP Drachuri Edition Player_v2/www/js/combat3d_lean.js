@@ -6,7 +6,7 @@ const TERRAIN = {
   grass:{color:0x719a58,tex:"grass.jpg",h:.10}, sand:{color:0xc7ad70,tex:"dirt.jpg",h:.02},
   forest:{color:0x315f38,tex:"forest.jpg",h:.14}, woodland:{color:0x315f38,tex:"forest.jpg",h:.14},
   water:{color:0x367eaa,tex:"water.jpg",h:-.18}, stone:{color:0x85837b,tex:"stone.jpg",h:.10},
-  wall:{color:0x4e4d49,tex:"stone.jpg",h:.10}, road:{color:0xa5885b,tex:"dirt.jpg",h:-.07},
+  wall:{color:0x76706a,tex:"battlefield_fieldstone.jpg",h:.10}, road:{color:0xa5885b,tex:"dirt.jpg",h:-.07},
   swamp:{color:0x526944,tex:"swamp.jpg",h:-.03}, ravine:{color:0x17151a,tex:"ravine.jpg",h:-2.65},
   pit:{color:0x17151a,tex:"ravine.jpg",h:-2.10}, mandred_convergence:{color:0x714ca1,tex:"stone.jpg",h:.12}
 };
@@ -35,10 +35,10 @@ function requestRender(state){
   if(!state||state.renderPending)return;state.renderPending=true;
   requestAnimationFrame(()=>{state.renderPending=false;if(state.renderer&&state.scene&&state.camera)state.renderer.render(state.scene,state.camera);});
 }
-function texture(state,file){
-  if(!file)return null;if(state.textures[file])return state.textures[file];
-  const t=new THREE.TextureLoader().load(`assets/textures/${file}`,()=>requestRender(state));
-  t.colorSpace=THREE.SRGBColorSpace;t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(1.5,1.5);state.textures[file]=t;return t;
+function texture(state,file,repeatX=1.5,repeatY=repeatX){
+  if(!file)return null;const key=`${file}:${repeatX}:${repeatY}`;if(state.textures[key])return state.textures[key];
+  const url=new URL(`../assets/textures/${file}`,import.meta.url).href,t=new THREE.TextureLoader().load(url,()=>requestRender(state));
+  t.colorSpace=THREE.SRGBColorSpace;t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(repeatX,repeatY);state.textures[key]=t;return t;
 }
 function makeState(containerId,inputIds,quality){
   const el=document.getElementById(containerId);if(!el)return null;
@@ -75,16 +75,17 @@ function buildTabletop(state,rows,xs,ys){
   for(const row of rows){const x=Number(row.x),y=Number(row.y),top=Math.max(elevation(row),-.05);for(const [dx,dy,rot] of [[-1,0,Math.PI/2],[1,0,Math.PI/2],[0,-1,0],[0,1,0]])if(!tileMap.has(`${x+dx},${y+dy}`))edges.push({x:x-state.centerX+dx*.5,z:y-state.centerY+dy*.5,top,rot});}
   if(edges.length){const geo=new THREE.BoxGeometry(1,1,.075),mat=new THREE.MeshLambertMaterial({color:0x3d2d20}),fascia=new THREE.InstancedMesh(geo,mat,edges.length),matrix=new THREE.Matrix4(),position=new THREE.Vector3(),rotation=new THREE.Quaternion(),scale=new THREE.Vector3();edges.forEach((e,i)=>{const height=e.top-bottom;position.set(e.x,bottom+height/2,e.z);rotation.setFromAxisAngle(new THREE.Vector3(0,1,0),e.rot);scale.set(1.01,height,1);matrix.compose(position,rotation,scale);fascia.setMatrixAt(i,matrix);});fascia.instanceMatrix.needsUpdate=true;fascia.receiveShadow=true;state.terrainRoot.add(fascia);}
   const mapWidth=Math.max(...xs)-Math.min(...xs)+1,mapDepth=Math.max(...ys)-Math.min(...ys)+1,tableWidth=mapWidth+4.5,tableDepth=mapDepth+4.5;
-  const wood=new THREE.MeshLambertMaterial({color:0x704727,map:texture(state,"bark.jpg")}),darkWood=new THREE.MeshLambertMaterial({color:0x3b2518}),plaster=new THREE.MeshLambertMaterial({color:0x9a7955}),floorMat=new THREE.MeshLambertMaterial({color:0x4b3020,map:texture(state,"bark.jpg")});
+  const wood=new THREE.MeshLambertMaterial({color:0xffffff,map:texture(state,"tavern_table_oak.jpg",Math.max(1,tableWidth/7),Math.max(1,tableDepth/7))}),darkWood=new THREE.MeshLambertMaterial({color:0x3b2518}),plaster=new THREE.MeshLambertMaterial({color:0xffffff,map:texture(state,"tavern_plaster_timbers.jpg",5,3)}),floorMat=new THREE.MeshLambertMaterial({color:0xffffff});
   const top=new THREE.Mesh(new THREE.BoxGeometry(tableWidth,.34,tableDepth),wood);top.position.y=bottom-.17;top.receiveShadow=true;top.castShadow=state.quality==="decorative";state.terrainRoot.add(top);
   const apronY=bottom-.58,apronH=.72;for(const apron of [
     [tableWidth-.35,apronH,.22,0,apronY,-tableDepth/2+.22],[tableWidth-.35,apronH,.22,0,apronY,tableDepth/2-.22],
     [.22,apronH,tableDepth-.35,-tableWidth/2+.22,apronY,0],[.22,apronH,tableDepth-.35,tableWidth/2-.22,apronY,0]
   ]){const mesh=new THREE.Mesh(new THREE.BoxGeometry(apron[0],apron[1],apron[2]),darkWood);mesh.position.set(apron[3],apron[4],apron[5]);mesh.castShadow=true;state.terrainRoot.add(mesh);}
   const floorY=bottom-3.65,legH=3.15,legGeo=new THREE.BoxGeometry(.48,legH,.48);for(const x of [-tableWidth/2+.65,tableWidth/2-.65])for(const z of [-tableDepth/2+.65,tableDepth/2-.65]){const leg=new THREE.Mesh(legGeo,darkWood);leg.position.set(x,bottom-.34-legH/2,z);leg.castShadow=true;state.terrainRoot.add(leg);}
-  const roomSpan=Math.max(40,Math.max(mapWidth,mapDepth)*3),roomWidth=roomSpan,roomDepth=roomSpan,floor=new THREE.Mesh(new THREE.BoxGeometry(roomWidth,.28,roomDepth),floorMat);floor.position.y=floorY;floor.receiveShadow=true;state.terrainRoot.add(floor);
+  const roomSpan=Math.max(40,Math.max(mapWidth,mapDepth)*3),roomWidth=roomSpan,roomDepth=roomSpan;
+  floorMat.map=texture(state,"tavern_floorboards.jpg",Math.max(2,roomWidth/8),Math.max(2,roomDepth/8));floorMat.needsUpdate=true;
+  const floor=new THREE.Mesh(new THREE.BoxGeometry(roomWidth,.28,roomDepth),floorMat);floor.position.y=floorY;floor.receiveShadow=true;state.terrainRoot.add(floor);
   const wallH=18,wallY=floorY+wallH/2;for(const wall of [[roomWidth,wallH,.35,0,wallY,-roomDepth/2],[.35,wallH,roomDepth,-roomWidth/2,wallY,0],[.35,wallH,roomDepth,roomWidth/2,wallY,0]]){const mesh=new THREE.Mesh(new THREE.BoxGeometry(wall[0],wall[1],wall[2]),plaster);mesh.position.set(wall[3],wall[4],wall[5]);mesh.receiveShadow=true;state.terrainRoot.add(mesh);}
-  const beamMat=new THREE.MeshLambertMaterial({color:0x352116});for(const x of [-roomWidth/2+2,0,roomWidth/2-2]){const beam=new THREE.Mesh(new THREE.BoxGeometry(.34,wallH,.38),beamMat);beam.position.set(x,wallY,-roomDepth/2+.18);state.terrainRoot.add(beam);}for(const x of [-roomWidth/2+.18,roomWidth/2-.18])for(const z of [-roomDepth/2+2,0,roomDepth/2-2]){const beam=new THREE.Mesh(new THREE.BoxGeometry(.38,wallH,.34),beamMat);beam.position.set(x,wallY,z);state.terrainRoot.add(beam);}
 }
 function buildSurfaceGeometry(items,tileMap,centerX,centerY){
   const positions=[],uvs=[],indices=[];
