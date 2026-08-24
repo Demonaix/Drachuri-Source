@@ -55,7 +55,9 @@ load_functions(global_file, c(
   "equipped_magical_traits", "new_character", "validate_character", "inventory_empty", "inventory_normalize",
   "weapon_meta_defaults_global", "standard_spear_attack_modes",
   "upgrade_weapon_damage_die", "standard_weapon_attack_modes",
-  "normalise_weapon_attack_modes", "merge_legacy_weapon_mode_items"
+  "normalise_weapon_attack_modes", "merge_legacy_weapon_mode_items",
+  "combat_grid_distance_ft", "combat_grid_shortest_path", "combat_line_tiles",
+  "combat_attack_geometry"
 ))
 load_functions(relational_inventory_file, c("equipment_material_is_eligible", "inventory_item_category", "equipment_adjusted_value"))
 load_functions(enemy_generator_file, c("resolve_layered_damage_traits", "enemy_is_animal", "roll_enemy_mundane_loot", "roll_enemy_food_loot"))
@@ -289,6 +291,33 @@ test("standard weapon families expose their valid attack modes", {
   stopifnot(length(longsword) == 2L, identical(longsword[[2L]]$damage, "1d10"))
   stopifnot(length(dagger) == 2L, identical(dagger[[1L]]$stat, "finesse"))
   stopifnot(length(javelin) == 2L, identical(javelin[[2L]]$long_range_ft, 120L))
+})
+
+test("combat pathfinding routes around walls and charges the actual route", {
+  tiles <- expand.grid(x = 1:5, y = 1:5)
+  tiles$map_id <- 1L; tiles$move_cost <- 1; tiles$blocks_movement <- FALSE
+  tiles$blocks_vision <- FALSE; tiles$terrain <- "grass"
+  tiles$blocks_movement[tiles$x == 3L & tiles$y <= 4L] <- TRUE
+  tiles$terrain[tiles$x == 3L & tiles$y <= 4L] <- "wall"
+  route <- test_env$combat_grid_shortest_path(tiles, data.frame(), 1L, 3L, 5L, 3L, map_id = 1L)
+  stopifnot(isTRUE(route$ok), route$cost_ft > 20L)
+  stopifnot(!any(route$path$x == 3L & route$path$y <= 4L))
+  too_slow <- test_env$combat_grid_shortest_path(tiles, data.frame(), 1L, 3L, 5L, 3L, map_id = 1L, max_cost_ft = 20L)
+  stopifnot(!isTRUE(too_slow$ok))
+  shadow_step <- test_env$combat_grid_shortest_path(tiles, data.frame(), 1L, 3L, 5L, 3L, map_id = 1L, allow_blocked = TRUE)
+  stopifnot(isTRUE(shadow_step$ok), shadow_step$cost_ft == 20L)
+})
+
+test("weapon range and sight-blocking terrain gate attacks", {
+  tiles <- expand.grid(x = 1:6, y = 1:3)
+  tiles$map_id <- 1L; tiles$blocks_vision <- FALSE; tiles$terrain <- "grass"
+  clear <- test_env$combat_attack_geometry(tiles, 1L, 2L, 5L, 2L, 20L, 60L, 1L)
+  stopifnot(isTRUE(clear$ok), clear$distance_ft == 20L, isTRUE(clear$normal_range))
+  tiles$blocks_vision[tiles$x == 3L & tiles$y == 2L] <- TRUE
+  blocked <- test_env$combat_attack_geometry(tiles, 1L, 2L, 5L, 2L, 20L, 60L, 1L)
+  stopifnot(!isTRUE(blocked$ok), !isTRUE(blocked$line_clear))
+  distant <- test_env$combat_attack_geometry(tiles, 1L, 1L, 6L, 1L, 5L, 20L, 1L)
+  stopifnot(!isTRUE(distant$in_range))
 })
 
 test("combat does not skip actors tied on turn order", {
@@ -861,7 +890,7 @@ test("standard combat actions are wired to shared action and effect mechanics", 
     "confirm_force_end_turn"
   )) stopifnot(grepl(paste0("input$", control), combat_source, fixed = TRUE))
   stopifnot(grepl('projected_move > base_speed_ft()', combat_source, fixed = TRUE))
-  stopifnot(grepl('get_opportunity_attackers(eid', combat_source, fixed = TRUE))
+  stopifnot(grepl('get_opportunity_attackers(', combat_source, fixed = TRUE))
   stopifnot(grepl('player_reaction_available(FALSE)', combat_source, fixed = TRUE))
 })
 

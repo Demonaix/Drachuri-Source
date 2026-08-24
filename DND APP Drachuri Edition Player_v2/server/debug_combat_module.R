@@ -2732,9 +2732,10 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         pm <- pending_move()
         
         if (!is.null(pm)) {
-          render_df$is_pending_move <-
-            render_df$x == pm$x &
-            render_df$y == pm$y
+          path <- pm$path %||% data.frame(x = pm$x, y = pm$y)
+          path_keys <- if (is.data.frame(path) && nrow(path)) paste(path$x, path$y, sep = ",") else character()
+          render_df$is_pending_move <- paste(render_df$x, render_df$y, sep = ",") %in% path_keys
+          render_df$move_path_step <- match(paste(render_df$x, render_df$y, sep = ","), path_keys) - 1L
         }
         
         render_df$is_active_actor <-
@@ -3119,7 +3120,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     })
     
     
-    move_actor_to_tile <- function(target_x, target_y, forced_cost_ft = NULL) {
+    move_actor_to_tile <- function(target_x, target_y, forced_cost_ft = NULL, forced_path = NULL) {
       
       eid <- current_encounter_id()
       combat <- combat_tbl()
@@ -3188,6 +3189,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       if (!is.null(forced_cost_ft)) {
         
         total_ft <- suppressWarnings(as.integer(forced_cost_ft))
+        chosen_path <- forced_path
         
       } else {
         
@@ -3211,6 +3213,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         }
         
         total_ft <- suppressWarnings(as.integer(target_row$move_cost_ft[1] %||% NA))
+        chosen_path <- movement_paths()[[paste(target_x, target_y, sep = ",")]]$path %||% NULL
       }
       
       if (length(total_ft) < 1 || is.na(total_ft) || total_ft < 0L) {
@@ -3262,10 +3265,19 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         return(FALSE)
       }
 
-      rune_entries <- tryCatch(trigger_rune_zone_entry(
-        eid, actor_type, actor_id, old_x, old_y, target_x, target_y,
-        as.integer(combat$round_number[[1L]] %||% 1L)
-      ), error = function(e) { log_safe(paste("⚠️ Rune zone entry check failed:", e$message)); list() })
+      if (!is.data.frame(chosen_path) || nrow(chosen_path) < 2L) {
+        chosen_path <- data.frame(x = c(old_x, target_x), y = c(old_y, target_y))
+      }
+      rune_entries <- list()
+      for (path_i in 2:nrow(chosen_path)) {
+        entries <- tryCatch(trigger_rune_zone_entry(
+          eid, actor_type, actor_id,
+          chosen_path$x[[path_i - 1L]], chosen_path$y[[path_i - 1L]],
+          chosen_path$x[[path_i]], chosen_path$y[[path_i]],
+          as.integer(combat$round_number[[1L]] %||% 1L)
+        ), error = function(e) { log_safe(paste("⚠️ Rune zone entry check failed:", e$message)); list() })
+        rune_entries <- c(rune_entries, entries)
+      }
       if (length(rune_entries)) {
         for (entry in rune_entries) log_safe(paste0("✧ ", entry$name, " strikes for ", entry$damage, " ", entry$damage_type, " damage on entry."))
         refresh_key(refresh_key() + 1L)
@@ -3273,10 +3285,16 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       }
 
       if (!identical(cunning_mode(), "disengage")) {
-        attackers <- tryCatch(
-          get_opportunity_attackers(eid, actor_id, actor_type, old_x, old_y, target_x, target_y),
-          error = function(e) data.frame()
-        )
+        attacker_parts <- lapply(2:nrow(chosen_path), function(path_i) tryCatch(
+          get_opportunity_attackers(
+            eid, actor_id, actor_type,
+            chosen_path$x[[path_i - 1L]], chosen_path$y[[path_i - 1L]],
+            chosen_path$x[[path_i]], chosen_path$y[[path_i]]
+          ), error = function(e) data.frame()
+        ))
+        attacker_parts <- Filter(function(x) is.data.frame(x) && nrow(x), attacker_parts)
+        attackers <- if (length(attacker_parts)) do.call(rbind, attacker_parts) else data.frame()
+        if (nrow(attackers)) attackers <- attackers[!duplicated(as.character(attackers$actor_id)), , drop = FALSE]
         if (is.data.frame(attackers) && nrow(attackers)) {
           attacker_names <- unique(as.character(attackers$display_name %||% attackers$name %||% "Enemy"))
           log_game_event(
@@ -3299,6 +3317,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
           move_cost_ft = total_ft,
           phased = phased_any,
           dash = isTRUE(movement_dash()),
+          path = lapply(seq_len(nrow(chosen_path)), function(i) list(x = chosen_path$x[[i]], y = chosen_path$y[[i]])),
           atomic_click_move = TRUE
         )
       )
@@ -3341,7 +3360,8 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         move_actor_to_tile(
           target_x,
           target_y,
-          forced_cost_ft = pm$cost_ft
+          forced_cost_ft = pm$cost_ft,
+          forced_path = pm$path
         )
         
         pending_move(NULL)
@@ -3360,17 +3380,21 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       
       if (is.na(old_x) || is.na(old_y)) return()
       
-      dx <- target_x - old_x
-      dy <- target_y - old_y
-      steps <- max(abs(dx), abs(dy))
-      
-      if (steps < 1) return()
-      
-      cost_ft <- as.integer(steps * 5L)
-      
       speed_ft <- movement_allowance_ft()
       used_ft <- as.integer(turn_move_ft() %||% 0L)
       remaining_ft <- max(0L, speed_ft - used_ft)
+      path_result <- combat_grid_shortest_path(
+        map_tiles_rv(), map_occupants_rv(), old_x, old_y, target_x, target_y,
+        map_id = map_id(), exclude_actor_id = active_actor_id(),
+        allow_blocked = isTRUE(movement_phase()) && isTRUE(can_use_phase()),
+        max_cost_ft = remaining_ft
+      )
+      if (!isTRUE(path_result$ok)) {
+        log_safe(if (identical(path_result$reason, "occupied")) "⚠️ You cannot end movement in an occupied space." else "⚠️ No legal path reaches that tile within your remaining movement.")
+        pending_move(NULL)
+        return()
+      }
+      cost_ft <- as.integer(path_result$cost_ft)
       
       if (cost_ft > remaining_ft) {
         log_safe(paste0(
@@ -3398,6 +3422,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         x = target_x,
         y = target_y,
         cost_ft = cost_ft,
+        path = path_result$path,
         dash = isTRUE(movement_dash()),
         phase = isTRUE(movement_phase()) && isTRUE(can_use_phase())
       ))
@@ -4434,11 +4459,27 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         return()
       }
 
-      attacker_row<-get_actor_row(attacker_id,"player");target_row_for_range<-get_actor_row(target_id,target_type)
-      if(nrow(attacker_row)&&nrow(target_row_for_range)&&!is.na(weapon_row$range_ft[[1L]])){
-        distance_ft<-max(abs(as.integer(attacker_row$x[[1L]])-as.integer(target_row_for_range$x[[1L]])),abs(as.integer(attacker_row$y[[1L]])-as.integer(target_row_for_range$y[[1L]])))*5L
-        max_range<-as.integer(weapon_row$long_range_ft[[1L]]%||%weapon_row$range_ft[[1L]])
-        if(!is.na(distance_ft)&&distance_ft>max_range){log_safe(paste0("⚠️ Target is ",distance_ft," ft away; ",weapon_row$name[[1L]]," reaches ",max_range," ft."));return()}
+      attacker_row <- get_actor_row(attacker_id, "player")
+      target_row_for_range <- get_actor_row(target_id, target_type)
+      attack_geometry <- NULL
+      # An opportunity attack resolves at the boundary square where the target
+      # left reach, before its final map position is committed.
+      if (!isTRUE(current_attack_is_opp()) && nrow(attacker_row) && nrow(target_row_for_range)) {
+        attack_geometry <- combat_attack_geometry(
+          map_tiles_rv(), attacker_row$x[[1L]], attacker_row$y[[1L]],
+          target_row_for_range$x[[1L]], target_row_for_range$y[[1L]],
+          weapon_row$range_ft[[1L]] %||% 5L,
+          weapon_row$long_range_ft[[1L]] %||% weapon_row$range_ft[[1L]] %||% 5L,
+          map_id = map_id()
+        )
+        if (!isTRUE(attack_geometry$in_range)) {
+          log_safe(paste0("⚠️ Target is ", attack_geometry$distance_ft, " ft away; ", weapon_row$name[[1L]], " cannot reach that far."))
+          return()
+        }
+        if (!isTRUE(attack_geometry$line_clear)) {
+          log_safe("⚠️ A wall or other sight-blocking obstacle blocks this attack.")
+          return()
+        }
       }
       
       attacker_name <- get_actor_display_name(attacker_id)
@@ -4452,7 +4493,6 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         attacker_id = attacker_id,
         target_id = target_id
       )
-      if(exists("distance_ft")&&!is.na(distance_ft)&&!is.na(weapon_row$range_ft[[1L]])&&distance_ft>as.integer(weapon_row$range_ft[[1L]]))adv_mode<-"Disadvantage"
       if (character_has_feature(attacker_char, "assassinate") &&
           as.integer(combat_tbl()$round_number[1] %||% 1L) == 1L) {
         target_row <- get_actor_row(target_id, target_type)
@@ -4470,6 +4510,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
           identical(weapon_stat, "str")) {
         adv_mode <- "Advantage"
       }
+      if (!is.null(attack_geometry) && !isTRUE(attack_geometry$normal_range)) adv_mode <- "Disadvantage"
       
       preview <- build_attack_preview(
         attacker_char = attacker_char,

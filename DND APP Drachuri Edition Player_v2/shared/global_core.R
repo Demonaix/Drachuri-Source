@@ -1982,6 +1982,137 @@ get_weapon_hit_bonus <- function(char, weapon_row) {
   as.integer(stat_mod + prof_bonus + flat_bonus + equipment_bonus)
 }
 
+combat_grid_distance_ft <- function(x1, y1, x2, y2) {
+  as.integer(max(abs(as.integer(x2) - as.integer(x1)), abs(as.integer(y2) - as.integer(y1))) * 5L)
+}
+
+combat_grid_shortest_path <- function(tiles, occupants, start_x, start_y, target_x, target_y,
+                                      map_id = NULL, exclude_actor_id = NULL,
+                                      allow_blocked = FALSE, max_cost_ft = Inf) {
+  empty_path <- data.frame(x = integer(), y = integer(), step = integer(), stringsAsFactors = FALSE)
+  max_cost_ft <- suppressWarnings(as.numeric(max_cost_ft))
+  if (is.na(max_cost_ft) || max_cost_ft < 0) max_cost_ft <- Inf
+  required <- c("x", "y")
+  if (!is.data.frame(tiles) || !all(required %in% names(tiles)) || !nrow(tiles)) {
+    return(list(ok = FALSE, reason = "no_map", cost_ft = Inf, path = empty_path))
+  }
+  tiles <- tiles
+  if (!is.null(map_id) && "map_id" %in% names(tiles)) {
+    tiles <- tiles[suppressWarnings(as.integer(tiles$map_id)) == as.integer(map_id), , drop = FALSE]
+  }
+  tiles$x <- suppressWarnings(as.integer(tiles$x)); tiles$y <- suppressWarnings(as.integer(tiles$y))
+  tiles <- tiles[!is.na(tiles$x) & !is.na(tiles$y), , drop = FALSE]
+  if (!"blocks_movement" %in% names(tiles)) tiles$blocks_movement <- FALSE
+  if (!"move_cost" %in% names(tiles)) tiles$move_cost <- 1
+  tile_keys <- paste(tiles$x, tiles$y, sep = ",")
+  start_key <- paste(as.integer(start_x), as.integer(start_y), sep = ",")
+  target_key <- paste(as.integer(target_x), as.integer(target_y), sep = ",")
+  if (!start_key %in% tile_keys || !target_key %in% tile_keys) {
+    return(list(ok = FALSE, reason = "out_of_bounds", cost_ft = Inf, path = empty_path))
+  }
+
+  occupied_keys <- character()
+  if (is.data.frame(occupants) && nrow(occupants) && all(c("x", "y") %in% names(occupants))) {
+    occ <- occupants
+    if (!is.null(map_id) && "map_id" %in% names(occ)) occ <- occ[as.integer(occ$map_id) == as.integer(map_id), , drop = FALSE]
+    if (!is.null(exclude_actor_id) && "actor_id" %in% names(occ)) occ <- occ[as.character(occ$actor_id) != as.character(exclude_actor_id), , drop = FALSE]
+    occupied_keys <- paste(as.integer(occ$x), as.integer(occ$y), sep = ",")
+  }
+  if (target_key %in% occupied_keys) {
+    return(list(ok = FALSE, reason = "occupied", cost_ft = Inf, path = empty_path))
+  }
+
+  tile_info <- function(x, y) {
+    index <- match(paste(x, y, sep = ","), tile_keys)
+    if (is.na(index)) return(NULL)
+    raw_cost <- suppressWarnings(as.numeric(tiles$move_cost[[index]] %||% 1))
+    blocked <- isTRUE(tiles$blocks_movement[[index]]) || is.infinite(raw_cost)
+    if (is.na(raw_cost) || !is.finite(raw_cost) || raw_cost < 1) raw_cost <- 1
+    list(blocked = blocked, cost = raw_cost)
+  }
+  frontier <- data.frame(x = as.integer(start_x), y = as.integer(start_y), cost = 0, stringsAsFactors = FALSE)
+  paths <- list(); paths[[start_key]] <- data.frame(x = as.integer(start_x), y = as.integer(start_y), step = 0L)
+  best <- stats::setNames(0, start_key)
+  directions <- expand.grid(dx = -1:1, dy = -1:1)
+  directions <- directions[!(directions$dx == 0 & directions$dy == 0), , drop = FALSE]
+
+  while (nrow(frontier)) {
+    current_index <- which.min(frontier$cost)
+    current <- frontier[current_index, , drop = FALSE]
+    frontier <- frontier[-current_index, , drop = FALSE]
+    current_key <- paste(current$x, current$y, sep = ",")
+    if (identical(current_key, target_key)) break
+    for (i in seq_len(nrow(directions))) {
+      nx <- as.integer(current$x + directions$dx[[i]]); ny <- as.integer(current$y + directions$dy[[i]])
+      next_key <- paste(nx, ny, sep = ","); info <- tile_info(nx, ny)
+      if (is.null(info) || (!isTRUE(allow_blocked) && info$blocked)) next
+      if (!isTRUE(allow_blocked) && directions$dx[[i]] != 0L && directions$dy[[i]] != 0L) {
+        side_a <- tile_info(as.integer(current$x + directions$dx[[i]]), as.integer(current$y))
+        side_b <- tile_info(as.integer(current$x), as.integer(current$y + directions$dy[[i]]))
+        if (is.null(side_a) || is.null(side_b) || side_a$blocked || side_b$blocked) next
+      }
+      if (next_key %in% occupied_keys && !identical(next_key, target_key) && !isTRUE(allow_blocked)) next
+      step_cost <- as.numeric(info$cost) * 5
+      new_cost <- as.numeric(current$cost) + step_cost
+      if (!is.finite(new_cost) || new_cost > as.numeric(max_cost_ft)) next
+      previous <- unname(best[next_key])
+      if (length(previous) && !is.na(previous) && previous <= new_cost) next
+      best[next_key] <- new_cost
+      previous_path <- paths[[current_key]]
+      paths[[next_key]] <- rbind(previous_path, data.frame(x = nx, y = ny, step = nrow(previous_path)))
+      frontier <- rbind(frontier, data.frame(x = nx, y = ny, cost = new_cost))
+    }
+  }
+  if (is.null(paths[[target_key]])) return(list(ok = FALSE, reason = "unreachable", cost_ft = Inf, path = empty_path))
+  list(ok = TRUE, reason = "ok", cost_ft = as.integer(round(best[[target_key]])), path = paths[[target_key]])
+}
+
+combat_line_tiles <- function(x1, y1, x2, y2) {
+  x1 <- as.integer(x1); y1 <- as.integer(y1); x2 <- as.integer(x2); y2 <- as.integer(y2)
+  samples <- max(abs(x2 - x1), abs(y2 - y1)) * 4L
+  if (samples < 1L) return(data.frame(x = x1, y = y1))
+  progress <- seq(0, 1, length.out = samples + 1L)
+  out <- unique(data.frame(
+    x = floor(x1 + (x2 - x1) * progress + 0.5),
+    y = floor(y1 + (y2 - y1) * progress + 0.5)
+  ))
+  rownames(out) <- NULL
+  out
+}
+
+combat_attack_geometry <- function(tiles, attacker_x, attacker_y, target_x, target_y,
+                                   range_ft = 5L, long_range_ft = range_ft, map_id = NULL) {
+  range_ft <- suppressWarnings(as.integer(range_ft)); long_range_ft <- suppressWarnings(as.integer(long_range_ft))
+  if (is.na(range_ft) || range_ft < 1L) range_ft <- 5L
+  if (is.na(long_range_ft) || long_range_ft < range_ft) long_range_ft <- range_ft
+  distance_ft <- combat_grid_distance_ft(attacker_x, attacker_y, target_x, target_y)
+  line <- combat_line_tiles(attacker_x, attacker_y, target_x, target_y)
+  middle <- if (nrow(line) > 2L) line[2:(nrow(line) - 1L), , drop = FALSE] else line[0, , drop = FALSE]
+  blockers <- middle[0, , drop = FALSE]
+  if (nrow(middle) && is.data.frame(tiles) && nrow(tiles)) {
+    view <- tiles
+    if (!is.null(map_id) && "map_id" %in% names(view)) view <- view[as.integer(view$map_id) == as.integer(map_id), , drop = FALSE]
+    if (!"blocks_vision" %in% names(view)) view$blocks_vision <- FALSE
+    if (!"terrain" %in% names(view)) view$terrain <- ""
+    keys <- paste(view$x, view$y, sep = ",")
+    indices <- match(paste(middle$x, middle$y, sep = ","), keys)
+    blocked <- !is.na(indices) & vapply(indices, function(index) {
+      if (is.na(index)) return(FALSE)
+      isTRUE(view$blocks_vision[[index]]) || identical(tolower(as.character(view$terrain[[index]])), "wall")
+    }, logical(1))
+    blockers <- middle[blocked, , drop = FALSE]
+  }
+  list(
+    ok = distance_ft <= long_range_ft && !nrow(blockers),
+    distance_ft = distance_ft,
+    normal_range = distance_ft <= range_ft,
+    in_range = distance_ft <= long_range_ft,
+    line_clear = !nrow(blockers),
+    blockers = blockers,
+    line = line
+  )
+}
+
 armor_meta_defaults_global <- function(meta = NULL) {
   meta <- meta %||% list()
   if (!is.list(meta)) meta <- list()

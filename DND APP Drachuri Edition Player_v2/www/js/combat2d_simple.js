@@ -384,6 +384,11 @@ function injectCombat2DCSS() {
         inset 0 0 18px rgba(255,215,70,0.34),
         0 0 12px rgba(255,190,60,0.42);
     }
+    .combat-path-step{
+      position:absolute;right:2px;top:2px;z-index:6;min-width:16px;height:16px;
+      border-radius:9px;background:#f6d365;color:#241807;font:bold 10px/16px sans-serif;
+      text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.45);pointer-events:none;
+    }
 
     .combat-2d-tile.attackable{
       outline:2px solid rgba(235,80,55,0.95);
@@ -614,6 +619,12 @@ function buildTileElement2D(tile) {
   label.className = "combat-2d-terrain-label";
   label.textContent = terrainEmoji2D(tile.terrain);
   tileEl.appendChild(label);
+  if (isTruthy2D(tile.is_pending_move) && Number(tile.move_path_step) > 0) {
+    const step = document.createElement("span");
+    step.className = "combat-path-step";
+    step.textContent = String(Number(tile.move_path_step));
+    tileEl.appendChild(step);
+  }
 
   tileEl.addEventListener("click", e => {
     // If token was clicked, token handler deals with it.

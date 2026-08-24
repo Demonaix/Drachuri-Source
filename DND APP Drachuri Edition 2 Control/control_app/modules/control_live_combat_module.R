@@ -2412,7 +2412,10 @@ limit 1
       
       pm <- pending_move()
       if (!is.null(pm)) {
-        render_df$is_pending_move <- render_df$x == as.integer(pm$x) & render_df$y == as.integer(pm$y)
+        path <- pm$path %||% data.frame(x = pm$x, y = pm$y)
+        path_keys <- if (is.data.frame(path) && nrow(path)) paste(path$x, path$y, sep = ",") else character()
+        render_df$is_pending_move <- paste(render_df$x, render_df$y, sep = ",") %in% path_keys
+        render_df$move_path_step <- match(paste(render_df$x, render_df$y, sep = ","), path_keys) - 1L
       }
       
       active_id <- active_actor_id()
@@ -3050,6 +3053,55 @@ limit 1
       log_safe(paste0("Target selected: ", get_actor_display_name(actor_id)))
     }, ignoreInit = TRUE)
     
+    move_active_actor_path <- function(path_result) {
+      eid <- current_encounter_id(); combat <- combat_state_r(); mid <- current_map_id()
+      actor_id <- as.character(active_actor_id() %||% ""); actor_type <- as.character(active_actor_type() %||% "player")
+      path <- path_result$path %||% data.frame(); total_ft <- as.integer(path_result$cost_ft %||% NA_integer_)
+      if (is.na(eid) || !nzchar(actor_id) || !is.data.frame(path) || nrow(path) < 2L || is.na(total_ft)) return(FALSE)
+      old_x <- as.integer(path$x[[1L]]); old_y <- as.integer(path$y[[1L]])
+      target_x <- as.integer(path$x[[nrow(path)]]); target_y <- as.integer(path$y[[nrow(path)]])
+      speed_ft <- get_actor_speed_ft(actor_id, actor_type)
+      if (is.na(speed_ft) || speed_ft < 0L) speed_ft <- 30L
+      if (as.integer(turn_move_ft() %||% 0L) + total_ft > speed_ft) {
+        log_safe("The actual route exceeds this actor's remaining movement.", type = "error")
+        return(FALSE)
+      }
+      ok <- tryCatch(upsert_encounter_actor_position(eid, actor_type, actor_id, target_x, target_y), error = function(e) FALSE)
+      if (!isTRUE(ok)) return(log_safe("Could not move active actor.", type = "error"))
+
+      rune_entries <- list()
+      for (path_i in 2:nrow(path)) {
+        entries <- tryCatch(trigger_rune_zone_entry(
+          eid, actor_type, actor_id, path$x[[path_i - 1L]], path$y[[path_i - 1L]],
+          path$x[[path_i]], path$y[[path_i]], as.integer(combat$round_number[[1L]] %||% 1L)
+        ), error = function(e) { append_control_audit("RUNE_ZONE_ERROR", conditionMessage(e)); list() })
+        rune_entries <- c(rune_entries, entries)
+      }
+      if (length(rune_entries)) for (entry in rune_entries) log_safe(paste0(entry$name, " strikes ", get_actor_display_name(actor_id), " for ", entry$damage, " ", entry$damage_type, " damage."), type = "warning")
+
+      if (!isTRUE(input$movement_disengage)) {
+        parts <- lapply(2:nrow(path), function(path_i) tryCatch(get_opportunity_attackers(
+          eid, actor_id, actor_type, path$x[[path_i - 1L]], path$y[[path_i - 1L]], path$x[[path_i]], path$y[[path_i]]
+        ), error = function(e) data.frame()))
+        parts <- Filter(function(x) is.data.frame(x) && nrow(x), parts)
+        attackers <- if (length(parts)) do.call(rbind, parts) else data.frame()
+        if (nrow(attackers)) attackers <- attackers[!duplicated(as.character(attackers$actor_id)), , drop = FALSE]
+        if (nrow(attackers)) log_game_event(eid, "opportunity_available", actor_type, actor_id, payload = list(
+          attacker_ids = as.list(as.character(attackers$actor_id)),
+          attacker_names = as.list(as.character(attackers$display_name %||% attackers$name %||% "Combatant"))
+        ))
+      }
+      log_game_event(eid, "move", actor_type, actor_id, payload = list(
+        from = list(x = old_x, y = old_y), to = list(x = target_x, y = target_y), move_cost_ft = total_ft,
+        path = lapply(seq_len(nrow(path)), function(i) list(x = path$x[[i]], y = path$y[[i]]))
+      ))
+      turn_move_ft(as.integer(turn_move_ft() %||% 0L) + total_ft)
+      if (isTRUE(input$movement_disengage)) updateCheckboxInput(session, "movement_disengage", value = FALSE)
+      pending_move(NULL); bump_positions(); bump_events(); bump_map_visual()
+      log_safe(paste0("Moved along the highlighted path to (", target_x, ", ", target_y, "). Cost: ", total_ft, " ft."))
+      TRUE
+    }
+
     observeEvent(input$move_to_tile, {
       if (!isTRUE(combat_started())) {
         log_safe("Start combat and roll initiative before moving combatants.", type = "error")
@@ -3066,19 +3118,28 @@ limit 1
       old_x <- suppressWarnings(as.integer(pos$x[1] %||% NA))
       old_y <- suppressWarnings(as.integer(pos$y[1] %||% NA))
       if (is.na(old_x) || is.na(old_y)) return()
-      dx_total <- target_x - old_x
-      dy_total <- target_y - old_y
-      steps <- max(abs(dx_total), abs(dy_total))
-      if (steps < 1L) return()
-      if (!(dx_total == 0L || dy_total == 0L || abs(dx_total) == abs(dy_total))) {
-        log_safe("Click movement currently supports straight or diagonal movement only.", type = "error")
+      existing <- pending_move()
+      if (!is.null(existing) && identical(as.integer(existing$x), target_x) && identical(as.integer(existing$y), target_y)) {
+        ok <- move_active_actor_path(existing)
+        pending_move(NULL); bump_map_visual(); return(invisible(ok))
+      }
+      actor_id <- as.character(active_actor_id() %||% ""); actor_type <- as.character(active_actor_type() %||% "player")
+      speed_ft <- suppressWarnings(as.integer(get_actor_speed_ft(actor_id, actor_type)))
+      if (is.na(speed_ft) || speed_ft < 0L) speed_ft <- 30L
+      remaining_ft <- max(0L, speed_ft - as.integer(turn_move_ft() %||% 0L))
+      path_result <- combat_grid_shortest_path(
+        map_tiles_r(), map_occupants_r(), old_x, old_y, target_x, target_y,
+        map_id = current_map_id(), exclude_actor_id = actor_id, max_cost_ft = remaining_ft
+      )
+      if (!isTRUE(path_result$ok)) {
+        pending_move(NULL); bump_map_visual()
+        log_safe("No legal path reaches that tile within the actor's remaining movement.", type = "error")
         return()
       }
-      pending_move(list(x = target_x, y = target_y))
-      ok <- move_active_actor(dx = sign(dx_total), dy = sign(dy_total), steps_override = steps)
-      pending_move(NULL)
+      pending_move(c(list(x = target_x, y = target_y), path_result))
+      log_safe(paste0("Path preview: ", path_result$cost_ft, " ft. Click the destination again to confirm."))
       bump_map_visual()
-      invisible(ok)
+      invisible(TRUE)
     }, ignoreInit = TRUE)
     
     # --------------------------------------------------
@@ -3249,6 +3310,28 @@ limit 1
         log_safe("Could not find selected weapon.", type = "error")
         return()
       }
+
+      attacker_row <- get_actor_row(attacker_id, "player")
+      target_row <- get_actor_row(target_id, target_type)
+      if (!nrow(attacker_row) || !nrow(target_row)) {
+        log_safe("Attacker and target both need map positions.", type = "error")
+        return()
+      }
+      geometry <- combat_attack_geometry(
+        map_tiles_r(), attacker_row$x[[1L]], attacker_row$y[[1L]], target_row$x[[1L]], target_row$y[[1L]],
+        weapon_row$range_ft[[1L]] %||% 5L,
+        weapon_row$long_range_ft[[1L]] %||% weapon_row$range_ft[[1L]] %||% 5L,
+        map_id = current_map_id()
+      )
+      if (!isTRUE(geometry$in_range)) {
+        log_safe(paste0("Target is ", geometry$distance_ft, " ft away and outside this weapon's range."), type = "error")
+        return()
+      }
+      if (!isTRUE(geometry$line_clear)) {
+        log_safe("A wall or other sight-blocking obstacle blocks this attack.", type = "error")
+        return()
+      }
+      if (!isTRUE(geometry$normal_range)) weapon_row$adv[[1L]] <- "Disadvantage"
       
       attacker_name <- get_actor_display_name(attacker_id)
       target_name <- get_actor_display_name(target_id)
@@ -3262,6 +3345,7 @@ limit 1
         attacker_id = attacker_id,
         target_id = target_id
       )
+      if (!isTRUE(geometry$normal_range)) log_safe("Target is beyond normal range: the attack has disadvantage.", type = "warning")
       
       pending_attack(preview)
     }, ignoreInit = TRUE)
