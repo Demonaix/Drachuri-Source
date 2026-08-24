@@ -1539,7 +1539,8 @@ test("lean 3D renderer pins live combatant posters to the tavern wall", {
 
 test("lean 3D tavern is enclosed with a door, ceiling, rafters and camera bounds", {
   js <- paste(readLines(file.path("DND APP Drachuri Edition Player_v2", "www", "js", "combat3d_lean.js"), warn = FALSE), collapse = "\n")
-  stopifnot(grepl("tavern_door_oak.jpg", js, fixed = TRUE))
+  stopifnot(grepl("tavern_wall_door_complete.png", js, fixed = TRUE))
+  stopifnot(grepl("roomSpan=Math.max(48", js, fixed = TRUE))
   stopifnot(grepl("const ceiling=new THREE.Mesh", js, fixed = TRUE))
   stopifnot(grepl("rafterCount", js, fixed = TRUE))
   stopifnot(grepl("constrainCamera", js, fixed = TRUE))
@@ -1548,20 +1549,20 @@ test("lean 3D tavern is enclosed with a door, ceiling, rafters and camera bounds
 
 test("Dracnos wanted sketch is pinned away from the live HUD wall", {
   js <- paste(readLines(file.path("DND APP Drachuri Edition Player_v2", "www", "js", "combat3d_lean.js"), warn = FALSE), collapse = "\n")
-  poster <- file.path("DND APP Drachuri Edition Player_v2", "www", "assets", "textures", "wanted_dracnos.png")
+  poster <- file.path("DND APP Drachuri Edition Player_v2", "www", "assets", "textures", "wanted_dracnos_text.png")
   stopifnot(file.exists(poster), file.info(poster)$size > 100000)
-  stopifnot(grepl("wanted_dracnos.png", js, fixed = TRUE))
-  stopifnot(grepl('makeTextTexture(state,"DRACNOS")', js, fixed = TRUE))
+  stopifnot(grepl("wanted_dracnos_text.png", js, fixed = TRUE))
+  stopifnot(grepl("dracnos.rotation.z=.035", js, fixed = TRUE))
   stopifnot(grepl("dracnosX=-roomWidth/2", js, fixed = TRUE))
   stopifnot(grepl("dracnos.rotation.y=Math.PI/2", js, fixed = TRUE))
 })
 
 test("Lord Blacklyn dangerous Fae ally notice joins the wanted wall", {
   js <- paste(readLines(file.path("DND APP Drachuri Edition Player_v2", "www", "js", "combat3d_lean.js"), warn = FALSE), collapse = "\n")
-  poster <- file.path("DND APP Drachuri Edition Player_v2", "www", "assets", "textures", "wanted_lord_blacklyn.png")
+  poster <- file.path("DND APP Drachuri Edition Player_v2", "www", "assets", "textures", "wanted_lord_blacklyn_text.png")
   stopifnot(file.exists(poster), file.info(poster)$size > 100000)
-  stopifnot(grepl("wanted_lord_blacklyn.png", js, fixed = TRUE))
-  stopifnot(all(vapply(c('"DANGEROUS"', '"LORD BLACKLYN"', '"FAE ALLY"'), function(label) grepl(label, js, fixed = TRUE), logical(1))))
+  stopifnot(grepl("wanted_lord_blacklyn_text.png", js, fixed = TRUE))
+  stopifnot(grepl("blacklyn.rotation.z=-.025", js, fixed = TRUE))
   stopifnot(grepl("blacklynX=-roomWidth/2", js, fixed = TRUE))
 })
 
@@ -1605,6 +1606,7 @@ test("Annwn world map fills the wall opposite the poster display", {
   stopifnot(file.exists(map), file.info(map)$size > 100000)
   stopifnot(grepl("map_annwn_world.jpg", js, fixed = TRUE))
   stopifnot(grepl("worldMapH=12.2", js, fixed = TRUE))
+  stopifnot(grepl("tatteredPlaneGeometry(worldMapW,worldMapH)", js, fixed = TRUE))
   stopifnot(grepl("worldMapX=roomWidth/2", js, fixed = TRUE))
   stopifnot(grepl("worldMap.rotation.y=-Math.PI/2", js, fixed = TRUE))
 })
@@ -1637,7 +1639,8 @@ test("generated environment textures are shipped and wired into 3D", {
     "grass.jpg", "dirt.jpg", "forest.jpg", "swamp.jpg", "stone.jpg",
     "water.jpg", "ravine.jpg", "pit.jpg", "bark.jpg", "leaves.jpg",
     "tavern_table_oak.jpg", "tavern_floorboards.jpg",
-    "tavern_plaster_timbers.jpg", "tavern_door_oak.jpg", "battlefield_fieldstone.jpg"
+    "tavern_plaster_timbers.jpg", "tavern_wall_door_complete.png",
+    "wanted_dracnos_text.png", "wanted_lord_blacklyn_text.png", "battlefield_fieldstone.jpg"
   )
   stopifnot(all(file.exists(file.path(texture_dir, assets))))
   stopifnot(all(file.info(file.path(texture_dir, assets))$size > 100000))
