@@ -1,15 +1,14 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 
 const states = new Map();
 const TERRAIN = {
-  grass:{color:0x719a58,tex:"grass.jpg",h:.10}, sand:{color:0xc7ad70,tex:"dirt.jpg",h:.08},
-  forest:{color:0x315f38,tex:"forest.jpg",h:.12}, woodland:{color:0x315f38,tex:"forest.jpg",h:.12},
-  water:{color:0x367eaa,tex:"water.jpg",h:.035}, stone:{color:0x85837b,tex:"stone.jpg",h:.15},
-  wall:{color:0x4e4d49,tex:"stone.jpg",h:.85}, road:{color:0xa5885b,tex:"dirt.jpg",h:.07},
-  swamp:{color:0x526944,tex:"swamp.jpg",h:.06}, ravine:{color:0x17151a,tex:"ravine.jpg",h:-.24},
-  pit:{color:0x17151a,tex:"ravine.jpg",h:-.24}, mandred_convergence:{color:0x714ca1,tex:"stone.jpg",h:.12}
+  grass:{color:0x719a58,tex:"grass.jpg",h:.10}, sand:{color:0xc7ad70,tex:"dirt.jpg",h:.02},
+  forest:{color:0x315f38,tex:"forest.jpg",h:.14}, woodland:{color:0x315f38,tex:"forest.jpg",h:.14},
+  water:{color:0x367eaa,tex:"water.jpg",h:-.18}, stone:{color:0x85837b,tex:"stone.jpg",h:.10},
+  wall:{color:0x4e4d49,tex:"stone.jpg",h:.10}, road:{color:0xa5885b,tex:"dirt.jpg",h:-.07},
+  swamp:{color:0x526944,tex:"swamp.jpg",h:-.03}, ravine:{color:0x17151a,tex:"ravine.jpg",h:-2.65},
+  pit:{color:0x17151a,tex:"ravine.jpg",h:-2.10}, mandred_convergence:{color:0x714ca1,tex:"stone.jpg",h:.12}
 };
 
 function normalise(value) {
@@ -22,6 +21,7 @@ function normalise(value) {
 function truthy(v){return v===true||v===1||v==="1"||v==="true";}
 function terrainName(v){const t=String(v||"grass").toLowerCase();return TERRAIN[t]?t:"grass";}
 function seeded(x,y,salt=0){const n=Math.sin(Number(x)*12.9898+Number(y)*78.233+salt*37.719)*43758.5453;return n-Math.floor(n);}
+function elevation(row){const name=terrainName(row?.terrain),base=TERRAIN[name].h;if(["road","water","ravine","pit","wall"].includes(name))return base;return base+(seeded(row.x,row.y,9)-.5)*.13;}
 function signature(rows){return rows.map(t=>[t.x,t.y,t.terrain,t.blocks_movement,t.light,t.fog].join(",")).sort().join("|");}
 function disposeObject(root){
   if(!root)return;root.traverse(o=>{o.geometry?.dispose();const ms=Array.isArray(o.material)?o.material:[o.material];ms.filter(Boolean).forEach(m=>m.dispose());});
@@ -70,14 +70,36 @@ function setupPicking(state){
   });
 }
 function clearGroup(group){for(const child of [...group.children]){group.remove(child);disposeObject(child);}}
+function buildSurfaceGeometry(items,tileMap,centerX,centerY){
+  const positions=[],uvs=[],indices=[];
+  const get=(x,y,fallback)=>tileMap.get(`${x},${y}`)||fallback;
+  const average=rows=>rows.reduce((sum,row)=>sum+elevation(row),0)/rows.length;
+  items.forEach(row=>{
+    const x=Number(row.x),y=Number(row.y),base=positions.length/3;
+    const edge=(dx,dy)=>average([row,get(x+dx,y+dy,row)]);
+    const corner=(dx,dy)=>average([row,get(x+dx,y,row),get(x,y+dy,row),get(x+dx,y+dy,row)]);
+    const points=[
+      [0,elevation(row),0,.5,.5],[-.5,corner(-1,-1),-.5,0,0],[0,edge(0,-1),-.5,.5,0],[.5,corner(1,-1),-.5,1,0],
+      [.5,edge(1,0),0,1,.5],[.5,corner(1,1),.5,1,1],[0,edge(0,1),.5,.5,1],[-.5,corner(-1,1),.5,0,1],[-.5,edge(-1,0),0,0,.5]
+    ];
+    for(const p of points){positions.push(x-centerX+p[0],p[1],y-centerY+p[2]);uvs.push(p[3],p[4]);}
+    for(let i=1;i<=8;i++)indices.push(base,base+(i===8?1:i+1),base+i);
+  });
+  const geometry=new THREE.BufferGeometry();geometry.setAttribute("position",new THREE.Float32BufferAttribute(positions,3));geometry.setAttribute("uv",new THREE.Float32BufferAttribute(uvs,2));geometry.setIndex(indices);geometry.computeVertexNormals();return geometry;
+}
 function buildTerrain(state,rows){
   clearGroup(state.terrainRoot);clearGroup(state.decorRoot);state.tileByKey.clear();state.tiles=rows;
   const xs=rows.map(r=>Number(r.x)),ys=rows.map(r=>Number(r.y));state.centerX=(Math.min(...xs)+Math.max(...xs))/2;state.centerY=(Math.min(...ys)+Math.max(...ys))/2;
   const grouped={};for(const row of rows){const t=terrainName(row.terrain);(grouped[t]??=[]).push(row);state.tileByKey.set(`${row.x},${row.y}`,row);}
   const matrix=new THREE.Matrix4();
-  for(const [name,items] of Object.entries(grouped)){const def=TERRAIN[name],height=Math.max(.04,Math.abs(def.h)+.12),geo=state.quality==="low"?new THREE.BoxGeometry(.96,height,.96):new RoundedBoxGeometry(.96,height,.96,state.quality==="decorative"?3:2,Math.min(.055,height*.22)),mat=new THREE.MeshLambertMaterial({color:def.color,map:texture(state,def.tex)});
-    const mesh=new THREE.InstancedMesh(geo,mat,items.length);mesh.receiveShadow=state.quality==="decorative";mesh.castShadow=state.quality==="decorative"&&name==="wall";
-    items.forEach((r,i)=>{matrix.makeTranslation(Number(r.x)-state.centerX,def.h-height/2,Number(r.y)-state.centerY);mesh.setMatrixAt(i,matrix);});mesh.instanceMatrix.needsUpdate=true;state.terrainRoot.add(mesh);
+  for(const [name,items] of Object.entries(grouped)){const def=TERRAIN[name],mat=new THREE.MeshLambertMaterial({color:def.color,map:texture(state,def.tex)});
+    if(state.quality==="low"){
+      const height=name==="wall"?2.35:Math.max(.08,Math.abs(def.h)+.12),geo=new THREE.BoxGeometry(.97,height,.97),mesh=new THREE.InstancedMesh(geo,mat,items.length);
+      items.forEach((r,i)=>{const top=name==="wall"?elevation(r)+2.35:elevation(r);matrix.makeTranslation(Number(r.x)-state.centerX,top-height/2,Number(r.y)-state.centerY);mesh.setMatrixAt(i,matrix);});mesh.instanceMatrix.needsUpdate=true;state.terrainRoot.add(mesh);
+    }else{
+      const surface=new THREE.Mesh(buildSurfaceGeometry(items,state.tileByKey,state.centerX,state.centerY),mat);surface.receiveShadow=state.quality==="decorative";state.terrainRoot.add(surface);
+      if(name==="wall"){const geo=new THREE.BoxGeometry(.92,2.35,.92),walls=new THREE.InstancedMesh(geo,mat,items.length);items.forEach((r,i)=>{matrix.makeTranslation(Number(r.x)-state.centerX,elevation(r)+1.175,Number(r.y)-state.centerY);walls.setMatrixAt(i,matrix);});walls.instanceMatrix.needsUpdate=true;walls.castShadow=walls.receiveShadow=state.quality==="decorative";state.terrainRoot.add(walls);}
+    }
   }
   if(state.quality==="decorative")buildDecor(state,rows);
   const size=Math.max(Math.max(...xs)-Math.min(...xs)+1,Math.max(...ys)-Math.min(...ys)+1),dist=Math.max(12,size*1.25);state.controls.target.set(0,0,0);state.camera.position.set(dist,dist*.78,dist);state.controls.update();
@@ -92,9 +114,9 @@ function buildDecor(state,rows){
     const angle=seeded(r.x,r.y,1)*Math.PI*2,size=.82+seeded(r.x,r.y,2)*.34,offset=.18+seeded(r.x,r.y,3)*.12;
     const x=Number(r.x)-state.centerX+Math.cos(angle)*offset,z=Number(r.y)-state.centerY+Math.sin(angle)*offset;
     rotation.setFromAxisAngle(new THREE.Vector3(0,1,0),angle);scale.set(size,size,size);
-    position.set(x,.48*size,z);matrix.compose(position,rotation,scale);trunks.setMatrixAt(i,matrix);
-    position.set(x,.90*size,z);matrix.compose(position,rotation,scale);lower.setMatrixAt(i,matrix);
-    position.set(x,1.25*size,z);matrix.compose(position,rotation,scale);upper.setMatrixAt(i,matrix);
+    const ground=elevation(r);position.set(x,ground+.48*size,z);matrix.compose(position,rotation,scale);trunks.setMatrixAt(i,matrix);
+    position.set(x,ground+.90*size,z);matrix.compose(position,rotation,scale);lower.setMatrixAt(i,matrix);
+    position.set(x,ground+1.25*size,z);matrix.compose(position,rotation,scale);upper.setMatrixAt(i,matrix);
   });
   for(const mesh of [trunks,lower,upper]){mesh.instanceMatrix.needsUpdate=true;mesh.castShadow=true;mesh.receiveShadow=true;}
   state.decorRoot.add(trunks,lower,upper);
@@ -102,7 +124,7 @@ function buildDecor(state,rows){
 function updateTokens(state,rows){
   clearGroup(state.tokenRoot);const geo=new THREE.CylinderGeometry(.25,.30,.62,8);
   for(const row of rows){if(!row.occupant_id)continue;const player=String(row.occupant_type)==="player",active=truthy(row.is_active_actor),mat=new THREE.MeshLambertMaterial({color:active?0xffd34d:player?0x48b9df:0xd65b42});
-    const token=new THREE.Mesh(geo,mat),terrain=TERRAIN[terrainName(row.terrain)];token.position.set(Number(row.x)-state.centerX,(terrain?.h||0)+.34,Number(row.y)-state.centerY);token.userData={actorId:String(row.occupant_id),actorType:row.occupant_type,x:Number(row.x),y:Number(row.y)};state.tokenRoot.add(token);
+    const token=new THREE.Mesh(geo,mat);token.position.set(Number(row.x)-state.centerX,elevation(row)+.34,Number(row.y)-state.centerY);token.userData={actorId:String(row.occupant_id),actorType:row.occupant_type,x:Number(row.x),y:Number(row.y)};state.tokenRoot.add(token);
   }
 }
 function render(message){
