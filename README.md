@@ -96,6 +96,18 @@ level-6 QA characters (one per subclass), and one encounter. It never uses Supab
 test launchers disable machine-level R startup files and supply local database
 settings explicitly.
 
+To replace the synthetic QA data with a read-only snapshot of the current live
+campaign, run:
+
+```sh
+sh test-env/refresh_campaign_test_data.sh
+```
+
+The SQL snapshot is stored locally under `test-env/snapshots/` and is not
+committed. Normal local-app launches retain the imported campaign. Commands that
+run integration or ability tests deliberately reset the database to synthetic
+fixtures; run the refresh command again afterwards to restore the campaign copy.
+
 Run the focused class-ability smoke test with:
 
 ```sh

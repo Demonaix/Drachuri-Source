@@ -2,6 +2,7 @@
 set -eu
 
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+rm -f "$project_dir/test-env/.campaign-snapshot-loaded"
 pg_bin=/Library/PostgreSQL/18/bin
 socket_dir=/tmp/drachuri-postgres
 port=55432

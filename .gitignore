@@ -18,6 +18,8 @@ releases/
 test-env/.postgres-data/
 test-env/.postgres-socket/
 test-env/logs/
+test-env/snapshots/
+test-env/.campaign-snapshot-loaded
 **/launcher/bootstrap-library/
 **/launcher/logs/
 **/launcher/.restored-lock-md5
@@ -25,3 +27,4 @@ test-env/logs/
 # Large third-party 3D assets are kept locally but not versioned here.
 # Remove this rule later if Git LFS is introduced for these files.
 **/www/models/
+.Rproj.user

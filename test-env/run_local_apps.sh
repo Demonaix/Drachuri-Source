@@ -8,7 +8,12 @@ r_library="$player_dir/renv/library/R-4.2/x86_64-apple-darwin17.0"
 log_dir="$project_dir/test-env/logs"
 
 mkdir -p "$log_dir"
-"$project_dir/test-env/reset_db.sh"
+if [ -f "$project_dir/test-env/.campaign-snapshot-loaded" ]; then
+  "$project_dir/test-env/start_db.sh"
+  printf '%s\n' "Using the saved campaign snapshot in the local test database."
+else
+  "$project_dir/test-env/reset_db.sh"
+fi
 
 set -a
 . "$project_dir/test-env/test.env"
