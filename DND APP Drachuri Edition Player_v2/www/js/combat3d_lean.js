@@ -1,0 +1,103 @@
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+const states = new Map();
+const TERRAIN = {
+  grass:{color:0x719a58,tex:"grass.jpg",h:.10}, sand:{color:0xc7ad70,tex:"dirt.jpg",h:.08},
+  forest:{color:0x315f38,tex:"forest.jpg",h:.12}, woodland:{color:0x315f38,tex:"forest.jpg",h:.12},
+  water:{color:0x367eaa,tex:"water.jpg",h:.035}, stone:{color:0x85837b,tex:"stone.jpg",h:.15},
+  wall:{color:0x4e4d49,tex:"stone.jpg",h:.85}, road:{color:0xa5885b,tex:"dirt.jpg",h:.07},
+  swamp:{color:0x526944,tex:"swamp.jpg",h:.06}, ravine:{color:0x17151a,tex:"ravine.jpg",h:-.24},
+  pit:{color:0x17151a,tex:"ravine.jpg",h:-.24}, mandred_convergence:{color:0x714ca1,tex:"stone.jpg",h:.12}
+};
+
+function normalise(value) {
+  if (typeof value === "string") value = JSON.parse(value);
+  if (Array.isArray(value)) return value;
+  if (!value || typeof value !== "object") return [];
+  const keys=Object.keys(value),n=Math.max(0,...keys.map(k=>Array.isArray(value[k])?value[k].length:0));
+  return Array.from({length:n},(_,i)=>Object.fromEntries(keys.map(k=>[k,Array.isArray(value[k])?value[k][i]:value[k]])));
+}
+function truthy(v){return v===true||v===1||v==="1"||v==="true";}
+function terrainName(v){const t=String(v||"grass").toLowerCase();return TERRAIN[t]?t:"grass";}
+function signature(rows){return rows.map(t=>[t.x,t.y,t.terrain,t.blocks_movement,t.light,t.fog].join(",")).sort().join("|");}
+function disposeObject(root){
+  if(!root)return;root.traverse(o=>{o.geometry?.dispose();const ms=Array.isArray(o.material)?o.material:[o.material];ms.filter(Boolean).forEach(m=>m.dispose());});
+}
+function disposeState(state){
+  if(!state)return;state.resizeObserver?.disconnect();state.controls?.dispose();disposeObject(state.scene);
+  Object.values(state.textures||{}).forEach(t=>t.dispose());
+  state.renderer?.dispose();state.renderer?.domElement?.remove();states.delete(state.containerId);
+}
+function requestRender(state){
+  if(!state||state.renderPending)return;state.renderPending=true;
+  requestAnimationFrame(()=>{state.renderPending=false;if(state.renderer&&state.scene&&state.camera)state.renderer.render(state.scene,state.camera);});
+}
+function texture(state,file){
+  if(!file)return null;if(state.textures[file])return state.textures[file];
+  const t=new THREE.TextureLoader().load(`assets/textures/${file}`,()=>requestRender(state));
+  t.colorSpace=THREE.SRGBColorSpace;t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(1.5,1.5);state.textures[file]=t;return t;
+}
+function makeState(containerId,inputIds,quality){
+  const el=document.getElementById(containerId);if(!el)return null;
+  const previous=states.get(containerId);if(previous)disposeState(previous);
+  const renderer=new THREE.WebGLRenderer({antialias:quality!=="low",powerPreference:"high-performance"});
+  renderer.setPixelRatio(quality==="low"?1:Math.min(devicePixelRatio||1,1.5));renderer.setSize(Math.max(1,el.clientWidth),Math.max(1,el.clientHeight),false);
+  renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.shadowMap.enabled=quality==="decorative";el.replaceChildren(renderer.domElement);
+  const scene=new THREE.Scene();scene.background=new THREE.Color(0x202730);scene.add(new THREE.HemisphereLight(0xe4edff,0x493a2b,1.25));
+  const sun=new THREE.DirectionalLight(0xffe1b2,quality==="low"?.65:1.05);sun.position.set(14,24,10);sun.castShadow=quality==="decorative";
+  if(sun.castShadow){sun.shadow.mapSize.set(1024,1024);sun.shadow.camera.left=-30;sun.shadow.camera.right=30;sun.shadow.camera.top=30;sun.shadow.camera.bottom=-30;}scene.add(sun);
+  const camera=new THREE.PerspectiveCamera(48,1,.1,500),controls=new OrbitControls(camera,renderer.domElement);
+  controls.enableDamping=false;controls.maxPolarAngle=Math.PI/2.04;controls.minDistance=4;controls.maxDistance=100;
+  const state={containerId,el,renderer,scene,camera,controls,inputIds:inputIds||{},quality,textures:{},terrainRoot:new THREE.Group(),tokenRoot:new THREE.Group(),decorRoot:new THREE.Group(),tiles:[],tileByKey:new Map(),signature:"",centerX:0,centerY:0,renderPending:false};
+  scene.add(state.terrainRoot,state.decorRoot,state.tokenRoot);controls.addEventListener("change",()=>requestRender(state));
+  const resize=()=>{const w=Math.max(1,el.clientWidth),h=Math.max(1,el.clientHeight);camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h,false);requestRender(state);};
+  state.resizeObserver=new ResizeObserver(resize);state.resizeObserver.observe(el);states.set(containerId,state);setupPicking(state);resize();return state;
+}
+function setupPicking(state){
+  const ray=new THREE.Raycaster(),pointer=new THREE.Vector2();let down=null;
+  state.renderer.domElement.addEventListener("pointerdown",e=>{down={x:e.clientX,y:e.clientY};});
+  state.renderer.domElement.addEventListener("pointerup",e=>{
+    if(!down||Math.hypot(e.clientX-down.x,e.clientY-down.y)>6)return;down=null;
+    const rect=state.renderer.domElement.getBoundingClientRect();pointer.set(((e.clientX-rect.left)/rect.width)*2-1,-((e.clientY-rect.top)/rect.height)*2+1);ray.setFromCamera(pointer,state.camera);
+    const tokenHits=ray.intersectObjects(state.tokenRoot.children,true);if(tokenHits.length){let o=tokenHits[0].object;while(o.parent&&o.userData.actorId==null)o=o.parent;const d=o.userData;if(d.actorId&&state.inputIds.target)Shiny.setInputValue(state.inputIds.target,{actor_id:d.actorId,actor_type:d.actorType||"enemy",x:d.x,y:d.y,nonce:Math.random()},{priority:"event"});return;}
+    const plane=new THREE.Plane(new THREE.Vector3(0,1,0),0),point=new THREE.Vector3();if(!ray.ray.intersectPlane(plane,point))return;
+    const x=Math.round(point.x+state.centerX),y=Math.round(point.z+state.centerY),tile=state.tileByKey.get(`${x},${y}`);if(!tile)return;
+    if(tile.occupant_id&&state.inputIds.target)Shiny.setInputValue(state.inputIds.target,{actor_id:tile.occupant_id,actor_type:tile.occupant_type||"enemy",x,y,nonce:Math.random()},{priority:"event"});
+    else if(state.inputIds.move)Shiny.setInputValue(state.inputIds.move,{x,y,nonce:Math.random()},{priority:"event"});
+  });
+}
+function clearGroup(group){for(const child of [...group.children]){group.remove(child);disposeObject(child);}}
+function buildTerrain(state,rows){
+  clearGroup(state.terrainRoot);clearGroup(state.decorRoot);state.tileByKey.clear();state.tiles=rows;
+  const xs=rows.map(r=>Number(r.x)),ys=rows.map(r=>Number(r.y));state.centerX=(Math.min(...xs)+Math.max(...xs))/2;state.centerY=(Math.min(...ys)+Math.max(...ys))/2;
+  const grouped={};for(const row of rows){const t=terrainName(row.terrain);(grouped[t]??=[]).push(row);state.tileByKey.set(`${row.x},${row.y}`,row);}
+  const matrix=new THREE.Matrix4();
+  for(const [name,items] of Object.entries(grouped)){const def=TERRAIN[name],height=Math.max(.04,Math.abs(def.h)+.12),geo=new THREE.BoxGeometry(.96,height,.96),mat=new THREE.MeshLambertMaterial({color:def.color,map:texture(state,def.tex)});
+    const mesh=new THREE.InstancedMesh(geo,mat,items.length);mesh.receiveShadow=state.quality==="decorative";mesh.castShadow=state.quality==="decorative"&&name==="wall";
+    items.forEach((r,i)=>{matrix.makeTranslation(Number(r.x)-state.centerX,def.h-height/2,Number(r.y)-state.centerY);mesh.setMatrixAt(i,matrix);});mesh.instanceMatrix.needsUpdate=true;state.terrainRoot.add(mesh);
+  }
+  if(state.quality==="decorative")buildDecor(state,rows);
+  const size=Math.max(Math.max(...xs)-Math.min(...xs)+1,Math.max(...ys)-Math.min(...ys)+1),dist=Math.max(12,size*1.25);state.controls.target.set(0,0,0);state.camera.position.set(dist,dist*.78,dist);state.controls.update();
+}
+function buildDecor(state,rows){
+  const forests=rows.filter(r=>["forest","woodland"].includes(terrainName(r.terrain)));if(!forests.length)return;
+  const trunkGeo=new THREE.CylinderGeometry(.07,.11,.65,5),leafGeo=new THREE.ConeGeometry(.28,.8,6),trunkMat=new THREE.MeshLambertMaterial({color:0x5f4126}),leafMat=new THREE.MeshLambertMaterial({color:0x315f38});
+  const trunks=new THREE.InstancedMesh(trunkGeo,trunkMat,forests.length),leaves=new THREE.InstancedMesh(leafGeo,leafMat,forests.length),m=new THREE.Matrix4();
+  forests.forEach((r,i)=>{const x=Number(r.x)-state.centerX,z=Number(r.y)-state.centerY;m.makeTranslation(x,.42,z);trunks.setMatrixAt(i,m);m.makeTranslation(x,1.05,z);leaves.setMatrixAt(i,m);});trunks.instanceMatrix.needsUpdate=leaves.instanceMatrix.needsUpdate=true;state.decorRoot.add(trunks,leaves);
+}
+function updateTokens(state,rows){
+  clearGroup(state.tokenRoot);const geo=new THREE.CylinderGeometry(.25,.30,.62,8);
+  for(const row of rows){if(!row.occupant_id)continue;const player=String(row.occupant_type)==="player",active=truthy(row.is_active_actor),mat=new THREE.MeshLambertMaterial({color:active?0xffd34d:player?0x48b9df:0xd65b42});
+    const token=new THREE.Mesh(geo,mat),terrain=TERRAIN[terrainName(row.terrain)];token.position.set(Number(row.x)-state.centerX,(terrain?.h||0)+.34,Number(row.y)-state.centerY);token.userData={actorId:String(row.occupant_id),actorType:row.occupant_type,x:Number(row.x),y:Number(row.y)};state.tokenRoot.add(token);
+  }
+}
+function render(message){
+  const rows=normalise(message.mapData);if(!rows.length)return;const quality=["low","balanced","decorative"].includes(message.quality)?message.quality:"balanced";
+  let state=states.get(message.containerId),el=document.getElementById(message.containerId);if(!el)return;
+  if(!state||state.el!==el||state.quality!==quality)state=makeState(message.containerId,message.inputIds,quality);else state.inputIds=message.inputIds||state.inputIds;
+  if(!state)return;const sig=signature(rows);if(sig!==state.signature){buildTerrain(state,rows);state.signature=sig;}else{state.tiles=rows;state.tileByKey=new Map(rows.map(r=>[`${r.x},${r.y}`,r]));}
+  updateTokens(state,rows);requestRender(state);
+}
+Shiny.addCustomMessageHandler("combat3d-lean-init",render);
+Shiny.addCustomMessageHandler("combat3d-lean-resize",m=>{const s=states.get(m.containerId);if(s){s.renderer.setSize(Math.max(1,s.el.clientWidth),Math.max(1,s.el.clientHeight),false);requestRender(s);}});

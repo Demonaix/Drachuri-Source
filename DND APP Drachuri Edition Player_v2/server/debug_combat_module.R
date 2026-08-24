@@ -14,6 +14,7 @@ debugCombatUI <- function(id) {
       tags$link(rel = "stylesheet", type = "text/css", href = "css/combat.css"),
       
       tags$script(src = paste0("js/combat2d_simple.js?v=", as.integer(Sys.time()))),
+      tags$script(type="module",src=paste0("js/combat3d_lean.js?v=",as.integer(Sys.time()))),
       
       div(
         
@@ -66,6 +67,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     map_ui_ready <- reactiveVal(FALSE)
     
     map_visual_key <- reactiveVal(0L)
+    map_send_generation <- reactiveVal(0L)
     selected_target_id <- reactiveVal("")
     current_attack_is_opp <- reactiveVal(FALSE)
     current_attack_is_ready <- reactiveVal(FALSE)
@@ -2668,16 +2670,17 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     # --------------------------------------------------
     output$map_ui <- renderUI({
       map_ui_ready(TRUE)
-      
+      mode<-input$map_render_mode%||%"2d"
       tags$div(
         id = session$ns("combat_3d_shell"),
-        class = "combat-2d-shell",
+        class = if(identical(mode,"3d"))"combat-3d-shell"else"combat-2d-shell",
         
         tags$div(
           class = "combat-map-toolbar",
-          div(class = "combat-section-title", "2D Combat Map"),
-          actionButton(session$ns("map_zoom_out"), "− Zoom", class = "btn btn-default"),
-          actionButton(session$ns("map_zoom_in"), "+ Zoom", class = "btn btn-default"),
+          radioButtons(session$ns("map_render_mode"),NULL,c("2D"="2d","Lean 3D"="3d"),selected=mode,inline=TRUE),
+          if(identical(mode,"2d"))actionButton(session$ns("map_zoom_out"), "− Zoom", class = "btn btn-default")else NULL,
+          if(identical(mode,"2d"))actionButton(session$ns("map_zoom_in"), "+ Zoom", class = "btn btn-default")else NULL,
+          if(identical(mode,"3d"))selectInput(session$ns("map_3d_quality"),NULL,c("Low"="low","Balanced"="balanced","Decorative"="decorative"),selected=input$map_3d_quality%||%"balanced",width="135px")else NULL,
           actionButton(
             session$ns("map_3d_fullscreen"),
             "Fullscreen Map",
@@ -2687,10 +2690,12 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         
         tags$div(
           id = session$ns("combat_3d_canvas"),
-          class = "combat-2d-canvas"
+          class = if(identical(mode,"3d"))"combat-3d-canvas"else"combat-2d-canvas"
         )
       )
     })
+    observeEvent(input$map_render_mode,{later::later(bump_map_visual,.15)},ignoreInit=TRUE)
+    observeEvent(input$map_3d_quality,{if(identical(input$map_render_mode%||%"2d","3d"))later::later(bump_map_visual,.15)},ignoreInit=TRUE)
     
     
     observe({
@@ -2792,9 +2797,13 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       
     
       
+      generation<-isolate(map_send_generation())+1L
+      map_send_generation(generation)
       later::later(function() {
+        if(!identical(isolate(map_send_generation()),generation))return()
+        mode<-isolate(input$map_render_mode%||%"2d")
         session$sendCustomMessage(
-          "combat3d-init",
+          if(identical(mode,"3d"))"combat3d-lean-init"else"combat3d-init",
           list(
             containerId = session$ns("combat_3d_canvas"),
             mapData = jsonlite::toJSON(
@@ -2804,6 +2813,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
               null = "null"
             ),
             zones = jsonlite::toJSON(zone_df, dataframe = "rows", auto_unbox = TRUE, null = "null"),
+            quality=isolate(input$map_3d_quality%||%"balanced"),
             inputIds = list(
               move = session$ns("move_to_tile"),
               target = session$ns("map_target_click")

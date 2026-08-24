@@ -1,6 +1,16 @@
 library(shiny)
 library(shinyjs)
 
+# Reuse the player's lean combat renderer instead of maintaining two divergent
+# copies. The control app is launched with this directory as its working folder.
+player_www <- normalizePath(
+  file.path("..", "DND APP Drachuri Edition Player_v2", "www"),
+  mustWork = TRUE
+)
+if (!"player-assets" %in% names(shiny::resourcePaths())) {
+  shiny::addResourcePath("player-assets", player_www)
+}
+
 # ------------------------------------------------------------
 # Source control modules
 # ------------------------------------------------------------
@@ -32,6 +42,7 @@ ui_control <- fluidPage(
   
   tags$head(
     tags$title("DND Control Dashboard"),
+    tags$script(type = "module", src = paste0("player-assets/js/combat3d_lean.js?v=", as.integer(Sys.time()))),
     tags$meta(name = "viewport", content = "width=device-width, initial-scale=1"),
     tags$link(
       href = "https://fonts.googleapis.com/css2?family=Cinzel&display=swap",

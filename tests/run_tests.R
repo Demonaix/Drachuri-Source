@@ -1471,4 +1471,15 @@ test("map autogenerator creates deterministic editable terrain presets", {
   stopifnot(any(maps$river$terrain=="water"),any(maps$river$terrain=="road"),any(maps$coast$terrain=="sand"),any(maps$coast$terrain=="water"))
 })
 
+test("lean 3D renderer keeps costly features optional", {
+  js_path <- file.path("DND APP Drachuri Edition Player_v2", "www", "js", "combat3d_lean.js")
+  js <- paste(readLines(js_path, warn = FALSE), collapse = "\n")
+  stopifnot(grepl("InstancedMesh", js, fixed = TRUE))
+  stopifnot(grepl("combat3d-lean-init", js, fixed = TRUE))
+  stopifnot(grepl('quality==="decorative"', js, fixed = TRUE))
+  stopifnot(!grepl("GLTFLoader", js, fixed = TRUE))
+  stopifnot(!grepl("PointLight", js, fixed = TRUE))
+  stopifnot(!grepl("function animate", js, fixed = TRUE))
+})
+
 cat("\n", tests_run, " tests passed.\n", sep = "")

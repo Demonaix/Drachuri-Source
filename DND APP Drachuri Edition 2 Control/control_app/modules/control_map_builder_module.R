@@ -48,7 +48,6 @@ controlMapBuilderUI <- function(id) {
   tagList(
     
     tags$link(rel = "stylesheet", type = "text/css", href = "css/combat.css"),
-   # tags$script(type = "module", src = paste0("js/combat3d.js?v=", as.integer(Sys.time()))),
    tags$script(src = paste0("js/mapBuilder2d.js?v=", as.integer(Sys.time()))),
     
     tags$style(HTML("
@@ -891,7 +890,7 @@ observeEvent(input$load_selected_map, {
           )
           
           session$sendCustomMessage(
-            "combat3d-init",
+            "combat3d-lean-init",
             list(
               containerId = session$ns("combat_3d_container"),
               mapData = jsonlite::toJSON(
@@ -900,7 +899,8 @@ observeEvent(input$load_selected_map, {
                 auto_unbox = TRUE,
                 null = "null"
               ),
-              inputIds = list()
+              inputIds = list(),
+              quality = "balanced"
             )
           )
         }, once = TRUE)
@@ -943,7 +943,7 @@ observeEvent(input$load_selected_map, {
       )
       
       session$sendCustomMessage(
-        "combat3d-init",
+        "combat3d-lean-init",
         list(
           containerId = session$ns("combat_3d_container"),
           mapData = jsonlite::toJSON(
@@ -952,7 +952,8 @@ observeEvent(input$load_selected_map, {
             auto_unbox = TRUE,
             null = "null"
           ),
-          inputIds = list()
+          inputIds = list(),
+          quality = "balanced"
         )
       )
     }, ignoreInit = TRUE)
