@@ -2463,6 +2463,10 @@ limit 1
       
       active_id <- active_actor_id()
       render_df$is_active_actor <- !is.na(render_df$occupant_id) & as.character(render_df$occupant_id) == as.character(active_id %||% "")
+      combat_now <- tryCatch(combat_state_r(), error = function(e) data.frame())
+      round_now <- if (is.data.frame(combat_now) && nrow(combat_now)) suppressWarnings(as.integer(combat_now$round_number[[1L]] %||% 1L)) else NULL
+      zone_df <- tryCatch(get_active_glyph_zones(current_encounter_id(), round_now), error = function(e) data.frame())
+      if (nrow(zone_df)) zone_df <- zone_df[, intersect(c("id","glyph_type","name","rank","center_x","center_y","area_ft","colour","tooltip"), names(zone_df)), drop=FALSE]
       generation <- isolate(map_send_generation()) + 1L
       map_send_generation(generation)
       later::later(function() {
@@ -2473,6 +2477,7 @@ limit 1
           list(
             containerId = session$ns("combat_3d_canvas"),
             mapData = jsonlite::toJSON(render_df, dataframe = "rows", auto_unbox = TRUE, null = "null"),
+            zones = jsonlite::toJSON(zone_df, dataframe = "rows", auto_unbox = TRUE, null = "null"),
             quality = isolate(input$map_3d_quality %||% "balanced"),
             inputIds = list(move = session$ns("move_to_tile"), target = session$ns("map_target_click"))
           )

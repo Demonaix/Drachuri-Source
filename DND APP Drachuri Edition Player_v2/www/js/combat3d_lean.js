@@ -51,8 +51,8 @@ function makeState(containerId,inputIds,quality){
   if(sun.castShadow){sun.shadow.mapSize.set(1024,1024);sun.shadow.camera.left=-30;sun.shadow.camera.right=30;sun.shadow.camera.top=30;sun.shadow.camera.bottom=-30;}scene.add(sun);
   const camera=new THREE.PerspectiveCamera(48,1,.1,500),controls=new OrbitControls(camera,renderer.domElement);
   controls.enableDamping=false;controls.maxPolarAngle=Math.PI*.47;controls.minPolarAngle=.12;controls.minDistance=4;controls.maxDistance=100;
-  const state={containerId,el,renderer,scene,camera,controls,inputIds:inputIds||{},quality,textures:{},terrainRoot:new THREE.Group(),tokenRoot:new THREE.Group(),decorRoot:new THREE.Group(),tiles:[],tileByKey:new Map(),signature:"",centerX:0,centerY:0,renderPending:false};
-  scene.add(state.terrainRoot,state.decorRoot,state.tokenRoot);controls.addEventListener("change",()=>requestRender(state));
+  const state={containerId,el,renderer,scene,camera,controls,inputIds:inputIds||{},quality,textures:{},terrainRoot:new THREE.Group(),tokenRoot:new THREE.Group(),decorRoot:new THREE.Group(),overlayRoot:new THREE.Group(),tiles:[],tileByKey:new Map(),signature:"",boundsSignature:"",centerX:0,centerY:0,renderPending:false};
+  scene.add(state.terrainRoot,state.decorRoot,state.overlayRoot,state.tokenRoot);controls.addEventListener("change",()=>requestRender(state));
   const resize=()=>{const w=Math.max(1,el.clientWidth),h=Math.max(1,el.clientHeight);camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h,false);requestRender(state);};
   state.resizeObserver=new ResizeObserver(resize);state.resizeObserver.observe(el);states.set(containerId,state);setupPicking(state);resize();return state;
 }
@@ -114,12 +114,12 @@ function buildTerrain(state,rows){
       items.forEach((r,i)=>{const top=name==="wall"?elevation(r)+2.35:elevation(r);matrix.makeTranslation(Number(r.x)-state.centerX,top-height/2,Number(r.y)-state.centerY);mesh.setMatrixAt(i,matrix);});mesh.instanceMatrix.needsUpdate=true;state.terrainRoot.add(mesh);
     }else{
       const surface=new THREE.Mesh(buildSurfaceGeometry(items,state.tileByKey,state.centerX,state.centerY),mat);surface.receiveShadow=state.quality==="decorative";state.terrainRoot.add(surface);
-      if(name==="wall"){const geo=new THREE.BoxGeometry(.92,2.35,.92),walls=new THREE.InstancedMesh(geo,mat,items.length);items.forEach((r,i)=>{matrix.makeTranslation(Number(r.x)-state.centerX,elevation(r)+1.175,Number(r.y)-state.centerY);walls.setMatrixAt(i,matrix);});walls.instanceMatrix.needsUpdate=true;walls.castShadow=walls.receiveShadow=state.quality==="decorative";state.terrainRoot.add(walls);}
+      if(name==="wall"){const geo=new THREE.BoxGeometry(1.015,2.35,1.015),walls=new THREE.InstancedMesh(geo,mat,items.length);items.forEach((r,i)=>{matrix.makeTranslation(Number(r.x)-state.centerX,elevation(r)+1.175,Number(r.y)-state.centerY);walls.setMatrixAt(i,matrix);});walls.instanceMatrix.needsUpdate=true;walls.castShadow=walls.receiveShadow=state.quality==="decorative";state.terrainRoot.add(walls);}
     }
   }
   buildTabletop(state,rows,xs,ys);
   if(state.quality!=="low")buildDecor(state,rows);
-  const size=Math.max(Math.max(...xs)-Math.min(...xs)+1,Math.max(...ys)-Math.min(...ys)+1),dist=Math.max(12,size*1.25);state.controls.target.set(0,0,0);state.camera.position.set(dist,dist*.78,dist);state.controls.update();
+  const boundsSignature=[Math.min(...xs),Math.max(...xs),Math.min(...ys),Math.max(...ys)].join(",");if(state.boundsSignature!==boundsSignature){const size=Math.max(Math.max(...xs)-Math.min(...xs)+1,Math.max(...ys)-Math.min(...ys)+1),dist=Math.max(12,size*1.25);state.controls.target.set(0,0,0);state.camera.position.set(dist,dist*.78,dist);state.controls.update();state.boundsSignature=boundsSignature;}
 }
 function buildDecor(state,rows){
   const forests=rows.filter(r=>["forest","woodland"].includes(terrainName(r.terrain)));if(!forests.length)return;
@@ -144,12 +144,19 @@ function updateTokens(state,rows){
     const token=new THREE.Mesh(geo,mat);token.position.set(Number(row.x)-state.centerX,elevation(row)+.34,Number(row.y)-state.centerY);token.userData={actorId:String(row.occupant_id),actorType:row.occupant_type,x:Number(row.x),y:Number(row.y)};state.tokenRoot.add(token);
   }
 }
+function addCylinderBetween(group,a,b,radius,material){const delta=b.clone().sub(a),length=delta.length();if(!length)return;const mesh=new THREE.Mesh(new THREE.CylinderGeometry(radius,radius,length,8),material);mesh.position.copy(a).add(b).multiplyScalar(.5);mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),delta.normalize());group.add(mesh);}
+function updateOverlays(state,rows,zones){
+  clearGroup(state.overlayRoot);
+  const path=rows.filter(r=>truthy(r.is_pending_move)).sort((a,b)=>Number(a.move_path_step||0)-Number(b.move_path_step||0));
+  if(path.length){const mat=new THREE.MeshBasicMaterial({color:0xffd34d,transparent:true,opacity:.9,depthWrite:false}),points=path.map(r=>new THREE.Vector3(Number(r.x)-state.centerX,elevation(r)+.16,Number(r.y)-state.centerY));for(let i=1;i<points.length;i++)addCylinderBetween(state.overlayRoot,points[i-1],points[i],.055,mat);for(const p of points){const marker=new THREE.Mesh(new THREE.CylinderGeometry(.16,.16,.035,18),mat);marker.position.copy(p);state.overlayRoot.add(marker);}}
+  for(const zone of zones){const radius=Math.max(.5,Number(zone.area_ft||5)/5),x=Number(zone.center_x),y=Number(zone.center_y);if(!Number.isFinite(x)||!Number.isFinite(y))continue;const tile=state.tileByKey.get(`${x},${y}`),height=(tile?elevation(tile):.1)+.18,color=new THREE.Color(zone.colour||((String(zone.glyph_type)==="ward")?"#3a78c2":"#d63b2f"));const fill=new THREE.Mesh(new THREE.CircleGeometry(radius,48),new THREE.MeshBasicMaterial({color,transparent:true,opacity:.22,side:THREE.DoubleSide,depthWrite:false}));fill.rotation.x=-Math.PI/2;fill.position.set(x-state.centerX,height,y-state.centerY);fill.userData={tooltip:zone.tooltip||zone.name||"Glyph area"};state.overlayRoot.add(fill);const ring=new THREE.Mesh(new THREE.RingGeometry(Math.max(.01,radius-.06),radius,48),new THREE.MeshBasicMaterial({color,transparent:true,opacity:.8,side:THREE.DoubleSide,depthWrite:false}));ring.rotation.x=-Math.PI/2;ring.position.copy(fill.position);state.overlayRoot.add(ring);}
+}
 function render(message){
-  const rows=normalise(message.mapData);if(!rows.length)return;const quality=["low","balanced","decorative"].includes(message.quality)?message.quality:"balanced";
+  const rows=normalise(message.mapData),zones=normalise(message.zones);if(!rows.length)return;const quality=["low","balanced","decorative"].includes(message.quality)?message.quality:"balanced";
   let state=states.get(message.containerId),el=document.getElementById(message.containerId);if(!el)return;
   if(!state||state.el!==el||state.quality!==quality)state=makeState(message.containerId,message.inputIds,quality);else state.inputIds=message.inputIds||state.inputIds;
   if(!state)return;const sig=signature(rows);if(sig!==state.signature){buildTerrain(state,rows);state.signature=sig;}else{state.tiles=rows;state.tileByKey=new Map(rows.map(r=>[`${r.x},${r.y}`,r]));}
-  updateTokens(state,rows);requestRender(state);
+  updateTokens(state,rows);updateOverlays(state,rows,zones);requestRender(state);
 }
 Shiny.addCustomMessageHandler("combat3d-lean-init",render);
 Shiny.addCustomMessageHandler("combat3d-lean-resize",m=>{const s=states.get(m.containerId);if(s){s.renderer.setSize(Math.max(1,s.el.clientWidth),Math.max(1,s.el.clientHeight),false);requestRender(s);}});
