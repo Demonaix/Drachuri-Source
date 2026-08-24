@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 
 const states = new Map();
 const TERRAIN = {
@@ -20,6 +21,7 @@ function normalise(value) {
 }
 function truthy(v){return v===true||v===1||v==="1"||v==="true";}
 function terrainName(v){const t=String(v||"grass").toLowerCase();return TERRAIN[t]?t:"grass";}
+function seeded(x,y,salt=0){const n=Math.sin(Number(x)*12.9898+Number(y)*78.233+salt*37.719)*43758.5453;return n-Math.floor(n);}
 function signature(rows){return rows.map(t=>[t.x,t.y,t.terrain,t.blocks_movement,t.light,t.fog].join(",")).sort().join("|");}
 function disposeObject(root){
   if(!root)return;root.traverse(o=>{o.geometry?.dispose();const ms=Array.isArray(o.material)?o.material:[o.material];ms.filter(Boolean).forEach(m=>m.dispose());});
@@ -73,7 +75,7 @@ function buildTerrain(state,rows){
   const xs=rows.map(r=>Number(r.x)),ys=rows.map(r=>Number(r.y));state.centerX=(Math.min(...xs)+Math.max(...xs))/2;state.centerY=(Math.min(...ys)+Math.max(...ys))/2;
   const grouped={};for(const row of rows){const t=terrainName(row.terrain);(grouped[t]??=[]).push(row);state.tileByKey.set(`${row.x},${row.y}`,row);}
   const matrix=new THREE.Matrix4();
-  for(const [name,items] of Object.entries(grouped)){const def=TERRAIN[name],height=Math.max(.04,Math.abs(def.h)+.12),geo=new THREE.BoxGeometry(.96,height,.96),mat=new THREE.MeshLambertMaterial({color:def.color,map:texture(state,def.tex)});
+  for(const [name,items] of Object.entries(grouped)){const def=TERRAIN[name],height=Math.max(.04,Math.abs(def.h)+.12),geo=state.quality==="low"?new THREE.BoxGeometry(.96,height,.96):new RoundedBoxGeometry(.96,height,.96,state.quality==="decorative"?3:2,Math.min(.055,height*.22)),mat=new THREE.MeshLambertMaterial({color:def.color,map:texture(state,def.tex)});
     const mesh=new THREE.InstancedMesh(geo,mat,items.length);mesh.receiveShadow=state.quality==="decorative";mesh.castShadow=state.quality==="decorative"&&name==="wall";
     items.forEach((r,i)=>{matrix.makeTranslation(Number(r.x)-state.centerX,def.h-height/2,Number(r.y)-state.centerY);mesh.setMatrixAt(i,matrix);});mesh.instanceMatrix.needsUpdate=true;state.terrainRoot.add(mesh);
   }
@@ -82,9 +84,20 @@ function buildTerrain(state,rows){
 }
 function buildDecor(state,rows){
   const forests=rows.filter(r=>["forest","woodland"].includes(terrainName(r.terrain)));if(!forests.length)return;
-  const trunkGeo=new THREE.CylinderGeometry(.07,.11,.65,5),leafGeo=new THREE.ConeGeometry(.28,.8,6),trunkMat=new THREE.MeshLambertMaterial({color:0x5f4126}),leafMat=new THREE.MeshLambertMaterial({color:0x315f38});
-  const trunks=new THREE.InstancedMesh(trunkGeo,trunkMat,forests.length),leaves=new THREE.InstancedMesh(leafGeo,leafMat,forests.length),m=new THREE.Matrix4();
-  forests.forEach((r,i)=>{const x=Number(r.x)-state.centerX,z=Number(r.y)-state.centerY;m.makeTranslation(x,.42,z);trunks.setMatrixAt(i,m);m.makeTranslation(x,1.05,z);leaves.setMatrixAt(i,m);});trunks.instanceMatrix.needsUpdate=leaves.instanceMatrix.needsUpdate=true;state.decorRoot.add(trunks,leaves);
+  const trunkGeo=new THREE.CylinderGeometry(.065,.115,.72,6),lowerGeo=new THREE.ConeGeometry(.31,.72,7),upperGeo=new THREE.ConeGeometry(.23,.62,7);
+  const trunkMat=new THREE.MeshLambertMaterial({color:0x604027}),lowerMat=new THREE.MeshLambertMaterial({color:0x315f38}),upperMat=new THREE.MeshLambertMaterial({color:0x447848});
+  const trunks=new THREE.InstancedMesh(trunkGeo,trunkMat,forests.length),lower=new THREE.InstancedMesh(lowerGeo,lowerMat,forests.length),upper=new THREE.InstancedMesh(upperGeo,upperMat,forests.length);
+  const matrix=new THREE.Matrix4(),position=new THREE.Vector3(),rotation=new THREE.Quaternion(),scale=new THREE.Vector3();
+  forests.forEach((r,i)=>{
+    const angle=seeded(r.x,r.y,1)*Math.PI*2,size=.82+seeded(r.x,r.y,2)*.34,offset=.18+seeded(r.x,r.y,3)*.12;
+    const x=Number(r.x)-state.centerX+Math.cos(angle)*offset,z=Number(r.y)-state.centerY+Math.sin(angle)*offset;
+    rotation.setFromAxisAngle(new THREE.Vector3(0,1,0),angle);scale.set(size,size,size);
+    position.set(x,.48*size,z);matrix.compose(position,rotation,scale);trunks.setMatrixAt(i,matrix);
+    position.set(x,.90*size,z);matrix.compose(position,rotation,scale);lower.setMatrixAt(i,matrix);
+    position.set(x,1.25*size,z);matrix.compose(position,rotation,scale);upper.setMatrixAt(i,matrix);
+  });
+  for(const mesh of [trunks,lower,upper]){mesh.instanceMatrix.needsUpdate=true;mesh.castShadow=true;mesh.receiveShadow=true;}
+  state.decorRoot.add(trunks,lower,upper);
 }
 function updateTokens(state,rows){
   clearGroup(state.tokenRoot);const geo=new THREE.CylinderGeometry(.25,.30,.62,8);
