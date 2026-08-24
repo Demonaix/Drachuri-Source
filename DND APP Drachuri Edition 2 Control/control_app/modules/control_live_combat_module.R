@@ -2424,7 +2424,7 @@ limit 1
       )
       if (!is.data.frame(render_df) || nrow(render_df) == 0) return()
       
-      if (identical(isolate(input$map_render_mode %||% "2d"), "3d") && identical(isolate(input$map_3d_quality %||% "balanced"), "decorative")) render_df <- add_3d_models_to_render_df(render_df)
+      # Personal GLTF models remain disabled; the lean renderer uses procedural miniatures.
       
       actors_lookup <- encounter_actors_r()
       

@@ -1,10 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { clone as cloneSkeleton } from "three/addons/utils/SkeletonUtils.js";
 
 const states = new Map();
-const modelLoader=new GLTFLoader(),modelAssetCache=new Map(),characterTemplateCache=new Map();
 const TERRAIN = {
   grass:{color:0x719a58,tex:"grass.jpg",h:.10}, sand:{color:0xc7ad70,tex:"dirt.jpg",h:.02},
   forest:{color:0x315f38,tex:"forest.jpg",h:.14}, woodland:{color:0x315f38,tex:"forest.jpg",h:.14},
@@ -24,8 +21,6 @@ function normalise(value) {
 function truthy(v){return v===true||v===1||v==="1"||v==="true";}
 function terrainName(v){const t=String(v||"grass").toLowerCase();return TERRAIN[t]?t:"grass";}
 function seeded(x,y,salt=0){const n=Math.sin(Number(x)*12.9898+Number(y)*78.233+salt*37.719)*43758.5453;return n-Math.floor(n);}
-function modelUrl(path){if(/^https?:/i.test(path))return path;return new URL(`../${String(path).replace(/^\/+/,"")}`,import.meta.url).href;}
-function loadModelAsset(path){const url=modelUrl(path);if(!modelAssetCache.has(url))modelAssetCache.set(url,new Promise((resolve,reject)=>modelLoader.load(url,g=>resolve(g.scene),undefined,reject)));return modelAssetCache.get(url);}
 function elevation(row){const name=terrainName(row?.terrain),base=TERRAIN[name].h;if(["road","water","ravine","pit","wall"].includes(name))return base;return base+(seeded(row.x,row.y,9)-.5)*.13;}
 function signature(rows){return rows.map(t=>[t.x,t.y,t.terrain,t.blocks_movement,t.light,t.fog].join(",")).sort().join("|");}
 function disposeObject(root){
@@ -109,6 +104,7 @@ function buildSurfaceGeometry(items,tileMap,centerX,centerY){
   });
   const geometry=new THREE.BufferGeometry();geometry.setAttribute("position",new THREE.Float32BufferAttribute(positions,3));geometry.setAttribute("uv",new THREE.Float32BufferAttribute(uvs,2));geometry.setIndex(indices);geometry.computeVertexNormals();return geometry;
 }
+function ruinedWallGeometry(height=1.65){const geometry=new THREE.BoxGeometry(1.015,height,1.015,3,3,3),position=geometry.getAttribute("position");for(let i=0;i<position.count;i++){const y=position.getY(i);if(y>height/2-.01){const x=position.getX(i),z=position.getZ(i),chip=(seeded(Math.round((x+.51)*12),Math.round((z+.51)*12),4))* .18;position.setY(i,y-chip);}}position.needsUpdate=true;geometry.computeVertexNormals();return geometry;}
 function buildTerrain(state,rows){
   clearGroup(state.terrainRoot);clearGroup(state.decorRoot);state.tileByKey.clear();state.tiles=rows;
   const xs=rows.map(r=>Number(r.x)),ys=rows.map(r=>Number(r.y));state.centerX=(Math.min(...xs)+Math.max(...xs))/2;state.centerY=(Math.min(...ys)+Math.max(...ys))/2;
@@ -116,11 +112,11 @@ function buildTerrain(state,rows){
   const matrix=new THREE.Matrix4();
   for(const [name,items] of Object.entries(grouped)){const def=TERRAIN[name],mat=new THREE.MeshLambertMaterial({color:def.color,map:texture(state,def.tex)});
     if(state.quality==="low"){
-      const height=name==="wall"?2.35:Math.max(.08,Math.abs(def.h)+.12),geo=new THREE.BoxGeometry(.97,height,.97),mesh=new THREE.InstancedMesh(geo,mat,items.length);
-      items.forEach((r,i)=>{const top=name==="wall"?elevation(r)+2.35:elevation(r);matrix.makeTranslation(Number(r.x)-state.centerX,top-height/2,Number(r.y)-state.centerY);mesh.setMatrixAt(i,matrix);});mesh.instanceMatrix.needsUpdate=true;state.terrainRoot.add(mesh);
+      const height=name==="wall"?1.65:Math.max(.08,Math.abs(def.h)+.12),geo=new THREE.BoxGeometry(.97,height,.97),mesh=new THREE.InstancedMesh(geo,mat,items.length);
+      items.forEach((r,i)=>{const top=name==="wall"?elevation(r)+1.65:elevation(r);matrix.makeTranslation(Number(r.x)-state.centerX,top-height/2,Number(r.y)-state.centerY);mesh.setMatrixAt(i,matrix);});mesh.instanceMatrix.needsUpdate=true;state.terrainRoot.add(mesh);
     }else{
       const surface=new THREE.Mesh(buildSurfaceGeometry(items,state.tileByKey,state.centerX,state.centerY),mat);surface.receiveShadow=state.quality==="decorative";state.terrainRoot.add(surface);
-      if(name==="wall"){const geo=new THREE.BoxGeometry(1.015,2.35,1.015),walls=new THREE.InstancedMesh(geo,mat,items.length);items.forEach((r,i)=>{matrix.makeTranslation(Number(r.x)-state.centerX,elevation(r)+1.175,Number(r.y)-state.centerY);walls.setMatrixAt(i,matrix);});walls.instanceMatrix.needsUpdate=true;walls.castShadow=walls.receiveShadow=state.quality==="decorative";state.terrainRoot.add(walls);}
+      if(name==="wall"){const geo=ruinedWallGeometry(),walls=new THREE.InstancedMesh(geo,mat,items.length),position=new THREE.Vector3(),rotation=new THREE.Quaternion(),scale=new THREE.Vector3(1,1,1);items.forEach((r,i)=>{position.set(Number(r.x)-state.centerX,elevation(r)+.825,Number(r.y)-state.centerY);rotation.setFromAxisAngle(new THREE.Vector3(0,1,0),Math.floor(seeded(r.x,r.y,12)*4)*Math.PI/2);matrix.compose(position,rotation,scale);walls.setMatrixAt(i,matrix);});walls.instanceMatrix.needsUpdate=true;walls.castShadow=walls.receiveShadow=state.quality==="decorative";state.terrainRoot.add(walls);}
     }
   }
   buildTabletop(state,rows,xs,ys);
@@ -144,17 +140,11 @@ function buildDecor(state,rows){
   for(const mesh of [trunks,lower,upper]){mesh.instanceMatrix.needsUpdate=true;mesh.castShadow=true;mesh.receiveShadow=true;}
   state.decorRoot.add(trunks,lower,upper);
 }
-function modelParts(row){return [row.model_base,row.model_hair,row.model_body,row.model_arms,row.model_legs,row.model_feet,row.model_headgear,row.model_accessory].map(x=>String(x||"")).filter(Boolean);}
-function characterTemplate(row){
-  const parts=modelParts(row),hair=String(row.hair_color||"#3b2416"),key=`${parts.join("|")}|${hair}`;if(!parts.length)return null;
-  if(!characterTemplateCache.has(key))characterTemplateCache.set(key,Promise.all(parts.map(loadModelAsset)).then(assets=>{const group=new THREE.Group();assets.forEach((asset,i)=>{const part=cloneSkeleton(asset);part.traverse(obj=>{if(!obj.isMesh)return;obj.castShadow=false;obj.receiveShadow=true;if(/hair|beard/i.test(parts[i])){obj.material=Array.isArray(obj.material)?obj.material.map(m=>m.clone()):obj.material?.clone();const mats=Array.isArray(obj.material)?obj.material:[obj.material];mats.filter(Boolean).forEach(m=>{if(m.color)m.color.set(hair);});}});group.add(part);});const box=new THREE.Box3().setFromObject(group),size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3());group.position.set(-center.x,-box.min.y,-center.z);if(size.y>0)group.scale.setScalar(.78/size.y);group.rotation.y=Math.PI;return group;}));
-  return characterTemplateCache.get(key);
-}
-function attachCharacterModel(state,token,row){const pending=characterTemplate(row);if(!pending)return;pending.then(template=>{if(token.parent!==state.tokenRoot)return;const model=cloneSkeleton(template);token.add(model);token.userData.characterModel=model;if(token.userData.fallback)token.userData.fallback.visible=false;requestRender(state);}).catch(error=>console.warn("3D miniature failed; using fallback token.",error));}
+function actorColour(id,player,self){if(self)return new THREE.Color(0x39c4e5);if(!player)return new THREE.Color(0xb54538);let hash=0;for(const c of String(id))hash=(hash*31+c.charCodeAt(0))|0;return new THREE.Color().setHSL(((Math.abs(hash)%300)+25)/360,.58,.48);}
+function makeMiniature(row,active){const player=String(row.occupant_type)==="player",self=truthy(row.is_self_actor),colour=actorColour(row.occupant_id,player,self),group=new THREE.Group(),baseMat=new THREE.MeshLambertMaterial({color:active?0xe7b83f:0x342d2a}),bodyMat=new THREE.MeshLambertMaterial({color:colour}),headMat=new THREE.MeshLambertMaterial({color:player?0xc99472:colour.clone().multiplyScalar(.72)}),base=new THREE.Mesh(new THREE.CylinderGeometry(.27,.3,.085,12),baseMat),body=new THREE.Mesh(player?new THREE.ConeGeometry(.21,.42,8):new THREE.DodecahedronGeometry(.23,0),bodyMat),head=new THREE.Mesh(new THREE.SphereGeometry(.13,8,6),headMat);base.position.y=.045;body.position.y=player?.31:.34;head.position.y=player?.64:.65;group.add(base,body,head);if(active){const ring=new THREE.Mesh(new THREE.TorusGeometry(.33,.035,6,24),new THREE.MeshBasicMaterial({color:0xffdf62}));ring.rotation.x=Math.PI/2;ring.position.y=.04;group.add(ring);}return group;}
 function updateTokens(state,rows){
-  clearGroup(state.tokenRoot);const geo=new THREE.CylinderGeometry(.25,.30,.62,8);
-  for(const row of rows){if(!row.occupant_id)continue;const player=String(row.occupant_type)==="player",active=truthy(row.is_active_actor),mat=new THREE.MeshLambertMaterial({color:active?0xffd34d:player?0x48b9df:0xd65b42});
-    const token=new THREE.Group(),fallback=new THREE.Mesh(geo,mat);fallback.position.y=.34;token.add(fallback);token.position.set(Number(row.x)-state.centerX,elevation(row),Number(row.y)-state.centerY);token.userData={actorId:String(row.occupant_id),actorType:row.occupant_type,x:Number(row.x),y:Number(row.y),fallback};state.tokenRoot.add(token);if(state.quality==="decorative"&&player)attachCharacterModel(state,token,row);
+  clearGroup(state.tokenRoot);
+  for(const row of rows){if(!row.occupant_id)continue;const token=makeMiniature(row,truthy(row.is_active_actor));token.position.set(Number(row.x)-state.centerX,elevation(row),Number(row.y)-state.centerY);token.userData={actorId:String(row.occupant_id),actorType:row.occupant_type,x:Number(row.x),y:Number(row.y)};state.tokenRoot.add(token);
   }
 }
 function addCylinderBetween(group,a,b,radius,material){const delta=b.clone().sub(a),length=delta.length();if(!length)return;const mesh=new THREE.Mesh(new THREE.CylinderGeometry(radius,radius,length,8),material);mesh.position.copy(a).add(b).multiplyScalar(.5);mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),delta.normalize());group.add(mesh);}
