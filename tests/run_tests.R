@@ -1574,6 +1574,15 @@ test("disbanded Iron Vow propaganda is pinned on the side wall", {
   stopifnot(grepl("vow.rotation.y=Math.PI/2", js, fixed = TRUE))
 })
 
+test("Order of Succession anti-Fae propaganda is pinned on the side wall", {
+  js <- paste(readLines(file.path("DND APP Drachuri Edition Player_v2", "www", "js", "combat3d_lean.js"), warn = FALSE), collapse = "\n")
+  poster <- file.path("DND APP Drachuri Edition Player_v2", "www", "assets", "textures", "propaganda_order_succession_fae.png")
+  stopifnot(file.exists(poster), file.info(poster)$size > 100000)
+  stopifnot(grepl("propaganda_order_succession_fae.png", js, fixed = TRUE))
+  stopifnot(grepl("successionX=-roomWidth/2", js, fixed = TRUE))
+  stopifnot(grepl("succession.rotation.y=Math.PI/2", js, fixed = TRUE))
+})
+
 test("control encounter workflow uses named selectors", {
   live <- paste(readLines(file.path("DND APP Drachuri Edition 2 Control", "control_app", "modules", "control_live_combat_module.R"), warn = FALSE), collapse = "\n")
   setup <- paste(readLines(file.path("DND APP Drachuri Edition 2 Control", "control_app", "modules", "control_encounter_setup_module.R"), warn = FALSE), collapse = "\n")
