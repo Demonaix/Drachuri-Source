@@ -660,6 +660,9 @@ limit 1
     bump_actors    <- function() actors_key(isolate(actors_key()) + 1L)
     bump_enemies   <- function() enemies_key(isolate(enemies_key()) + 1L)
     bump_map_visual <- function() map_visual_key(isolate(map_visual_key()) + 1L)
+    observeEvent(session$rootScope()$input$combat3d_lean_ready, {
+      if (identical(input$map_render_mode %||% "2d", "3d")) later::later(bump_map_visual, 0.05)
+    }, ignoreInit = FALSE)
     
     bump_live <- function() {
       bump_positions()

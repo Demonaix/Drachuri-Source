@@ -1480,6 +1480,8 @@ test("lean 3D renderer keeps costly features optional", {
   stopifnot(grepl('const height=name==="wall"?2.35', js, fixed = TRUE))
   stopifnot(grepl("state.decorRoot.add(trunks,lower,upper)", js, fixed = TRUE))
   stopifnot(grepl("combat3d-lean-init", js, fixed = TRUE))
+  stopifnot(grepl("combat3d_lean_ready", js, fixed = TRUE))
+  stopifnot(grepl("AmbientLight", js, fixed = TRUE))
   stopifnot(grepl('quality==="decorative"', js, fixed = TRUE))
   stopifnot(!grepl("GLTFLoader", js, fixed = TRUE))
   stopifnot(!grepl("PointLight", js, fixed = TRUE))

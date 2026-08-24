@@ -46,8 +46,8 @@ function makeState(containerId,inputIds,quality){
   const renderer=new THREE.WebGLRenderer({antialias:quality!=="low",powerPreference:"high-performance"});
   renderer.setPixelRatio(quality==="low"?1:Math.min(devicePixelRatio||1,1.5));renderer.setSize(Math.max(1,el.clientWidth),Math.max(1,el.clientHeight),false);
   renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.shadowMap.enabled=quality==="decorative";el.replaceChildren(renderer.domElement);
-  const scene=new THREE.Scene();scene.background=new THREE.Color(0x202730);scene.add(new THREE.HemisphereLight(0xe4edff,0x493a2b,1.25));
-  const sun=new THREE.DirectionalLight(0xffe1b2,quality==="low"?.65:1.05);sun.position.set(14,24,10);sun.castShadow=quality==="decorative";
+  const scene=new THREE.Scene();scene.background=new THREE.Color(0x607684);scene.add(new THREE.HemisphereLight(0xf4f7ff,0x75644c,1.65));scene.add(new THREE.AmbientLight(0xffffff,.42));
+  const sun=new THREE.DirectionalLight(0xffefd2,quality==="low"?.95:1.35);sun.position.set(14,24,10);sun.castShadow=quality==="decorative";
   if(sun.castShadow){sun.shadow.mapSize.set(1024,1024);sun.shadow.camera.left=-30;sun.shadow.camera.right=30;sun.shadow.camera.top=30;sun.shadow.camera.bottom=-30;}scene.add(sun);
   const camera=new THREE.PerspectiveCamera(48,1,.1,500),controls=new OrbitControls(camera,renderer.domElement);
   controls.enableDamping=false;controls.maxPolarAngle=Math.PI/2.04;controls.minDistance=4;controls.maxDistance=100;
@@ -136,3 +136,8 @@ function render(message){
 }
 Shiny.addCustomMessageHandler("combat3d-lean-init",render);
 Shiny.addCustomMessageHandler("combat3d-lean-resize",m=>{const s=states.get(m.containerId);if(s){s.renderer.setSize(Math.max(1,s.el.clientWidth),Math.max(1,s.el.clientHeight),false);requestRender(s);}});
+function signalReady(attempt=0){
+  if(window.Shiny?.setInputValue){Shiny.setInputValue("combat3d_lean_ready",{nonce:Date.now()+Math.random()},{priority:"event"});return;}
+  if(attempt<40)setTimeout(()=>signalReady(attempt+1),100);
+}
+signalReady();

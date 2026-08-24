@@ -76,6 +76,9 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     bump_map_visual <- function() {
       map_visual_key(isolate(map_visual_key()) + 1L)
     }
+    observeEvent(session$rootScope()$input$combat3d_lean_ready, {
+      if (identical(input$map_render_mode %||% "2d", "3d")) later::later(bump_map_visual, 0.05)
+    }, ignoreInit = FALSE)
     observeEvent(core$char_rev(),{bump_map_visual();if(is.function(refresh_live_snapshot))refresh_live_snapshot()},ignoreInit=TRUE)
     observeEvent(core$state$char,{bump_map_visual()},ignoreInit=TRUE)
     observeEvent(session$rootScope()$input$main_tabs,{if(identical(session$rootScope()$input$main_tabs,"debug_combat"))bump_map_visual()},ignoreInit=TRUE)
