@@ -1,5 +1,40 @@
 library(shiny)
 
+control_map_presets <- function() c(
+  "Tavern / Inn"="tavern","Prison / Cells"="prison","Forest"="forest",
+  "Dungeon"="dungeon","Cave"="cave","Swamp"="swamp",
+  "Road / Crossroads"="road","Ruins"="ruins"
+)
+
+generate_control_map_tiles <- function(map_id,width,height,preset="forest",seed=1L,density=35) {
+  width<-max(1L,as.integer(width));height<-max(1L,as.integer(height));density<-max(0,min(100,as.numeric(density)))
+  set.seed(as.integer(seed%||%1L));indoor<-preset%in%c("tavern","prison","dungeon")
+  tiles<-create_square_map_tiles(map_id,width,height,default_terrain=if(indoor)"stone"else if(preset=="cave")"stone"else"grass",default_light=if(preset%in%c("dungeon","cave"))"dark"else if(indoor)"dim"else"full")
+  at<-function(x=NULL,y=NULL){keep<-rep(TRUE,nrow(tiles));if(!is.null(x))keep<-keep&tiles$x%in%x;if(!is.null(y))keep<-keep&tiles$y%in%y;keep}
+  paint<-function(idx,terrain,light=NULL){tiles$terrain[idx]<<-terrain;props<-switch(terrain,wall=list(1,TRUE,TRUE),ravine=list(1,TRUE,FALSE),water=list(3,TRUE,FALSE),forest=list(2,FALSE,TRUE),swamp=list(2,FALSE,FALSE),list(1,FALSE,FALSE));tiles$move_cost[idx]<<-props[[1]];tiles$blocks_movement[idx]<<-props[[2]];tiles$blocks_vision[idx]<<-props[[3]];if(!is.null(light))tiles$light[idx]<<-light}
+  perimeter<-function(){paint(at(c(1L,width),NULL)|at(NULL,c(1L,height)),"wall")}
+  door<-function(x=ceiling(width/2),y=1L){paint(at(x,y),"stone",if(indoor)"dim"else"full")}
+  sample_open<-function(prob){which(stats::runif(nrow(tiles))<prob & tiles$x>1L & tiles$x<width & tiles$y>1L & tiles$y<height)}
+  if(preset=="tavern"){
+    perimeter();door();if(width>=7L&&height>=6L){bar_y<-height-2L;paint(at(seq(max(3L,ceiling(width*.55)),width-2L),bar_y),"wall");for(x in seq(3L,width-2L,by=3L))for(y in seq(3L,max(3L,height-3L),by=3L))if(stats::runif(1)<density/100)paint(at(x,y),"wall")}
+  }else if(preset=="prison"){
+    perimeter();door();if(width>=6L){for(x in seq(4L,width-2L,by=4L)){paint(at(x,seq(2L,height-1L)),"wall");for(y in unique(pmax(2L,pmin(height-1L,c(ceiling(height/3),ceiling(2*height/3))))))paint(at(x,y),"stone","dim")}}
+  }else if(preset=="forest"){
+    paint(sample_open(density/100),"forest");road_x<-pmax(1L,pmin(width,round(width/2+sin(seq_len(height)/2)*pmax(1,width/8))));for(y in seq_len(height))paint(at(unique(pmax(1L,pmin(width,c(road_x[y]-1L,road_x[y])))),y),"road")
+  }else if(preset=="dungeon"){
+    perimeter();door();if(width>=7L)for(x in seq(5L,width-2L,by=5L)){paint(at(x,seq(2L,height-1L)),"wall");paint(at(x,max(2L,min(height-1L,sample(2:max(2L,height-1L),1)))),"stone","dim")};if(height>=7L)for(y in seq(5L,height-2L,by=5L)){paint(at(seq(2L,width-1L),y),"wall");paint(at(max(2L,min(width-1L,sample(2:max(2L,width-1L),1))),y),"stone","dim")}
+  }else if(preset=="cave"){
+    paint(sample_open(density/130),"wall");if(width>=8L&&height>=8L)paint(at(sample(2:(width-1L),max(1L,round(width/8))),sample(2:(height-1L),max(1L,round(height/8)))),"ravine")
+  }else if(preset=="swamp"){
+    paint(sample_open(density/100),"swamp");paint(sample_open(density/260),"water");path_x<-ceiling(width/2);paint(at(unique(pmax(1L,pmin(width,c(path_x-1L,path_x)))),NULL),"road")
+  }else if(preset=="road"){
+    cx<-ceiling(width/2);cy<-ceiling(height/2);paint(at(unique(pmax(1L,pmin(width,c(cx-1L,cx)))),NULL),"road");paint(at(NULL,unique(pmax(1L,pmin(height,c(cy-1L,cy))))),"road");paint(sample_open(density/170),"forest")
+  }else if(preset=="ruins"){
+    paint(sample_open(density/180),"stone");for(i in seq_len(max(1L,round(density/12)))){x<-sample(seq_len(width),1);y<-sample(seq_len(height),1);len<-sample(2:max(2L,min(6L,max(width,height))),1);if(stats::runif(1)<.5)paint(at(seq(x,min(width,x+len-1L)),y),"wall")else paint(at(x,seq(y,min(height,y+len-1L))),"wall")}
+  }
+  tiles
+}
+
 controlMapBuilderUI <- function(id) {
   ns <- NS(id)
   
@@ -155,7 +190,15 @@ controlMapBuilderUI <- function(id) {
             actionButton(ns("load_from_encounter"), "Use Encounter Map ID", class = "btn btn-default"),
             actionButton(ns("clear_map"), "Clear Paint", class = "btn btn-warning"),
             actionButton(ns("refresh_3d_preview"), "Refresh 3D Preview", class = "btn btn-default")
-          )
+          ),
+          tags$hr(),
+          div(class="control-section-title","Autogenerate a new map"),
+          p(class="control-mini","Creates a new editable map. It never overwrites the currently selected map."),
+          div(class="map-builder-toolbar",
+              selectInput(ns("generator_preset"),"Map type",choices=control_map_presets(),selected="tavern",width="190px"),
+              numericInput(ns("generator_seed"),"Variation seed",value=1,min=1,step=1,width="125px"),
+              sliderInput(ns("generator_density"),"Feature density",min=10,max=80,value=35,step=5,width="220px"),
+              actionButton(ns("generate_map"),"Generate New Map",class="btn btn-success"))
         ),
         
         div(
@@ -543,6 +586,18 @@ observeEvent(input$load_selected_map, {
         type = "message"
       )
     }, ignoreInit = TRUE)
+
+    observeEvent(input$generate_map, {
+      w<-max(1L,suppressWarnings(as.integer(input$map_width%||%10L)));h<-max(1L,suppressWarnings(as.integer(input$map_height%||%10L)))
+      preset<-as.character(input$generator_preset%||%"forest");seed<-suppressWarnings(as.integer(input$generator_seed%||%1L));if(is.na(seed))seed<-1L
+      label<-names(control_map_presets())[match(preset,control_map_presets())]%||%tools::toTitleCase(preset)
+      map_name<-trimws(as.character(input$new_map_name%||%""));if(!nzchar(map_name))map_name<-paste0(label," ",format(Sys.time(),"%Y-%m-%d %H:%M"))
+      mid<-create_map_record(map_name,w,h);if(is.na(mid)||mid<1L){showNotification("Failed to create generated map record.",type="error");return()}
+      tiles<-tryCatch(generate_control_map_tiles(mid,w,h,preset,seed,input$generator_density%||%35),error=function(e){showNotification(paste("Map generation failed:",conditionMessage(e)),type="error",duration=12);data.frame()})
+      if(!nrow(tiles)||!isTRUE(set_shared_map_tiles(ctrl,mid,tiles))){showNotification("The map record was created, but its generated tiles could not be saved.",type="error");return()}
+      selected_x(1L);selected_y(1L);ctrl$map_id<-mid;tiles_cache(tiles);bump_map_render();load_maps();updateSelectInput(session,"map_select",selected=as.character(mid));if(is.function(bump_refresh))bump_refresh()
+      showNotification(paste0("Generated ",label,": ",map_name," (#",mid,") using seed ",seed,"."),type="message",duration=8)
+    },ignoreInit=TRUE)
 
     
     observeEvent(input$clear_map, {

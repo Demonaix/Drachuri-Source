@@ -25,6 +25,8 @@ relational_inventory_file <- file.path(
 enemy_generator_file <- file.path(project_dir,"DND APP Drachuri Edition Player_v2","shared","enemy_generator_core.R")
 magic_data_file <- file.path(project_dir,"DND APP Drachuri Edition Player_v2","plug","magic_data.R")
 glyph_core_file <- file.path(project_dir,"DND APP Drachuri Edition Player_v2","shared","glyph_core.R")
+combat_map_file <- file.path(project_dir,"DND APP Drachuri Edition 2 Control","server","combat_map_logic.R")
+map_builder_file <- file.path(project_dir,"DND APP Drachuri Edition 2 Control","control_app","modules","control_map_builder_module.R")
 
 test_env <- new.env(parent = baseenv())
 test_env$`%||%` <- function(a, b) if (!is.null(a)) a else b
@@ -62,6 +64,8 @@ load_functions(global_file, c(
 load_functions(relational_inventory_file, c("equipment_material_is_eligible", "inventory_item_category", "equipment_adjusted_value"))
 load_functions(enemy_generator_file, c("enemy_special_attack", "enemy_attack_catalog", "enemy_loot_catalog", "resolve_layered_damage_traits", "enemy_is_animal", "roll_enemy_mundane_loot", "roll_enemy_food_loot", "npc_feature_definition", "npc_feature_catalogue", "npc_feature_effect_summary"))
 load_functions(glyph_core_file,c("GLYPH_PHYSICAL_TYPES","glyph_character_level","glyph_unlocked_ranks","glyph_mastery_level","glyph_material_requirement","glyph_counter_outcome","glyph_default_identity","normalize_weapon_enchantments","validate_ward_resistances","glyph_zone_colour"))
+load_functions(combat_map_file,c("empty_map_tiles","create_square_map_tiles"))
+load_functions(map_builder_file,c("control_map_presets","generate_control_map_tiles"))
 load_functions(
   session_file,
   c(
@@ -1454,6 +1458,15 @@ test("manual magic types use the same damage vocabulary as glyphs", {
   x <- list(build=list(), magic=list(types=c("Chemical","Thunder","Nuclear","Bogus")))
   stopifnot(setequal(test_env$character_magic_types(x), c("Poison","Thunder","Radiant")))
   stopifnot(all(test_env$GLYPH_DAMAGE_TYPES %in% c("Fire","Cold","Lightning","Acid","Poison","Force","Necrotic","Radiant","Psychic","Thunder")))
+})
+
+test("map autogenerator creates deterministic editable terrain presets", {
+  presets<-unname(test_env$control_map_presets());allowed<-c("grass","stone","forest","swamp","water","wall","ravine","road","mandred_convergence")
+  maps<-lapply(presets,function(p)test_env$generate_control_map_tiles(42L,16L,12L,p,seed=77L,density=40))
+  stopifnot(all(vapply(maps,nrow,integer(1))==192L),all(vapply(maps,function(x)all(x$terrain%in%allowed),logical(1))))
+  stopifnot(identical(maps[[3]],test_env$generate_control_map_tiles(42L,16L,12L,"forest",77L,40)))
+  stopifnot(any(maps[[1]]$terrain=="wall"),any(maps[[2]]$terrain=="wall"),any(maps[[3]]$terrain=="road"))
+  stopifnot(all(maps[[1]]$blocks_movement[maps[[1]]$terrain=="wall"]),all(maps[[3]]$move_cost[maps[[3]]$terrain=="forest"]==2))
 })
 
 cat("\n", tests_run, " tests passed.\n", sep = "")

@@ -213,8 +213,14 @@ ui_control <- fluidPage(
         controlMapBuilderUI("map_builder")
       ),
       tabPanel(
-        title = "NPC Creator",
-        controlNpcCreatorUI("npc_creator")
+        title = "NPCs",
+        tabsetPanel(
+          id = "npc_tabs",
+          tabPanel("Creator", controlNpcCreatorUI("npc_creator")),
+          tabPanel("Pools", controlNpcPoolsUI("npc_pools")),
+          tabPanel("Features", controlNpcFeaturesUI("npc_features")),
+          tabPanel("Attacks", controlNpcAttacksUI("npc_attacks"))
+        )
       ),
       tabPanel(
         title = "Inventory",
@@ -228,19 +234,6 @@ ui_control <- fluidPage(
         title = "Story",
         controlStoryUI("story")
       ),
-      tabPanel(
-        title = "NPC Pools",
-        controlNpcPoolsUI("npc_pools")
-      ),
-      tabPanel(
-        title = "NPC Features",
-        controlNpcFeaturesUI("npc_features")
-      ),
-      tabPanel(
-        title = "NPC Attacks",
-        controlNpcAttacksUI("npc_attacks")
-      ),
-      
       tabPanel(
         title = "Encounter Setup",
         controlEncounterSetupUI("encounter_setup")
