@@ -489,6 +489,7 @@ CLASS_FEATURE_MECHANICS <- list(
       name = "Bloodthirsty Bite",
       target = "enemy",
       action_type = "action",
+      range_ft = 5L,
       damage = list(mode = "dice_plus_modifier", value = "1d8", stat = "str", type = "piercing"),
       note = "Counts as drinking half a pint of blood. Blood restoration remains narrative/DM controlled."
     )

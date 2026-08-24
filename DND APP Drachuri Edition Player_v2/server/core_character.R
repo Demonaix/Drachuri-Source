@@ -73,7 +73,7 @@ characterCoreServer <- function(input, output, session) {
   # ----------------------------
   # Log helper
   # ----------------------------
-  add_log <- function(msg, toast = TRUE, toast_ms = 2500,
+  add_log <- function(msg, toast = TRUE, toast_ms = 7000,
                       flash = c("none", "red", "gold")) {
     flash <- match.arg(flash)
     

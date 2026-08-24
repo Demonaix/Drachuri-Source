@@ -2113,6 +2113,23 @@ combat_attack_geometry <- function(tiles, attacker_x, attacker_y, target_x, targ
   )
 }
 
+combat_hide_dc <- function(enemy_passive = 10L, terrain = "grass", light = "full",
+                           adjacent_wall = FALSE, enemy_has_los = TRUE) {
+  enemy_passive <- suppressWarnings(as.integer(enemy_passive))
+  if (is.na(enemy_passive)) enemy_passive <- 10L
+  terrain <- tolower(trimws(as.character(terrain %||% "grass")))
+  light <- tolower(trimws(as.character(light %||% "full")))
+  terrain_adjustment <- switch(
+    terrain,
+    forest = -3L, woodland = -3L, swamp = -1L, rubble = -1L,
+    grass = 5L, road = 6L, stone = 5L, water = 6L, 2L
+  )
+  light_adjustment <- switch(light, dark = -5L, dim = -2L, 0L)
+  cover_adjustment <- if (isTRUE(adjacent_wall) && !isTRUE(enemy_has_los)) -5L else
+    if (isTRUE(adjacent_wall)) -1L else if (isTRUE(enemy_has_los)) 2L else 0L
+  max(5L, min(30L, enemy_passive + terrain_adjustment + light_adjustment + cover_adjustment))
+}
+
 armor_meta_defaults_global <- function(meta = NULL) {
   meta <- meta %||% list()
   if (!is.list(meta)) meta <- list()

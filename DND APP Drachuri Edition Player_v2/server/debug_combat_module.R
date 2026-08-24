@@ -26,23 +26,11 @@ debugCombatUI <- function(id) {
             uiOutput(ns("header_ui")),
             div(
             class = "combat-compact-actions",
-              uiOutput(ns("turn_actions_ui")),
-              actionButton(ns("override_action_budget"), "Override Action", class = "btn btn-default"),
-              actionButton(ns("open_standard_actions"), "Combat Actions", class = "btn btn-default"),
-              uiOutput(ns("combat_runes_ui")),
-              uiOutput(ns("combat_wards_ui")),
-              actionButton(ns("open_loot"), "Loot Defeated", class = "btn btn-success"),
-              uiOutput(ns("level_two_actions_ui")),
-              uiOutput(ns("level_three_actions_ui")),
-              uiOutput(ns("class_actions_ui")),
-              uiOutput(ns("rogue_combat_ui")),
-              actionButton(ns("end_turn"), "End Turn", class = "btn btn-warning"),
-              uiOutput(ns("dash_button_ui")),
-              uiOutput(ns("phase_move_ui")),
-              div(
-                class = "combat-turn-box",
-                uiOutput(ns("turn_notice_ui"))
-              )
+              div(class="combat-action-group",span(class="combat-action-label","Movement"),uiOutput(ns("dash_button_ui")),uiOutput(ns("phase_move_ui"))),
+              div(class="combat-action-group",span(class="combat-action-label","Actions"),actionButton(ns("open_standard_actions"),"Combat Actions",class="btn btn-default"),uiOutput(ns("level_two_actions_ui")),uiOutput(ns("level_three_actions_ui")),uiOutput(ns("class_actions_ui")),uiOutput(ns("rogue_combat_ui"))),
+              div(class="combat-action-group",span(class="combat-action-label","Glyphs"),uiOutput(ns("combat_runes_ui")),uiOutput(ns("combat_wards_ui"))),
+              div(class="combat-action-group",span(class="combat-action-label","Turn"),actionButton(ns("open_loot"),"Loot Defeated",class="btn btn-success"),actionButton(ns("override_action_budget"),"Override",class="btn btn-default"),actionButton(ns("end_turn"),"End Turn",class="btn btn-warning")),
+              div(class="combat-action-status",uiOutput(ns("turn_actions_ui")),div(class="combat-turn-box",uiOutput(ns("turn_notice_ui"))))
             )
           )
         ),
@@ -355,12 +343,12 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     ward_targeting<-reactiveVal(NULL)
     output$combat_runes_ui<-renderUI({r<-combat_runes();if(!nrow(r))return(tags$button(type="button",class="btn btn-default",disabled="disabled",title="Complete a rune project in Glyphs first","Runes (0)"));actionButton(session$ns("open_combat_rune"),paste0("Runes (",nrow(r),")"),class="btn btn-danger")})
     observeEvent(input$open_combat_rune,{
-      if(!isTRUE(is_players_turn()))return();r<-combat_runes();if(!nrow(r))return();showModal(modalDialog(title="Choose a crafted rune",selectInput(session$ns("combat_rune_id"),"Available rune",choices=setNames(vapply(r$meta,function(m)as.character(m$glyph_id),character(1)),vapply(seq_len(nrow(r)),function(i){m<-r$meta[[i]];paste0(r$name[[i]]," · ",m$damage," ",m$damage_type," · ",m$area_ft,"ft · ",m$duration_rounds%||%1L," round(s) · ",m$rank)},character(1)))),p("Next, click any map tile or token to place the centre. Releasing the rune uses your bonus action and its area may affect allies."),footer=tagList(modalButton("Cancel"),actionButton(session$ns("confirm_combat_rune"),"Choose Centre on Map",class="btn btn-danger"))))
+      if(!isTRUE(is_players_turn()))return();r<-combat_runes();if(!nrow(r))return();showModal(modalDialog(title="Choose a crafted rune",selectInput(session$ns("combat_rune_id"),"Available rune",choices=setNames(vapply(r$meta,function(m)as.character(m$glyph_id),character(1)),vapply(seq_len(nrow(r)),function(i){m<-r$meta[[i]];paste0(r$name[[i]]," · ",m$damage," ",m$damage_type," · ",m$area_ft,"ft · ",m$duration_rounds%||%1L," round(s) · ",m$rank)},character(1)))),p("Next, click a map tile or token within 60 ft and with a clear throwing line. Releasing the rune uses your bonus action and its area may affect allies."),footer=tagList(modalButton("Cancel"),actionButton(session$ns("confirm_combat_rune"),"Choose Centre on Map",class="btn btn-danger"))))
     },ignoreInit=TRUE)
     observeEvent(input$confirm_combat_rune,{
-      req(input$combat_rune_id);rune_targeting(list(glyph_id=as.integer(input$combat_rune_id)));removeModal();showNotification("Click a map tile or token to centre the rune. No action is spent until you click.",type="message",duration=10)
+      req(input$combat_rune_id);rune_targeting(list(glyph_id=as.integer(input$combat_rune_id),range_ft=60L));removeModal();showNotification("Click a point within 60 ft with a clear throwing line. No action is spent until a valid point is chosen.",type="message",duration=12)
     },ignoreInit=TRUE)
-    release_rune_at_map_point<-function(x,y,target_id=NULL){pending<-rune_targeting();if(is.null(pending))return(FALSE);rune_targeting(NULL);if(!spend_action_safe("bonus_action","Release Rune"))return(TRUE);res<-release_crafted_rune_at(as.character(core$state$char_id),pending$glyph_id,current_encounter_id(),x,y,target_id);if(length(res$error%||%character())){showNotification(res$error,type="error");return(TRUE)};if(!is.null(res$character))core$state$char<-validate_character(res$character);if(is.function(core$bump_char_rev))core$bump_char_rev();refresh_key(refresh_key()+1L);events_key(events_key()+1L);bump_map_visual();if(isTRUE(res$unstable))showNotification(paste("Rune instability!",res$instability_damage,"damage."),type="error",duration=10)else showNotification(paste0(res$damage_total," ",res$damage_type," damage; affected: ",paste(res$affected,collapse=", "),if(res$glyph$active_duration_rounds[[1L]]>1)paste0(". The area persists for ",res$glyph$active_duration_rounds[[1L]]," rounds.")else""),type="message",duration=10);TRUE}
+    release_rune_at_map_point<-function(x,y,target_id=NULL){pending<-rune_targeting();if(is.null(pending))return(FALSE);self<-get_actor_row(as.character(core$state$char_id),"player");if(!nrow(self))return(TRUE);geometry<-combat_attack_geometry(map_tiles_rv(),self$x[[1L]],self$y[[1L]],x,y,pending$range_ft%||%60L,pending$range_ft%||%60L,map_id());if(!isTRUE(geometry$in_range)){showNotification(paste0("That point is ",geometry$distance_ft," ft away; runes can be thrown up to 60 ft."),type="warning",duration=12);return(TRUE)};if(!isTRUE(geometry$line_clear)){showNotification("A wall or sight-blocking obstacle blocks the rune's throwing line.",type="warning",duration=12);return(TRUE)};rune_targeting(NULL);if(!spend_action_safe("bonus_action","Release Rune"))return(TRUE);res<-release_crafted_rune_at(as.character(core$state$char_id),pending$glyph_id,current_encounter_id(),x,y,target_id);if(length(res$error%||%character())){showNotification(res$error,type="error",duration=12);return(TRUE)};if(!is.null(res$character))core$state$char<-validate_character(res$character);if(is.function(core$bump_char_rev))core$bump_char_rev();refresh_key(refresh_key()+1L);events_key(events_key()+1L);bump_map_visual();if(isTRUE(res$unstable))showNotification(paste("Rune instability!",res$instability_damage,"damage."),type="error",duration=12)else showNotification(paste0(res$damage_total," ",res$damage_type," damage; affected: ",paste(res$affected,collapse=", "),if(res$glyph$active_duration_rounds[[1L]]>1)paste0(". The area persists for ",res$glyph$active_duration_rounds[[1L]]," rounds.")else""),type="message",duration=12);TRUE}
 
     combat_wards<-reactive({inv<-inventory_normalize(validate_character(core$state$char)$inventory$items);keep<-inv$type=="glyph"&vapply(inv$meta,function(m)identical(as.character((m%||%list())$glyph_type%||%""),"ward")&&identical(as.character((m%||%list())$status%||%""),"ready"),logical(1));inv[keep,,drop=FALSE]})
     output$combat_wards_ui<-renderUI({w<-combat_wards();zones<-get_active_glyph_zones(current_encounter_id());zones<-zones[zones$glyph_type=="ward",,drop=FALSE];tagList(if(nrow(w))actionButton(session$ns("open_combat_ward"),paste0("Wards (",nrow(w),")"),class="btn btn-info")else tags$button(type="button",class="btn btn-default",disabled="disabled",title="Complete a ward project in Glyphs first","Wards (0)"),if(nrow(zones))actionButton(session$ns("open_disrupt_ward"),"Disrupt Ward",class="btn btn-default")else NULL)})
@@ -472,28 +460,31 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
 
     observeEvent(input$open_cunning_action, {
       if (!isTRUE(is_players_turn())) return()
+      engaged <- is_currently_engaged()
       showModal(modalDialog(
         title = "Cunning Action",
         p("Choose how to spend your bonus action."),
         footer = tagList(
           modalButton("Cancel"),
           actionButton(session$ns("cunning_dash"), "Dash"),
-          actionButton(session$ns("cunning_disengage"), "Disengage"),
+          actionButton(session$ns("cunning_disengage"), "Disengage", disabled=if(!engaged)"disabled"else NULL),
           actionButton(session$ns("cunning_hide"), "Hide")
         )
       ))
     }, ignoreInit = TRUE)
 
     use_cunning_action <- function(mode) {
+      if (identical(tolower(mode), "disengage") && !is_currently_engaged()) {
+        log_safe("Disengage is unavailable because no living enemy currently threatens an adjacent space.")
+        return()
+      }
+      if (identical(tolower(mode), "hide")) return(attempt_hide("bonus_action", "Cunning Action: Hide"))
       if (!spend_action_safe("bonus_action", paste("Cunning Action:", mode))) return()
       cunning_mode(tolower(mode))
       if (identical(tolower(mode), "dash")) {
         movement_dash(TRUE)
         dash_action_spent(TRUE)
         updateCheckboxInput(session, "dash_move", value = TRUE)
-      }
-      if (identical(tolower(mode), "hide")) {
-        apply_combat_condition("hidden", as.character(core$state$char_id), "player", "cunning_hide")
       }
       removeModal()
       log_safe(paste0("🗡️ Cunning Action: ", mode, "."))
@@ -529,6 +520,48 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       is.data.frame(created) && nrow(created) > 0L
     }
 
+    living_adjacent_enemies <- function(actor_id=as.character(core$state$char_id%||%"")) {
+      actors<-encounter_actors_tbl();self<-actors[as.character(actors$actor_id)==actor_id,,drop=FALSE]
+      if(!nrow(self))return(data.frame())
+      enemies<-actors[as.character(actors$actor_type)=="enemy",,drop=FALSE]
+      hp_col<-intersect(c("hp_current","current_hp","hp"),names(enemies))
+      if(length(hp_col))enemies<-enemies[suppressWarnings(as.numeric(enemies[[hp_col[[1L]]]]))>0,,drop=FALSE]
+      if(!nrow(enemies))return(enemies)
+      enemies[vapply(seq_len(nrow(enemies)),function(i)is_adjacent_5ft(self$x[[1L]],self$y[[1L]],enemies$x[[i]],enemies$y[[i]]),logical(1)),,drop=FALSE]
+    }
+    is_currently_engaged <- function() nrow(living_adjacent_enemies())>0L
+
+    enemy_passive_perception <- function(enemy_id) {
+      enemy<-tryCatch(load_actor_for_combat(enemy_id,"enemy"),error=function(e)NULL)
+      if(is.null(enemy))return(10L)
+      explicit<-suppressWarnings(as.integer(enemy$combat_profile$passive_perception%||%NA))
+      if(!is.na(explicit))return(explicit)
+      wis<-suppressWarnings(as.integer(enemy$abilities$wis%||%enemy$abilities$int%||%10L));if(is.na(wis))wis<-10L
+      10L+floor((wis-10L)/2L)
+    }
+    hide_context <- function(x=NULL,y=NULL) {
+      actors<-encounter_actors_tbl();cid<-as.character(core$state$char_id%||%"");self<-actors[as.character(actors$actor_id)==cid,,drop=FALSE]
+      if(!nrow(self))return(NULL);if(is.null(x))x<-self$x[[1L]];if(is.null(y))y<-self$y[[1L]]
+      tiles<-map_tiles_rv();tile<-get_tile_row(tiles,x,y,map_id());terrain<-if(nrow(tile))as.character(tile$terrain[[1L]]%||%"grass")else"grass";light<-if(nrow(tile))as.character(tile$light[[1L]]%||%"full")else"full"
+      neighbours<-tiles[as.integer(tiles$map_id)==as.integer(map_id())&abs(as.integer(tiles$x)-x)<=1L&abs(as.integer(tiles$y)-y)<=1L,,drop=FALSE]
+      adjacent_wall<-any(tolower(as.character(neighbours$terrain%||%""))=="wall"|as.logical(neighbours$blocks_vision%||%FALSE),na.rm=TRUE)
+      enemies<-actors[as.character(actors$actor_type)=="enemy",,drop=FALSE];hp_col<-intersect(c("hp_current","current_hp","hp"),names(enemies));if(length(hp_col))enemies<-enemies[suppressWarnings(as.numeric(enemies[[hp_col[[1L]]]]))>0,,drop=FALSE]
+      los<-if(nrow(enemies))vapply(seq_len(nrow(enemies)),function(i)isTRUE(combat_attack_geometry(tiles,enemies$x[[i]],enemies$y[[i]],x,y,1000L,1000L,map_id())$line_clear),logical(1))else FALSE
+      passive<-if(nrow(enemies))max(vapply(as.character(enemies$actor_id),enemy_passive_perception,integer(1)),na.rm=TRUE)else 10L
+      list(dc=combat_hide_dc(passive,terrain,light,adjacent_wall,any(los)),terrain=terrain,light=light,adjacent_wall=adjacent_wall,enemy_has_los=any(los),passive=passive)
+    }
+    attempt_hide <- function(action_type=NULL,label="Hide",movement_recheck=FALSE,x=NULL,y=NULL) {
+      if(!isTRUE(movement_recheck)&&!isTRUE(is_players_turn()))return(log_safe("Hide can only be attempted on your turn."))
+      context<-hide_context(x,y);if(is.null(context))return(log_safe("Your position could not be assessed for hiding."))
+      if(!isTRUE(movement_recheck)&&!spend_action_safe(action_type,label))return(FALSE)
+      char<-validate_character(core$state$char);dex_mod<-floor((as.integer(char$abilities$dex%||%10L)-10L)/2L);rank<-as.character(char$prof$skills$stealth%||%"None");pb<-character_proficiency_bonus(char);prof<-if(rank=="Expertise")2L*pb else if(rank=="Proficient")pb else 0L
+      roll<-sample.int(20L,1L);total<-roll+dex_mod+prof;cid<-as.character(core$state$char_id);end_encounter_condition(current_encounter_id(),cid,"hidden")
+      success<-total>=context$dc
+      if(success)apply_combat_condition("hidden",cid,"player",if(movement_recheck)"hidden_movement"else"hide",payload=list(stealth_total=total,hide_dc=context$dc,terrain=context$terrain,light=context$light))else bump_refresh()
+      removeModal();log_game_event(current_encounter_id(),"hide_check","player",cid,payload=list(roll=roll,total=total,dc=context$dc,success=success,movement_recheck=movement_recheck,terrain=context$terrain,light=context$light,enemy_has_los=context$enemy_has_los))
+      log_safe(paste0(if(success)"🥷 Hidden"else"👁️ Spotted",if(movement_recheck)" after moving"else"",": Stealth ",total," vs DC ",context$dc," (",context$terrain,", ",context$light," light)."));success
+    }
+
     use_standard_action <- function(mode) {
       if (!isTRUE(is_players_turn())) {
         log_safe("⚠️ Standard actions can only be taken on your turn.")
@@ -543,18 +576,10 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         log_safe("🏃 Dash armed. Your action is spent only if you move beyond normal speed.")
         return()
       }
+      if(mode=="disengage"&&!is_currently_engaged()){log_safe("Disengage is unavailable because no living enemy currently threatens an adjacent space.");return()}
+      if(mode=="hide")return(attempt_hide("action","Hide"))
       if (!spend_action_safe("action", tools::toTitleCase(mode))) return()
       if (mode == "disengage") cunning_mode("disengage")
-      if (mode == "hide") {
-        cunning_mode("hide")
-        dex_mod <- floor((as.integer(core$state$char$abilities$dex %||% 10L) - 10L) / 2L)
-        stealth_rank <- as.character(core$state$char$prof$skills$stealth %||% "None")
-        proficiency <- if (stealth_rank == "Expertise") 2L * character_proficiency_bonus(core$state$char) else
-          if (stealth_rank == "Proficient") character_proficiency_bonus(core$state$char) else 0L
-        stealth_total <- sample.int(20L, 1L) + dex_mod + proficiency
-        apply_combat_condition("hidden", cid, "player", "hide", payload = list(stealth_total = stealth_total))
-        log_safe(paste0("🥷 Stealth total: ", stealth_total, ". The DM decides whether cover permits hiding."))
-      }
       if (mode == "dodge") apply_combat_condition("dodging", cid, "player", "dodge")
       removeModal()
       log_game_event(current_encounter_id(), "standard_action", "player", cid,
@@ -563,13 +588,14 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     }
 
     observeEvent(input$open_standard_actions, {
+      engaged<-is_currently_engaged()
       showModal(modalDialog(
         title = "Combat Actions",
         p("Choose an action. Select a map target first for Help or Grapple."),
         footer = tagList(
           modalButton("Cancel"),
           actionButton(session$ns("standard_dash"), "Dash"),
-          actionButton(session$ns("standard_disengage"), "Disengage"),
+          actionButton(session$ns("standard_disengage"), "Disengage",disabled=if(!engaged)"disabled"else NULL),
           actionButton(session$ns("standard_hide"), "Hide"),
           actionButton(session$ns("standard_dodge"), "Dodge"),
           actionButton(session$ns("standard_help"), "Help"),
@@ -3252,6 +3278,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       
       phased_any <- isTRUE(movement_phase()) && isTRUE(can_use_phase())
       shadow_step_used <- isTRUE(phased_any) && isTRUE(is_heart_eater())
+      was_hidden <- "hidden" %in% actor_conditions(actor_id)
       
       ok <- upsert_encounter_actor_position(
         encounter_id = eid,
@@ -3284,6 +3311,8 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         refresh_key(refresh_key() + 1L)
         events_key(events_key() + 1L)
       }
+
+      if (isTRUE(was_hidden)) attempt_hide(movement_recheck=TRUE,x=target_x,y=target_y)
 
       if (!identical(cunning_mode(), "disengage")) {
         # Shadow Step is a teleport: only creatures threatening the departure
@@ -3637,7 +3666,8 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
             class = "confirm-note",
             paste("Requires target condition:", tools::toTitleCase(action$required_target_condition))
           )
-        }
+        },
+        if(!is.null(action$range_ft))tags$p(class="confirm-note",paste0("Range: ",action$range_ft," ft"))
       )
     })
 
@@ -3655,6 +3685,13 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       } else as.character(input$class_action_target %||% "")
       if (!nzchar(target_id)) return()
       required_condition<-tolower(as.character(action$required_target_condition%||%""));if(nzchar(required_condition)&&!required_condition%in%tolower(actor_conditions(target_id))){log_safe(paste0("⚠️ ",action$name%||%feature$name," requires the target to be ",required_condition,"."));return()}
+      if(target_mode=="enemy"&&!is.null(action$range_ft)){
+        self<-get_actor_row(as.character(core$state$char_id),"player");target<-get_actor_row(target_id,"enemy")
+        if(!nrow(self)||!nrow(target))return(log_safe("⚠️ The combatants' map positions are unavailable."))
+        geometry<-combat_attack_geometry(map_tiles_rv(),self$x[[1L]],self$y[[1L]],target$x[[1L]],target$y[[1L]],action$range_ft,action$long_range_ft%||%action$range_ft,map_id())
+        if(!isTRUE(geometry$in_range))return(log_safe(paste0("⚠️ ",action$name%||%feature$name," is out of range (",geometry$distance_ft," ft; maximum ",action$long_range_ft%||%action$range_ft," ft).")))
+        if(!isTRUE(geometry$line_clear))return(log_safe(paste0("⚠️ A wall blocks ",action$name%||%feature$name,".")))
+      }
       damage <- action$damage %||% list()
 
       char <- validate_character(core$state$char)

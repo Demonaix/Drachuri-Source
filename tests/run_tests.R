@@ -57,7 +57,7 @@ load_functions(global_file, c(
   "upgrade_weapon_damage_die", "standard_weapon_attack_modes",
   "normalise_weapon_attack_modes", "merge_legacy_weapon_mode_items",
   "combat_grid_distance_ft", "combat_grid_shortest_path", "combat_line_tiles",
-  "combat_attack_geometry"
+  "combat_attack_geometry", "combat_hide_dc"
 ))
 load_functions(relational_inventory_file, c("equipment_material_is_eligible", "inventory_item_category", "equipment_adjusted_value"))
 load_functions(enemy_generator_file, c("resolve_layered_damage_traits", "enemy_is_animal", "roll_enemy_mundane_loot", "roll_enemy_food_loot"))
@@ -318,6 +318,15 @@ test("weapon range and sight-blocking terrain gate attacks", {
   stopifnot(!isTRUE(blocked$ok), !isTRUE(blocked$line_clear))
   distant <- test_env$combat_attack_geometry(tiles, 1L, 1L, 6L, 1L, 5L, 20L, 1L)
   stopifnot(!isTRUE(distant$in_range))
+})
+
+test("hide difficulty reflects terrain, light, cover and perception", {
+  grass <- test_env$combat_hide_dc(12L,"grass","full",FALSE,TRUE)
+  forest <- test_env$combat_hide_dc(12L,"forest","full",FALSE,TRUE)
+  dark <- test_env$combat_hide_dc(12L,"grass","dark",FALSE,TRUE)
+  wall_cover <- test_env$combat_hide_dc(12L,"grass","full",TRUE,FALSE)
+  watchful <- test_env$combat_hide_dc(17L,"forest","full",FALSE,TRUE)
+  stopifnot(forest < grass, dark < grass, wall_cover < grass, watchful > forest)
 })
 
 test("combat does not skip actors tied on turn order", {

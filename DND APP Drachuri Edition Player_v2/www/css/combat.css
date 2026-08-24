@@ -129,8 +129,12 @@
   align-items:center;
   justify-content:flex-end;
   flex-wrap:wrap;
-  gap:10px;
+  gap:8px;
 }
+
+.combat-action-group,.combat-action-status{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:6px 8px;border:1px solid rgba(191,167,111,.35);border-radius:8px;background:rgba(255,255,255,.035)}
+.combat-action-label{font-size:10px;font-weight:900;letter-spacing:.09em;text-transform:uppercase;color:#bfa76f;margin-right:2px}
+.combat-action-status{border-color:transparent;background:transparent;padding-right:0}
 
 .combat-compact-actions .form-group{
   margin:0;
