@@ -1461,12 +1461,14 @@ test("manual magic types use the same damage vocabulary as glyphs", {
 })
 
 test("map autogenerator creates deterministic editable terrain presets", {
-  presets<-unname(test_env$control_map_presets());allowed<-c("grass","stone","forest","swamp","water","wall","ravine","road","mandred_convergence")
-  maps<-lapply(presets,function(p)test_env$generate_control_map_tiles(42L,16L,12L,p,seed=77L,density=40))
+  presets<-unname(test_env$control_map_presets());allowed<-c("grass","sand","stone","forest","swamp","water","wall","ravine","road","mandred_convergence")
+  maps<-setNames(lapply(presets,function(p)test_env$generate_control_map_tiles(42L,16L,12L,p,seed=77L,density=40)),presets)
   stopifnot(all(vapply(maps,nrow,integer(1))==192L),all(vapply(maps,function(x)all(x$terrain%in%allowed),logical(1))))
-  stopifnot(identical(maps[[3]],test_env$generate_control_map_tiles(42L,16L,12L,"forest",77L,40)))
-  stopifnot(any(maps[[1]]$terrain=="wall"),any(maps[[2]]$terrain=="wall"),any(maps[[3]]$terrain=="road"))
-  stopifnot(all(maps[[1]]$blocks_movement[maps[[1]]$terrain=="wall"]),all(maps[[3]]$move_cost[maps[[3]]$terrain=="forest"]==2))
+  stopifnot(identical(maps$forest,test_env$generate_control_map_tiles(42L,16L,12L,"forest",77L,40)))
+  stopifnot(any(maps$tavern$terrain=="wall"),any(maps$prison$terrain=="wall"),any(maps$forest$terrain=="road"))
+  stopifnot(all(maps$tavern$blocks_movement[maps$tavern$terrain=="wall"]),all(maps$forest$move_cost[maps$forest$terrain=="forest"]==2))
+  stopifnot(any(maps$ravine$terrain=="ravine"),all(maps$ravine$blocks_movement[maps$ravine$terrain=="ravine"]))
+  stopifnot(any(maps$river$terrain=="water"),any(maps$river$terrain=="road"),any(maps$coast$terrain=="sand"),any(maps$coast$terrain=="water"))
 })
 
 cat("\n", tests_run, " tests passed.\n", sep = "")

@@ -3,7 +3,8 @@ library(shiny)
 control_map_presets <- function() c(
   "Tavern / Inn"="tavern","Prison / Cells"="prison","Forest"="forest",
   "Dungeon"="dungeon","Cave"="cave","Swamp"="swamp",
-  "Road / Crossroads"="road","Ruins"="ruins"
+  "Road / Crossroads"="road","Ruins"="ruins","Ravine / Gorge"="ravine",
+  "River Crossing"="river","Coast / Beach"="coast"
 )
 
 generate_control_map_tiles <- function(map_id,width,height,preset="forest",seed=1L,density=35) {
@@ -11,7 +12,7 @@ generate_control_map_tiles <- function(map_id,width,height,preset="forest",seed=
   set.seed(as.integer(seed%||%1L));indoor<-preset%in%c("tavern","prison","dungeon")
   tiles<-create_square_map_tiles(map_id,width,height,default_terrain=if(indoor)"stone"else if(preset=="cave")"stone"else"grass",default_light=if(preset%in%c("dungeon","cave"))"dark"else if(indoor)"dim"else"full")
   at<-function(x=NULL,y=NULL){keep<-rep(TRUE,nrow(tiles));if(!is.null(x))keep<-keep&tiles$x%in%x;if(!is.null(y))keep<-keep&tiles$y%in%y;keep}
-  paint<-function(idx,terrain,light=NULL){tiles$terrain[idx]<<-terrain;props<-switch(terrain,wall=list(1,TRUE,TRUE),ravine=list(1,TRUE,FALSE),water=list(3,TRUE,FALSE),forest=list(2,FALSE,TRUE),swamp=list(2,FALSE,FALSE),list(1,FALSE,FALSE));tiles$move_cost[idx]<<-props[[1]];tiles$blocks_movement[idx]<<-props[[2]];tiles$blocks_vision[idx]<<-props[[3]];if(!is.null(light))tiles$light[idx]<<-light}
+  paint<-function(idx,terrain,light=NULL){tiles$terrain[idx]<<-terrain;props<-switch(terrain,wall=list(1,TRUE,TRUE),ravine=list(1,TRUE,FALSE),water=list(3,TRUE,FALSE),forest=list(2,FALSE,TRUE),swamp=list(2,FALSE,FALSE),sand=list(1.5,FALSE,FALSE),list(1,FALSE,FALSE));tiles$move_cost[idx]<<-props[[1]];tiles$blocks_movement[idx]<<-props[[2]];tiles$blocks_vision[idx]<<-props[[3]];if(!is.null(light))tiles$light[idx]<<-light}
   perimeter<-function(){paint(at(c(1L,width),NULL)|at(NULL,c(1L,height)),"wall")}
   door<-function(x=ceiling(width/2),y=1L){paint(at(x,y),"stone",if(indoor)"dim"else"full")}
   sample_open<-function(prob){which(stats::runif(nrow(tiles))<prob & tiles$x>1L & tiles$x<width & tiles$y>1L & tiles$y<height)}
@@ -31,6 +32,12 @@ generate_control_map_tiles <- function(map_id,width,height,preset="forest",seed=
     cx<-ceiling(width/2);cy<-ceiling(height/2);paint(at(unique(pmax(1L,pmin(width,c(cx-1L,cx)))),NULL),"road");paint(at(NULL,unique(pmax(1L,pmin(height,c(cy-1L,cy))))),"road");paint(sample_open(density/170),"forest")
   }else if(preset=="ruins"){
     paint(sample_open(density/180),"stone");for(i in seq_len(max(1L,round(density/12)))){x<-sample(seq_len(width),1);y<-sample(seq_len(height),1);len<-sample(2:max(2L,min(6L,max(width,height))),1);if(stats::runif(1)<.5)paint(at(seq(x,min(width,x+len-1L)),y),"wall")else paint(at(x,seq(y,min(height,y+len-1L))),"wall")}
+  }else if(preset=="ravine"){
+    paint(sample_open(density/260),"stone");centre<-round(width/2+sin(seq_len(height)/2.4+seed)*pmax(1,width/7));bridge_y<-max(1L,min(height,round(height*.55)));for(y in seq_len(height)){xs<-unique(pmax(1L,pmin(width,c(centre[y]-1L,centre[y]))));paint(at(xs,y),if(y%in%c(bridge_y,bridge_y+1L))"road"else"ravine")}
+  }else if(preset=="river"){
+    paint(sample_open(density/220),"forest");centre<-round(width/2+sin(seq_len(height)/2.8+seed)*pmax(1,width/8));bridge_y<-max(1L,min(height,round(height*.55)));for(y in seq_len(height)){xs<-unique(pmax(1L,pmin(width,c(centre[y]-1L,centre[y],centre[y]+1L))));paint(at(xs,y),if(y%in%c(bridge_y,bridge_y+1L))"road"else"water")}
+  }else if(preset=="coast"){
+    shoreline<-round(width*.62+sin(seq_len(height)/2.6+seed)*pmax(1,width/14));for(y in seq_len(height)){edge<-max(2L,min(width-1L,shoreline[y]));paint(at(seq(max(1L,edge-1L),min(width,edge+1L)),y),"sand");if(edge+2L<=width)paint(at(seq(edge+2L,width),y),"water")};inland<-which(tiles$terrain=="grass"&stats::runif(nrow(tiles))<density/280);paint(inland,"forest")
   }
   tiles
 }
@@ -213,7 +220,7 @@ controlMapBuilderUI <- function(id) {
               selectInput(
                 ns("paint_terrain"),
                 "Terrain",
-                choices = c("grass", "stone", "forest", "swamp", "water", "wall", "ravine", "road", "mandred_convergence"),
+                choices = c("grass", "sand", "stone", "forest", "swamp", "water", "wall", "ravine", "road", "mandred_convergence"),
                 selected = "grass",
                 width = "150px"
               ),

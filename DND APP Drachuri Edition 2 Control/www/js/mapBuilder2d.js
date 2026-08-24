@@ -14,6 +14,7 @@ function terrainColor(terrain) {
 
   return {
     grass: "#8fbf7a",
+    sand: "#c9b277",
     stone: "#b8b8b8",
     forest: "#5d8a4f",
     swamp: "#6d8a57",
@@ -22,6 +23,16 @@ function terrainColor(terrain) {
     ravine: "#111015",
     road: "#c8b58a"
   }[terrain] || "#d9d4c7";
+}
+
+function terrainTexture(terrain) {
+  terrain = String(terrain || "grass").toLowerCase();
+  const file = {
+    grass: "grass.jpg", forest: "forest.jpg", stone: "stone.jpg",
+    wall: "stone.jpg", water: "water.jpg", swamp: "swamp.jpg",
+    ravine: "ravine.jpg", road: "dirt.jpg", sand: "dirt.jpg"
+  }[terrain];
+  return file ? `url("assets/textures/${file}")` : "none";
 }
 
 function overlayStyle(light, fog) {
@@ -72,7 +83,10 @@ function isBlocked(value) {
 function applyTileStyle(cell, tile) {
   if (!cell || !tile) return;
 
-  cell.style.background = terrainColor(tile.terrain);
+  cell.style.backgroundColor = terrainColor(tile.terrain);
+  cell.style.backgroundImage = terrainTexture(tile.terrain);
+  cell.style.backgroundSize = "48px 48px";
+  cell.style.backgroundPosition = "center";
 
   if (isBlocked(tile.blocks_movement)) {
     cell.style.boxShadow = "inset 0 0 0 2px rgba(60,20,20,0.65)";

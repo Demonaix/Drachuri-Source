@@ -105,7 +105,7 @@ function terrainClass2D(terrain) {
   const t = safeText2D(terrain, "grass").toLowerCase().trim();
 
   if (t === "woodland") return "forest";
-  if (t === "grass" || t === "forest" || t === "water" || t === "stone" ||
+  if (t === "grass" || t === "sand" || t === "forest" || t === "water" || t === "stone" ||
       t === "wall" || t === "road" || t === "swamp" || t === "pit" ||
       t === "ravine") {
     return t;
@@ -118,6 +118,7 @@ function terrainEmoji2D(terrain) {
   const t = terrainClass2D(terrain);
 
   if (t === "grass") return "";
+  if (t === "sand") return "·";
   if (t === "forest") return "♣";
   if (t === "water") return "≈";
   if (t === "stone") return "◆";
@@ -402,23 +403,27 @@ function injectCombat2DCSS() {
     }
 
     .combat-2d-tile.terrain-grass{
-      background:#5f9149;
+      background-color:#5f9149;background-image:url("assets/textures/grass.jpg");background-size:72px 72px;
+    }
+
+    .combat-2d-tile.terrain-sand{
+      background-color:#c9b277;background-image:url("assets/textures/dirt.jpg");background-size:72px 72px;
     }
 
     .combat-2d-tile.terrain-forest{
-      background:#315f38;
+      background-color:#315f38;background-image:url("assets/textures/forest.jpg");background-size:72px 72px;
     }
 
     .combat-2d-tile.terrain-water{
-      background:linear-gradient(135deg, #2c73a3, #17496f);
+      background-color:#2c73a3;background-image:url("assets/textures/water.jpg");background-size:72px 72px;
     }
 
     .combat-2d-tile.terrain-stone{
-      background:#7c7c76;
+      background-color:#7c7c76;background-image:url("assets/textures/stone.jpg");background-size:72px 72px;
     }
 
     .combat-2d-tile.terrain-wall{
-      background:#484845;
+      background-color:#484845;background-image:url("assets/textures/stone.jpg");background-size:72px 72px;
       box-shadow:
         inset 0 0 0 3px rgba(0,0,0,0.16),
         inset 0 8px 12px rgba(255,255,255,0.06),
@@ -426,16 +431,16 @@ function injectCombat2DCSS() {
     }
 
     .combat-2d-tile.terrain-road{
-      background:#a5885b;
+      background-color:#a5885b;background-image:url("assets/textures/dirt.jpg");background-size:72px 72px;
     }
 
     .combat-2d-tile.terrain-swamp{
-      background:#4b6540;
+      background-color:#4b6540;background-image:url("assets/textures/swamp.jpg");background-size:72px 72px;
     }
 
     .combat-2d-tile.terrain-pit,
     .combat-2d-tile.terrain-ravine{
-      background:#111;
+      background-color:#111;background-image:url("assets/textures/ravine.jpg");background-size:72px 72px;
       box-shadow:inset 0 0 18px rgba(0,0,0,0.85);
     }
 
