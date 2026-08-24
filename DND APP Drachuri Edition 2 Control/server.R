@@ -114,6 +114,13 @@ server_control <- function(input, output, session) {
   output$ctrl_active_session<-renderUI({
     sid<-current_session_id();span(class="control-kpi",paste0("Active session: ",sid%||%"none"))
   })
+  control_notification_session<-reactiveVal(NA_integer_);control_notification_last_id<-reactiveVal(0L)
+  observe({
+    invalidateLater(2000,session);sid<-current_session_id();if(is.null(sid))return()
+    if(!identical(as.integer(control_notification_session()),as.integer(sid))){existing<-get_session_notifications_after(sid,0L,500L);control_notification_session(as.integer(sid));control_notification_last_id(if(nrow(existing))max(as.integer(existing$id),na.rm=TRUE)else 0L);return()}
+    rows<-get_session_notifications_after(sid,control_notification_last_id(),50L);if(!nrow(rows))return();control_notification_last_id(max(as.integer(rows$id),na.rm=TRUE))
+    for(i in seq_len(nrow(rows))){r<-rows[i,,drop=FALSE];showNotification(paste0(as.character(r$source_name[[1L]]%||%"Player"),": ",as.character(r$message[[1L]])),type=as.character(r$notification_type[[1L]]%||%"message"),duration=8)}
+  })
   # ------------------------------------------------------------
   # Top-level refresh control
   # ------------------------------------------------------------

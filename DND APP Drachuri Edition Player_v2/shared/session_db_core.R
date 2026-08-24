@@ -1822,6 +1822,22 @@ get_recent_party_skill_results <- function(session_id) {
   tryCatch(DBI::dbGetQuery(con,paste("SELECT c.*,COALESCE(rp.display_name,rc.char_name,c.requester_character_id) AS requester_name,COALESCE(hp.display_name,hc.char_name,c.helper_character_id) AS helper_name FROM party_skill_checks c","LEFT JOIN session_players rp ON rp.session_id=c.session_id AND rp.character_id::text=c.requester_character_id LEFT JOIN character_blobs rc ON rc.id::text=c.requester_character_id","LEFT JOIN session_players hp ON hp.session_id=c.session_id AND hp.character_id::text=c.helper_character_id LEFT JOIN character_blobs hc ON hc.id::text=c.helper_character_id","WHERE c.session_id=$1 AND c.status='resolved' ORDER BY c.resolved_at DESC LIMIT 20"),params=list(as.integer(session_id))),error=function(e)data.frame())
 }
 
+session_notification_dedupe_key <- function(session_id,message,created_at=Sys.time()) {
+  bucket<-floor(as.numeric(as.POSIXct(created_at))/5);paste(as.integer(session_id),bucket,enc2utf8(as.character(message%||%"")),sep="|")
+}
+
+publish_session_notification <- function(session_id,message,source_character_id=NULL,source_name="Player",notification_type="message",dedupe_key=NULL) {
+  sid<-suppressWarnings(as.integer(session_id));msg<-trimws(as.character(message%||%""));if(is.na(sid)||sid<1L||!nzchar(msg))return(FALSE)
+  key<-as.character(dedupe_key%||%session_notification_dedupe_key(sid,msg));con<-get_db_connection();if(is.null(con))return(FALSE);on.exit(release_db_connection(con),add=TRUE)
+  tryCatch({DBI::dbExecute(con,paste("INSERT INTO session_notifications(session_id,source_character_id,source_name,message,notification_type,dedupe_key)","VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(dedupe_key) DO NOTHING"),params=list(sid,as.character(source_character_id%||%NA_character_),as.character(source_name%||%"Player"),msg,as.character(notification_type%||%"message"),key));TRUE},error=function(e)FALSE)
+}
+
+get_session_notifications_after <- function(session_id,after_id=0L,limit=50L) {
+  sid<-suppressWarnings(as.integer(session_id));after<-suppressWarnings(as.integer(after_id%||%0L));if(is.na(sid)||sid<1L)return(data.frame());if(is.na(after))after<-0L
+  con<-get_db_connection();if(is.null(con))return(data.frame());on.exit(release_db_connection(con),add=TRUE)
+  tryCatch(DBI::dbGetQuery(con,"SELECT * FROM session_notifications WHERE session_id=$1 AND id>$2 ORDER BY id LIMIT $3",params=list(sid,after,max(1L,as.integer(limit)))),error=function(e)data.frame())
+}
+
 get_active_encounter_conditions <- function(encounter_id, target_actor_id = NULL) {
   con <- get_db_connection()
   if (is.null(con)) return(data.frame())

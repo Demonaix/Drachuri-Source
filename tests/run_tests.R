@@ -66,7 +66,7 @@ load_functions(
   session_file,
   c(
     "calculate_hp_damage", "next_combat_turn",
-    "empty_player_live_snapshot", "filter_player_snapshot_visibility", "get_player_live_snapshot",
+    "empty_player_live_snapshot", "filter_player_snapshot_visibility", "get_player_live_snapshot", "session_notification_dedupe_key",
     "build_snapshot_encounter_actors", "start_encounter_combat"
   )
 )
@@ -172,6 +172,14 @@ test("third-ranked skill differentiates otherwise similar skill identities", {
   stealthy <- test_env$skill_identity_labels(c("Survival","Perception","Stealth"),c(8,5,4,1,0))
   learned <- test_env$skill_identity_labels(c("Survival","Perception","History"),c(8,5,4,1,0))
   stopifnot(stealthy$title != learned$title,grepl("Elusive",stealthy$title),grepl("Learned",learned$title))
+})
+
+test("session notification keys deduplicate simultaneous party toasts", {
+  moment<-as.POSIXct("2026-08-24 12:00:02",tz="UTC")
+  a<-test_env$session_notification_dedupe_key(10L,"Party Athletics: 18",moment)
+  b<-test_env$session_notification_dedupe_key(10L,"Party Athletics: 18",moment+1)
+  different<-test_env$session_notification_dedupe_key(10L,"Party Athletics: 19",moment)
+  stopifnot(identical(a,b),!identical(a,different))
 })
 
 test("magic schools derive from sorcerer progression rather than manual toggles", {

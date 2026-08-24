@@ -91,6 +91,10 @@ characterCoreServer <- function(input, output, session) {
         jsonlite::toJSON(msg, auto_unbox = TRUE),
         toast_ms
       ))
+      sid<-suppressWarnings(as.integer(state$active_session_id%||%NA_integer_));cid<-as.character(state$char_id%||%"")
+      if(!isTRUE(state$offline_mode)&&!is.na(sid)&&sid>0L&&nzchar(cid)&&exists("publish_session_notification",mode="function")){
+        try(publish_session_notification(sid,msg,cid,as.character(state$char$meta$name%||%"Player")),silent=TRUE)
+      }
     }
     
     if (flash != "none") {
