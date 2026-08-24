@@ -2334,56 +2334,69 @@ get_encounter_actors <- function(encounter_id) {
     get_encounter_positions(encounter_id),
     error = function(e) data.frame()
   )
+
+  # Return a vector with exactly one value per row. Using scalar fallbacks in a
+  # data.frame constructor breaks whenever an actor category has zero rows.
+  actor_column <- function(df, candidates, default = NA) {
+    n <- nrow(df)
+    if (!n) return(rep(default, 0L))
+    for (candidate in candidates) {
+      if (!candidate %in% names(df)) next
+      value <- df[[candidate]]
+      if (length(value) == n) return(value)
+    }
+    rep(default, n)
+  }
   
   player_df <- data.frame(
-    actor_id = as.character(players$character_id %||% ""),
+    actor_id = as.character(actor_column(players, "character_id", "")),
     actor_type = rep("player", nrow(players)),
-    display_name = as.character(players$display_name %||% players$char_name %||% "Unknown"),
+    display_name = as.character(actor_column(players, c("display_name", "char_name"), "Unknown")),
     
-    current_hp = suppressWarnings(as.integer(players$current_hp %||% NA)),
-    hp_current = suppressWarnings(as.integer(players$current_hp %||% NA)),
-    hp_max = suppressWarnings(as.integer(players$max_hp %||% players$hp_max %||% NA)),
-    max_hp = suppressWarnings(as.integer(players$max_hp %||% players$hp_max %||% NA)),
+    current_hp = suppressWarnings(as.integer(actor_column(players, c("current_hp", "hp_current"), NA))),
+    hp_current = suppressWarnings(as.integer(actor_column(players, c("current_hp", "hp_current"), NA))),
+    hp_max = suppressWarnings(as.integer(actor_column(players, c("max_hp", "hp_max"), NA))),
+    max_hp = suppressWarnings(as.integer(actor_column(players, c("max_hp", "hp_max"), NA))),
     
-    temp_hp = suppressWarnings(as.integer(players$temp_hp %||% 0)),
-    initiative = suppressWarnings(as.integer(players$initiative %||% NA)),
-    turn_order = suppressWarnings(as.integer(players$turn_order %||% NA)),
-    is_active = as.logical(players$is_active %||% TRUE),
+    temp_hp = suppressWarnings(as.integer(actor_column(players, "temp_hp", 0))),
+    initiative = suppressWarnings(as.integer(actor_column(players, "initiative", NA))),
+    turn_order = suppressWarnings(as.integer(actor_column(players, "turn_order", NA))),
+    is_active = as.logical(actor_column(players, "is_active", TRUE)),
     stringsAsFactors = FALSE
   )
   enemy_df <- data.frame(
-    actor_id = as.character(enemies$enemy_uuid %||% ""),
+    actor_id = as.character(actor_column(enemies, "enemy_uuid", "")),
     actor_type = rep("enemy", nrow(enemies)),
-    display_name = as.character(enemies$name %||% "Enemy"),
+    display_name = as.character(actor_column(enemies, "name", "Enemy")),
     
-    current_hp = suppressWarnings(as.integer(enemies$hp_current %||% NA)),
-    hp_current = suppressWarnings(as.integer(enemies$hp_current %||% NA)),
-    hp_max = suppressWarnings(as.integer(enemies$hp_max %||% NA)),
-    max_hp = suppressWarnings(as.integer(enemies$hp_max %||% NA)),
+    current_hp = suppressWarnings(as.integer(actor_column(enemies, "hp_current", NA))),
+    hp_current = suppressWarnings(as.integer(actor_column(enemies, "hp_current", NA))),
+    hp_max = suppressWarnings(as.integer(actor_column(enemies, "hp_max", NA))),
+    max_hp = suppressWarnings(as.integer(actor_column(enemies, "hp_max", NA))),
     
-    temp_hp = suppressWarnings(as.integer(enemies$temp_hp %||% 0)),
-    initiative = suppressWarnings(as.integer(enemies$initiative %||% NA)),
-    turn_order = suppressWarnings(as.integer(enemies$turn_order %||% NA)),
-    is_active = as.logical(enemies$is_active %||% TRUE),
-    ac = suppressWarnings(as.integer(enemies$ac %||% NA)),
-    movement_speed = suppressWarnings(as.integer(enemies$movement_speed %||% NA)),
+    temp_hp = suppressWarnings(as.integer(actor_column(enemies, "temp_hp", 0))),
+    initiative = suppressWarnings(as.integer(actor_column(enemies, "initiative", NA))),
+    turn_order = suppressWarnings(as.integer(actor_column(enemies, "turn_order", NA))),
+    is_active = as.logical(actor_column(enemies, "is_active", TRUE)),
+    ac = suppressWarnings(as.integer(actor_column(enemies, "ac", NA))),
+    movement_speed = suppressWarnings(as.integer(actor_column(enemies, c("movement_speed", "speed_ft"), NA))),
     stringsAsFactors = FALSE
   )
   summon_df <- data.frame(
-    actor_id = as.character(summons$summon_uuid %||% ""),
+    actor_id = as.character(actor_column(summons, "summon_uuid", "")),
     actor_type = rep("summon", nrow(summons)),
-    display_name = as.character(summons$name %||% "Summoned Beast"),
-    current_hp = suppressWarnings(as.integer(summons$hp_current %||% NA)),
-    hp_current = suppressWarnings(as.integer(summons$hp_current %||% NA)),
-    hp_max = suppressWarnings(as.integer(summons$hp_max %||% NA)),
-    max_hp = suppressWarnings(as.integer(summons$hp_max %||% NA)),
-    temp_hp = suppressWarnings(as.integer(summons$temp_hp %||% 0)),
-    initiative = suppressWarnings(as.integer(summons$initiative %||% NA)),
-    turn_order = suppressWarnings(as.integer(summons$turn_order %||% NA)),
-    is_active = as.logical(summons$is_active %||% TRUE),
-    ac = suppressWarnings(as.integer(summons$ac %||% NA)),
-    movement_speed = suppressWarnings(as.integer(summons$movement_speed %||% NA)),
-    owner_actor_id = as.character(summons$owner_actor_id %||% ""),
+    display_name = as.character(actor_column(summons, "name", "Summoned Beast")),
+    current_hp = suppressWarnings(as.integer(actor_column(summons, "hp_current", NA))),
+    hp_current = suppressWarnings(as.integer(actor_column(summons, "hp_current", NA))),
+    hp_max = suppressWarnings(as.integer(actor_column(summons, "hp_max", NA))),
+    max_hp = suppressWarnings(as.integer(actor_column(summons, "hp_max", NA))),
+    temp_hp = suppressWarnings(as.integer(actor_column(summons, "temp_hp", 0))),
+    initiative = suppressWarnings(as.integer(actor_column(summons, "initiative", NA))),
+    turn_order = suppressWarnings(as.integer(actor_column(summons, "turn_order", NA))),
+    is_active = as.logical(actor_column(summons, "is_active", TRUE)),
+    ac = suppressWarnings(as.integer(actor_column(summons, "ac", NA))),
+    movement_speed = suppressWarnings(as.integer(actor_column(summons, c("movement_speed", "speed_ft"), NA))),
+    owner_actor_id = as.character(actor_column(summons, "owner_actor_id", "")),
     stringsAsFactors = FALSE
   )
   

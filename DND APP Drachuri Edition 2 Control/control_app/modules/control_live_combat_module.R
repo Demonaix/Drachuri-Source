@@ -591,6 +591,34 @@ limit 1
       }
       paste(utils::capture.output(str(df)), collapse = "|")
     }
+
+    ensure_actor_map_positions <- function(encounter_id, actors = NULL) {
+      if (is.null(actors)) actors <- tryCatch(get_encounter_actors(encounter_id), error = function(e) data.frame())
+      tiles <- tryCatch(map_tiles_r(), error = function(e) data.frame())
+      positions <- tryCatch(get_encounter_positions(encounter_id), error = function(e) data.frame())
+      if (!is.data.frame(actors) || !nrow(actors) || !is.data.frame(tiles) || !nrow(tiles)) return(0L)
+      blocked <- tolower(as.character(tiles$terrain %||% "grass")) %in% c("wall", "ravine", "pit", "water")
+      if ("blocks_movement" %in% names(tiles)) blocked <- blocked | (!is.na(tiles$blocks_movement) & as.logical(tiles$blocks_movement))
+      available <- tiles[!blocked, c("x", "y"), drop = FALSE]
+      if (!nrow(available)) return(0L)
+      available$x <- as.integer(available$x); available$y <- as.integer(available$y)
+      occupied <- if (is.data.frame(positions) && nrow(positions)) paste(positions$x, positions$y, sep = ",") else character()
+      positioned <- if (is.data.frame(positions) && nrow(positions)) paste(positions$actor_type, positions$actor_id, sep = ":") else character()
+      placed <- 0L
+      for (i in seq_len(nrow(actors))) {
+        actor_id <- as.character(actors$actor_id[[i]] %||% ""); actor_type <- as.character(actors$actor_type[[i]] %||% "player")
+        actor_key <- paste(actor_type, actor_id, sep = ":")
+        if (!nzchar(actor_id) || actor_key %in% positioned) next
+        choices <- available[!paste(available$x, available$y, sep = ",") %in% occupied, , drop = FALSE]
+        if (!nrow(choices)) break
+        order_idx <- if (identical(actor_type, "enemy")) order(-choices$y, -choices$x) else order(choices$y, choices$x)
+        tile <- choices[order_idx[[1L]], , drop = FALSE]
+        if (isTRUE(tryCatch(upsert_encounter_actor_position(encounter_id, actor_type, actor_id, tile$x[[1L]], tile$y[[1L]]), error = function(e) FALSE))) {
+          occupied <- c(occupied, paste(tile$x[[1L]], tile$y[[1L]], sep = ",")); positioned <- c(positioned, actor_key); placed <- placed + 1L
+        }
+      }
+      placed
+    }
     
     observe({
       invalidateLater(5000, session)
@@ -2427,6 +2455,12 @@ limit 1
       # Personal GLTF models remain disabled; the lean renderer uses procedural miniatures.
       
       actors_lookup <- encounter_actors_r()
+      placed_count <- ensure_actor_map_positions(current_encounter_id(), actors_lookup)
+      if (placed_count > 0L) {
+        bump_positions()
+        bump_map_visual()
+        return()
+      }
       
       if (!"occupant_name" %in% names(render_df)) {
         render_df$occupant_name <- ""
@@ -2700,6 +2734,11 @@ limit 1
       
       cat("[start_combat] encounter actors before start:\n")
       print(actors_before)
+      placed_count <- ensure_actor_map_positions(eid, actors_before)
+      if (placed_count > 0L) {
+        cat("[start_combat] assigned missing map positions:", placed_count, "\n")
+        actors_before <- tryCatch(get_encounter_actors(eid), error = function(e) actors_before)
+      }
       
       init_df <- tryCatch(
         start_encounter_combat(

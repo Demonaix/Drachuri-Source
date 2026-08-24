@@ -71,7 +71,7 @@ load_functions(
   c(
     "calculate_hp_damage", "next_combat_turn",
     "empty_player_live_snapshot", "filter_player_snapshot_visibility", "get_player_live_snapshot", "session_notification_dedupe_key",
-    "build_snapshot_encounter_actors", "start_encounter_combat"
+    "build_snapshot_encounter_actors", "get_encounter_actors", "start_encounter_combat"
   )
 )
 load_functions(
@@ -452,6 +452,32 @@ test("combat map renderer uses the current encounter actors reactive", {
   combat_source <- paste(readLines(combat_module_file, warn = FALSE), collapse = "\n")
   stopifnot(grepl("actors_lookup <- encounter_actors_tbl()", combat_source, fixed = TRUE))
   stopifnot(!grepl("encounter_actors_r()", combat_source, fixed = TRUE))
+})
+
+test("encounter actors tolerate empty enemy and summon categories", {
+  test_env$get_encounter <- function(encounter_id) data.frame(id = encounter_id, session_id = 10L)
+  test_env$get_session_players <- function(session_id) data.frame(
+    character_id = "party-one", display_name = "Party One", current_hp = 12L,
+    temp_hp = 0L, initiative = NA_integer_, turn_order = NA_integer_, is_active = TRUE,
+    stringsAsFactors = FALSE
+  )
+  test_env$get_encounter_enemies <- function(encounter_id) data.frame()
+  test_env$get_encounter_summons <- function(encounter_id) data.frame()
+  test_env$get_encounter_positions <- function(encounter_id) data.frame()
+  actors <- test_env$get_encounter_actors(19L)
+  stopifnot(nrow(actors) == 1L)
+  stopifnot(identical(actors$actor_id[[1L]], "party-one"))
+  stopifnot(identical(actors$actor_type[[1L]], "player"))
+})
+
+test("control combat assigns missing actors to open map tiles", {
+  control_combat <- paste(readLines(file.path(
+    project_dir, "DND APP Drachuri Edition 2 Control", "control_app", "modules",
+    "control_live_combat_module.R"
+  ), warn = FALSE), collapse = "\n")
+  stopifnot(grepl("ensure_actor_map_positions", control_combat, fixed = TRUE))
+  stopifnot(grepl("assigned missing map positions", control_combat, fixed = TRUE))
+  stopifnot(grepl("upsert_encounter_actor_position", control_combat, fixed = TRUE))
 })
 
 test("starting combat always rolls fresh initiative", {
