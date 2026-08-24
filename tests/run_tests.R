@@ -1583,13 +1583,30 @@ test("Order of Succession anti-Fae propaganda is pinned on the side wall", {
   stopifnot(grepl("succession.rotation.y=Math.PI/2", js, fixed = TRUE))
 })
 
-test("Heart Eater sightings warning begins the second notice wall", {
+test("Heart Eater sightings warning joins the cluttered poster wall", {
   js <- paste(readLines(file.path("DND APP Drachuri Edition Player_v2", "www", "js", "combat3d_lean.js"), warn = FALSE), collapse = "\n")
   poster <- file.path("DND APP Drachuri Edition Player_v2", "www", "assets", "textures", "warning_heart_eater.png")
   stopifnot(file.exists(poster), file.info(poster)$size > 100000)
   stopifnot(grepl("warning_heart_eater.png", js, fixed = TRUE))
-  stopifnot(grepl("heartX=roomWidth/2", js, fixed = TRUE))
-  stopifnot(grepl("heart.rotation.y=-Math.PI/2", js, fixed = TRUE))
+  stopifnot(grepl("heartX=-roomWidth/2", js, fixed = TRUE))
+  stopifnot(grepl("heart.rotation.y=Math.PI/2", js, fixed = TRUE))
+})
+
+test("generated notices mask dark outer borders without erasing their ink", {
+  js <- paste(readLines(file.path("DND APP Drachuri Edition Player_v2", "www", "js", "combat3d_lean.js"), warn = FALSE), collapse = "\n")
+  stopifnot(grepl("function posterMaterial", js, fixed = TRUE))
+  stopifnot(grepl("posterEdge<0.045", js, fixed = TRUE))
+  stopifnot(grepl("posterDark<0.16) discard", js, fixed = TRUE))
+})
+
+test("Annwn world map fills the wall opposite the poster display", {
+  js <- paste(readLines(file.path("DND APP Drachuri Edition Player_v2", "www", "js", "combat3d_lean.js"), warn = FALSE), collapse = "\n")
+  map <- file.path("DND APP Drachuri Edition Player_v2", "www", "assets", "textures", "map_annwn_world.jpg")
+  stopifnot(file.exists(map), file.info(map)$size > 100000)
+  stopifnot(grepl("map_annwn_world.jpg", js, fixed = TRUE))
+  stopifnot(grepl("worldMapH=12.2", js, fixed = TRUE))
+  stopifnot(grepl("worldMapX=roomWidth/2", js, fixed = TRUE))
+  stopifnot(grepl("worldMap.rotation.y=-Math.PI/2", js, fixed = TRUE))
 })
 
 test("control encounter workflow uses named selectors", {
