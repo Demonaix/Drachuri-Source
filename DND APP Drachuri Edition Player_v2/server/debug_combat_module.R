@@ -26,11 +26,11 @@ debugCombatUI <- function(id) {
             uiOutput(ns("header_ui")),
             div(
             class = "combat-compact-actions",
-              div(class="combat-action-group",span(class="combat-action-label","Movement"),uiOutput(ns("dash_button_ui")),uiOutput(ns("phase_move_ui"))),
-              div(class="combat-action-group",span(class="combat-action-label","Actions"),actionButton(ns("open_standard_actions"),"Combat Actions",class="btn btn-default"),uiOutput(ns("level_two_actions_ui")),uiOutput(ns("level_three_actions_ui")),uiOutput(ns("class_actions_ui")),uiOutput(ns("rogue_combat_ui"))),
+              div(id=ns("combat_movement_group"),class="combat-action-group",span(class="combat-action-label","Movement"),uiOutput(ns("dash_button_ui")),uiOutput(ns("phase_move_ui"))),
+              div(id=ns("combat_actions_group"),class="combat-action-group",span(class="combat-action-label","Actions"),actionButton(ns("open_standard_actions"),"Combat Actions",class="btn btn-default"),uiOutput(ns("level_two_actions_ui")),uiOutput(ns("level_three_actions_ui")),uiOutput(ns("class_actions_ui")),uiOutput(ns("rogue_combat_ui"))),
               div(class="combat-action-group",span(class="combat-action-label","Glyphs"),uiOutput(ns("combat_runes_ui")),uiOutput(ns("combat_wards_ui"))),
-              div(class="combat-action-group",span(class="combat-action-label","Turn"),actionButton(ns("open_loot"),"Loot Defeated",class="btn btn-success"),actionButton(ns("override_action_budget"),"Override",class="btn btn-default"),actionButton(ns("end_turn"),"End Turn",class="btn btn-warning")),
-              div(class="combat-action-status",uiOutput(ns("turn_actions_ui")),div(class="combat-turn-box",uiOutput(ns("turn_notice_ui"))))
+              div(id=ns("combat_turn_group"),class="combat-action-group",span(class="combat-action-label","Turn"),actionButton(ns("open_loot"),"Loot Defeated",class="btn btn-success"),actionButton(ns("override_action_budget"),"Override",class="btn btn-default"),actionButton(ns("end_turn"),"End Turn",class="btn btn-warning")),
+              div(id=ns("combat_status_group"),class="combat-action-status",uiOutput(ns("turn_actions_ui")),div(class="combat-turn-box",uiOutput(ns("turn_notice_ui"))))
             )
           )
         ),
@@ -352,9 +352,9 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
 
     combat_wards<-reactive({inv<-inventory_normalize(validate_character(core$state$char)$inventory$items);keep<-inv$type=="glyph"&vapply(inv$meta,function(m)identical(as.character((m%||%list())$glyph_type%||%""),"ward")&&identical(as.character((m%||%list())$status%||%""),"ready"),logical(1));inv[keep,,drop=FALSE]})
     output$combat_wards_ui<-renderUI({w<-combat_wards();zones<-get_active_glyph_zones(current_encounter_id());zones<-zones[zones$glyph_type=="ward",,drop=FALSE];tagList(if(nrow(w))actionButton(session$ns("open_combat_ward"),paste0("Wards (",nrow(w),")"),class="btn btn-info")else tags$button(type="button",class="btn btn-default",disabled="disabled",title="Complete a ward project in Glyphs first","Wards (0)"),if(nrow(zones))actionButton(session$ns("open_disrupt_ward"),"Disrupt Ward",class="btn btn-default")else NULL)})
-    observeEvent(input$open_combat_ward,{if(!isTRUE(is_players_turn()))return();w<-combat_wards();if(!nrow(w))return();showModal(modalDialog(title="Place a crafted ward",selectInput(session$ns("combat_ward_id"),"Available ward",choices=setNames(vapply(w$meta,function(m)as.character(m$glyph_id),character(1)),vapply(seq_len(nrow(w)),function(i){m<-w$meta[[i]];paste0(w$name[[i]]," · ",m$area_ft,"ft · resists ",paste(m$resistance_types,collapse=", ")," · Arcane Score ",m$arcane_score)},character(1)))),p("Placing the ward uses your action. It then persists until disrupted."),footer=tagList(modalButton("Cancel"),actionButton(session$ns("confirm_combat_ward"),"Choose Centre on Map",class="btn btn-info"))))},ignoreInit=TRUE)
+    observeEvent(input$open_combat_ward,{if(!isTRUE(is_players_turn()))return();w<-combat_wards();if(!nrow(w))return();showModal(modalDialog(title="Place a crafted ward",selectInput(session$ns("combat_ward_id"),"Available ward",choices=setNames(vapply(w$meta,function(m)as.character(m$glyph_id),character(1)),vapply(seq_len(nrow(w)),function(i){m<-w$meta[[i]];paste0(w$name[[i]]," · ",m$area_ft,"ft · resists ",paste(m$resistance_types,collapse=", ")," · Arcane Score ",m$arcane_score)},character(1)))),p(if(isTRUE(is_exploration_phase()))"Place this prepared ward before combat begins. It persists until disrupted."else"Placing the ward uses your action. It then persists until disrupted."),footer=tagList(modalButton("Cancel"),actionButton(session$ns("confirm_combat_ward"),"Choose Centre on Map",class="btn btn-info"))))},ignoreInit=TRUE)
     observeEvent(input$confirm_combat_ward,{req(input$combat_ward_id);ward_targeting(list(glyph_id=as.integer(input$combat_ward_id)));removeModal();showNotification("Click a map tile or token to place the ward. No action is spent until you click.",type="message",duration=10)},ignoreInit=TRUE)
-    place_ward_at_map_point<-function(x,y){pending<-ward_targeting();if(is.null(pending))return(FALSE);ward_targeting(NULL);if(!spend_action_safe("action","Place Ward"))return(TRUE);res<-place_crafted_ward_at(as.character(core$state$char_id),pending$glyph_id,current_encounter_id(),x,y);if(length(res$error%||%character())){showNotification(res$error,type="error");return(TRUE)};core$state$char<-validate_character(res$character);if(is.function(core$bump_char_rev))core$bump_char_rev();refresh_key(refresh_key()+1L);events_key(events_key()+1L);bump_map_visual();showNotification(paste0("Ward placed: ",res$area_ft,"ft radius; resistance to ",paste(res$resistance_types,collapse=", "),"."),type="message",duration=10);TRUE}
+    place_ward_at_map_point<-function(x,y){pending<-ward_targeting();if(is.null(pending))return(FALSE);ward_targeting(NULL);if(!isTRUE(is_exploration_phase())&&!spend_action_safe("action","Place Ward"))return(TRUE);res<-place_crafted_ward_at(as.character(core$state$char_id),pending$glyph_id,current_encounter_id(),x,y);if(length(res$error%||%character())){showNotification(res$error,type="error");return(TRUE)};core$state$char<-validate_character(res$character);if(is.function(core$bump_char_rev))core$bump_char_rev();refresh_key(refresh_key()+1L);events_key(events_key()+1L);bump_map_visual();showNotification(paste0("Ward placed: ",res$area_ft,"ft radius; resistance to ",paste(res$resistance_types,collapse=", "),"."),type="message",duration=10);TRUE}
     observeEvent(input$open_disrupt_ward,{if(!isTRUE(is_players_turn()))return();z<-get_active_glyph_zones(current_encounter_id());z<-z[z$glyph_type=="ward",,drop=FALSE];if(!nrow(z))return(showNotification("No active ward remains.",type="warning"));showModal(modalDialog(title="Disrupt a ward",selectInput(session$ns("disrupt_ward_id"),"Active ward",choices=setNames(z$id,paste0(z$name," · Arcane Score ",z$arcane_score))),p("This uses your action and rolls Arcana against the ward's Arcane Score."),footer=tagList(modalButton("Cancel"),actionButton(session$ns("confirm_disrupt_ward"),"Roll Arcana",class="btn btn-danger"))))},ignoreInit=TRUE)
     observeEvent(input$confirm_disrupt_ward,{if(!spend_action_safe("action","Disrupt Ward"))return();removeModal();bonus<-glyph_arcana_bonus(validate_character(core$state$char));res<-disrupt_glyph_ward(current_encounter_id(),input$disrupt_ward_id,"player",core$state$char_id,bonus);if(length(res$error%||%character()))return(showNotification(res$error,type="error"));refresh_key(refresh_key()+1L);events_key(events_key()+1L);bump_map_visual();showNotification(paste0("Arcana ",res$total," vs ",res$arcane_score,": ",if(res$success)paste(res$name,"breaks.")else"the ward holds."),type=if(res$success)"message"else"warning",duration=10)},ignoreInit=TRUE)
 
@@ -1267,7 +1267,8 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     }
     
     movement_allowance_ft <- function() {
-      if (any(c("restrained", "grappled") %in% actor_conditions(active_actor_id()))) return(0L)
+      movement_actor<-if(isTRUE(is_exploration_phase()))as.character(core$state$char_id%||%"")else active_actor_id()
+      if (any(c("restrained", "grappled") %in% actor_conditions(movement_actor))) return(0L)
       
       base <- base_speed_ft()
       
@@ -1422,6 +1423,8 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         message(msg)
       }
     }
+    is_exploration_phase <- reactive({combat<-combat_tbl();is.data.frame(combat)&&nrow(combat)>0L&&identical(tolower(as.character(combat$phase[[1L]]%||%"")),"exploration")})
+    observe({exploring<-isTRUE(is_exploration_phase());for(id in c("combat_movement_group","combat_actions_group","combat_turn_group","combat_status_group","combat_runes_ui"))shinyjs::toggle(id=session$ns(id),condition=!exploring)})
     
     is_players_turn <- reactive({
       cid <- as.character(core$state$char_id %||% "")
@@ -1429,6 +1432,9 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       
       combat <- combat_tbl()
       if (!is.data.frame(combat) || nrow(combat) == 0) return(FALSE)
+      if(isTRUE(is_exploration_phase())){
+        actors<-encounter_actors_tbl();return(nrow(actors[as.character(actors$actor_id)==cid&as.character(actors$actor_type)=="player",,drop=FALSE])>0L)
+      }
       if (!identical(as.character(combat$phase[1] %||% ""), "combat")) return(FALSE)
       
       active_id <- as.character(combat$active_actor_id[1] %||% "")
@@ -1767,7 +1773,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     })
     
     active_position_row <- reactive({
-      aid <- active_actor_id()
+      aid <- if(isTRUE(is_exploration_phase()))as.character(core$state$char_id%||%"")else active_actor_id()
       pos <- positions_tbl()
       
       if (is.null(aid) || !is.data.frame(pos) || nrow(pos) == 0) {
@@ -2855,8 +2861,8 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         return(empty_reachable())
       }
       
-      actor_id <- as.character(combat$active_actor_id[1] %||% "")
-      actor_type <- as.character(combat$active_actor_type[1] %||% "player")
+      actor_id <- if(isTRUE(is_exploration_phase()))as.character(core$state$char_id%||%"")else as.character(combat$active_actor_id[1] %||% "")
+      actor_type <- if(isTRUE(is_exploration_phase()))"player"else as.character(combat$active_actor_type[1] %||% "player")
       
       if (!nzchar(actor_id)) {
         return(empty_reachable())
@@ -3162,8 +3168,8 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         return(FALSE)
       }
       
-      actor_id <- as.character(combat$active_actor_id[1] %||% "")
-      actor_type <- as.character(combat$active_actor_type[1] %||% "player")
+      actor_id <- if(isTRUE(is_exploration_phase()))cid else as.character(combat$active_actor_id[1] %||% "")
+      actor_type <- if(isTRUE(is_exploration_phase()))"player"else as.character(combat$active_actor_type[1] %||% "player")
       
       if (!identical(actor_id, cid)) {
         actor_row <- encounter_actors_tbl()
@@ -3363,7 +3369,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         )
       )
       
-      turn_move_ft(as.integer(turn_move_ft() + total_ft))
+      if(isTRUE(is_exploration_phase()))turn_move_ft(0L)else turn_move_ft(as.integer(turn_move_ft()+total_ft))
       
       pending_move(NULL)
       
@@ -3967,13 +3973,13 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     
     output$combat_layout_ui <- renderUI({
       combat <- combat_tbl()
-      in_combat <- is.data.frame(combat) && nrow(combat) > 0L && identical(as.character(combat$phase[1] %||% ""), "combat")
-      if (!isTRUE(in_combat)) {
+      phase<-if(is.data.frame(combat)&&nrow(combat))tolower(as.character(combat$phase[[1L]]%||%""))else""
+      if (!phase%in%c("combat","exploration")) {
         return(div(class = "combat-card", style = "padding:32px;text-align:center;",
                    tags$h3("No active combat"),
                    tags$p("The DM will start an encounter when combat begins.")))
       }
-      div(
+      tagList(if(phase=="exploration")div(class="combat-card",style="padding:12px 16px;margin-bottom:10px;",tags$strong("Exploration map"),tags$p(style="margin:3px 0 0;","Move your own token and place prepared wards. Enemies and combat actions remain hidden until the DM starts combat."))else NULL,div(
         class = "combat-play-layout",
         
         div(
@@ -3985,7 +3991,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
           class = "combat-card combat-log-card combat-log-card-bottom",
           uiOutput(session$ns("log_ui"))
         )
-      )
+      ))
     })
     
     

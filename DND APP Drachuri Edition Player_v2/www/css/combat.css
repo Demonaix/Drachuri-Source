@@ -134,9 +134,10 @@
 
 .combat-action-group,.combat-action-status{display:flex;align-items:center;flex-wrap:wrap;gap:5px;padding:0 10px 0 0;border:0;border-right:1px solid rgba(191,167,111,.4);background:transparent}
 .combat-action-label{font-size:9px;font-weight:900;letter-spacing:.09em;text-transform:uppercase;color:#876f3d;margin-right:2px}
-.combat-action-status{border-right:0;padding-right:0;margin-left:auto}
+.combat-action-status{border-right:0;padding-right:0;margin-left:0;flex:0 1 auto!important;width:max-content;max-width:100%}
 .combat-compact-actions .btn{font-size:13px!important;line-height:1.2!important;padding:6px 10px!important;border-radius:7px!important;min-width:0!important}
 .combat-compact-actions .shiny-html-output{display:flex;align-items:center;gap:5px;margin:0}
+.combat-action-status>.shiny-html-output,.combat-action-status .combat-turn-box>.shiny-html-output{width:auto!important;flex:0 1 auto!important}
 
 .combat-compact-actions .form-group{
   margin:0;

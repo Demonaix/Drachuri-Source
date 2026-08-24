@@ -66,7 +66,7 @@ load_functions(
   session_file,
   c(
     "calculate_hp_damage", "next_combat_turn",
-    "empty_player_live_snapshot", "get_player_live_snapshot",
+    "empty_player_live_snapshot", "filter_player_snapshot_visibility", "get_player_live_snapshot",
     "build_snapshot_encounter_actors", "start_encounter_combat"
   )
 )
@@ -166,6 +166,12 @@ test("character identities use current subclasses and every skill family", {
   stopifnot(all(vapply(all_skills, function(skill) {
     test_env$skill_identity_labels(c(skill, skill), c(5, 4))$core != "Wanderer"
   }, logical(1))))
+})
+
+test("third-ranked skill differentiates otherwise similar skill identities", {
+  stealthy <- test_env$skill_identity_labels(c("Survival","Perception","Stealth"),c(8,5,4,1,0))
+  learned <- test_env$skill_identity_labels(c("Survival","Perception","History"),c(8,5,4,1,0))
+  stopifnot(stealthy$title != learned$title,grepl("Elusive",stealthy$title),grepl("Learned",learned$title))
 })
 
 test("magic schools derive from sorcerer progression rather than manual toggles", {
@@ -364,6 +370,12 @@ test("session snapshot combines players, enemies, and positions", {
   stopifnot(combined$x[combined$actor_id == "p1"] == 2L)
   stopifnot(combined$y[combined$actor_id == "e1"] == 6L)
   stopifnot(combined$current_hp[combined$actor_id == "e1"] == 8L)
+})
+
+test("player snapshots conceal exploration and hidden enemies", {
+  base<-list(enemies=data.frame(enemy_uuid=c("e1","e2"),name=c("Seen","Hidden")),positions=data.frame(actor_type=c("enemy","enemy","player"),actor_id=c("e1","e2","p1")),effects=data.frame(target_actor_type="enemy",target_actor_id="e2",payload=I(list(list(condition="hidden")))),events=data.frame(actor_id=c("e1","e2"),target_id=c("p1","p1")),combat=data.frame(phase="combat"))
+  filtered<-test_env$filter_player_snapshot_visibility(base);stopifnot(identical(as.character(filtered$enemies$enemy_uuid),"e1"),!"e2"%in%filtered$positions$actor_id)
+  base$combat$phase<-"exploration";explore<-test_env$filter_player_snapshot_visibility(base);stopifnot(nrow(explore$enemies)==0L,!any(explore$positions$actor_type=="enemy"))
 })
 
 test("live session refresh uses one connection and selects the current player", {

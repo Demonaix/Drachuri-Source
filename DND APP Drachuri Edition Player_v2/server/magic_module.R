@@ -185,31 +185,25 @@ magicTabServer <- function(
       selected <- character_magic_types(x)
       all_types <- MAGIC_TYPES
       
+      manual <- intersect(as.character(x$magic$types %||% character()), GLYPH_DAMAGE_TYPES)
       tagList(tags$div(
-        class = "pill-row",
+        class = "pill-row magic-type-toggles",
         
         lapply(all_types, function(type) {
           
           active <- type %in% selected
           
-          tags$div(
-            class = paste("pill", if (active) "active" else ""),
-            
-            style = if (active) "background:#d4af37; color:black;" else "opacity:.35;",
-            
-            tags$span(class="mono", type)
-          )
+          if(type %in% GLYPH_DAMAGE_TYPES) actionButton(
+            session$ns(paste0("magic_type_",gsub("[^a-z0-9]+","_",tolower(type)))),
+            paste0(if(active)"✓ "else"",type),
+            class=paste("pill magic-type-toggle",if(active)"active"else""),
+            title=if(type%in%manual)"Click to remove this manually unlocked type"else if(active)"Unlocked by class progression"else"Click to unlock this damage type"
+          ) else tags$div(class=paste("pill",if(active)"active"else""),style=if(active)"background:#d4af37;color:black;"else"opacity:.35;",tags$span(class="mono",type))
         })
-      ), checkboxGroupInput(session$ns("manual_magic_types"), "Additional unlocked damage types", choices = GLYPH_DAMAGE_TYPES, selected = intersect(selected, GLYPH_DAMAGE_TYPES)))
+      ),tags$p(class="confirm-note","Gold buttons are unlocked. Click a damage type to toggle it."))
     })
 
-    observeEvent(input$manual_magic_types, {
-      if (isTRUE(restoring())) return()
-      x <- validate_character(state$char)
-      x$magic <- x$magic %||% list()
-      x$magic$types <- intersect(as.character(input$manual_magic_types), GLYPH_DAMAGE_TYPES)
-      state$char <- validate_character(x)
-    }, ignoreInit = TRUE)
+    lapply(GLYPH_DAMAGE_TYPES,function(type){id<-paste0("magic_type_",gsub("[^a-z0-9]+","_",tolower(type)));observeEvent(input[[id]],{if(isTRUE(restoring()))return();x<-validate_character(state$char);x$magic<-x$magic%||%list();manual<-intersect(as.character(x$magic$types%||%character()),GLYPH_DAMAGE_TYPES);x$magic$types<-if(type%in%manual)setdiff(manual,type)else unique(c(manual,type));state$char<-validate_character(x);char_rev(isolate(char_rev())+1L)},ignoreInit=TRUE)})
     
     # -------------------------
     # Guards / utilities

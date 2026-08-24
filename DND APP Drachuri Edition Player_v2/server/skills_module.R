@@ -358,7 +358,8 @@ skillsTabServer <- function(id, state, restoring, add_log, char_rev) {
                  paste0("✨ ", id$title)),
         
         tags$div(style="opacity:.7; font-size:12px;",
-                 paste("Top Skills:", paste(id$top_skills, collapse=", ")))
+                 paste("Top Skills:", paste(id$top_skills, collapse=", "))),
+        tags$div(style="opacity:.82;font-size:12px;margin-top:5px;",paste(id$desc,collapse=" "))
       )
     })
     

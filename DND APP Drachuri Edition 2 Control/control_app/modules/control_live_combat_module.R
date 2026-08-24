@@ -348,6 +348,7 @@ controlLiveCombatUI <- function(id) {
           div(
             class = "live-combat-actions",
             actionButton(ns("bind_encounter"), "Set Active Encounter", class = "btn btn-default"),
+            actionButton(ns("reveal_map"), "Reveal Map", class = "btn btn-info"),
             actionButton(ns("start_combat"), "Start Combat", class = "btn btn-primary"),
             actionButton(ns("open_combat_actions"), "Combat Actions", class = "btn btn-default"),
             actionButton(ns("end_turn"), "End Turn", class = "btn btn-warning"),
@@ -399,7 +400,7 @@ controlLiveCombatUI <- function(id) {
             class = "live-combat-actions",
             selectInput(ns("admin_condition"), "Condition", choices = c(
               "Blinded" = "blinded", "Charmed" = "charmed", "Deafened" = "deafened",
-              "Frightened" = "frightened", "Grappled" = "grappled", "Incapacitated" = "incapacitated",
+              "Frightened" = "frightened", "Grappled" = "grappled", "Hidden" = "hidden", "Incapacitated" = "incapacitated",
               "Invisible" = "invisible", "Paralysed" = "paralysed", "Petrified" = "petrified",
               "Poisoned" = "poisoned", "Prone" = "prone", "Restrained" = "restrained",
               "Stunned" = "stunned", "Unconscious" = "unconscious"
@@ -1039,6 +1040,7 @@ limit 1
                "move_nw", "move_ne", "move_sw", "move_se"), function(id) {
         shinyjs::toggleState(id = id, condition = started)
       })
+      shinyjs::toggleState(id="reveal_map",condition=!started)
     })
     
     encounter_events_r <- reactive({
@@ -2683,6 +2685,18 @@ limit 1
       
       bump_live()
     }, ignoreInit = TRUE)
+
+    observeEvent(input$reveal_map,{
+      eid<-current_encounter_id();sid<-current_session_id()
+      if(is.na(eid)||is.na(sid))return(log_safe("Choose a session and encounter first.",type="error"))
+      players<-session_players_r();players<-players[is.na(players$is_active)|players$is_active%in%TRUE,,drop=FALSE]
+      if(!nrow(players))return(log_safe("Add at least one player before revealing the map.",type="error"))
+      first_id<-as.character(players$character_id[[1L]]%||%"")
+      ok<-isTRUE(set_active_encounter(sid,eid))&&isTRUE(set_combat_state(eid,1L,0L,first_id,"player","exploration"))
+      if(!ok)return(log_safe("The exploration map could not be revealed.",type="error"))
+      try(set_encounter_status(eid,status="active"),silent=TRUE);ctrl$active_encounter_id<-eid;turn_move_ft(0L)
+      log_game_event(eid,"map_revealed","control","dm",payload=list(phase="exploration"));log_safe("Map revealed. Players may move and place wards; enemies remain hidden until combat starts.");bump_live()
+    },ignoreInit=TRUE)
     
     observeEvent(input$end_turn, {
       eid <- current_encounter_id()

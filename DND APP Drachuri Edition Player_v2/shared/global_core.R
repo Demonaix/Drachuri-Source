@@ -720,7 +720,10 @@ skill_identity_labels <- function(top_skills, top_scores = numeric()) {
   modifier <- NULL
   if (length(scores)) {
     avg <- mean(scores[seq_len(min(5L, length(scores)))])
-    if (scores[[1L]] > avg + 3) modifier <- "Elite" else if (scores[[1L]] > avg + 1) modifier <- "Cunning" else if (scores[[1L]] < 1) modifier <- "Unproven"
+    third <- if(length(skills)>=3L)skills[[3L]]else""
+    third_modifier <- c(athletics="Mighty",clutch="Tenacious",wrestling="Relentless",throwing="Keen",`dead lift`="Mighty",acrobatics="Nimble",`sleight of hand`="Cunning",stealth="Elusive",precision="Keen",endurance="Hardy",tolerance="Hardened",fortitude="Resolute",arcana="Mystic",history="Learned",investigation="Shrewd",nature="Wildwise",religion="Devout",analysis="Calculating",perception="Watchful",survival="Seasoned",insight="Intuitive",medicine="Practised",`animal handling`="Beastwise",`mandred connection`="Touched",deception="Cunning",intimidation="Fearsome",persuasion="Silver-Tongued",performance="Mesmeric",presence="Commanding")
+    third_label<-if(third%in%names(third_modifier))unname(third_modifier[[third]])else"Cunning"
+    if (scores[[1L]] > avg + 3) modifier <- paste("Elite",third_label) else if (scores[[1L]] > avg + 1) modifier <- third_label else if (scores[[1L]] < 1) modifier <- "Unproven"
   }
   list(core = core, aspect = aspect, modifier = modifier,
        title = paste(Filter(nzchar, c(modifier, core, aspect)), collapse = " "))

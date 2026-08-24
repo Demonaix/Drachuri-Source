@@ -1513,6 +1513,27 @@ get_blood_consumption_history <- function(character_id, limit = 30L) {
   error = function(e) data.frame())
 }
 
+filter_player_snapshot_visibility <- function(snapshot) {
+  enemies<-snapshot$enemies%||%data.frame();effects<-snapshot$effects%||%data.frame();combat<-snapshot$combat%||%data.frame()
+  if(!is.data.frame(enemies)||!nrow(enemies))return(snapshot)
+  hidden_ids<-character()
+  phase<-if(is.data.frame(combat)&&nrow(combat))tolower(as.character(combat$phase[[1L]]%||%""))else""
+  if(phase=="exploration")hidden_ids<-as.character(enemies$enemy_uuid%||%character())
+  if(is.data.frame(effects)&&nrow(effects)){
+    for(i in seq_len(nrow(effects))){
+      if(as.character(effects$target_actor_type[[i]]%||%"")!="enemy")next
+      payload<-effects$payload[[i]]%||%list();if(!is.list(payload))payload<-tryCatch(jsonlite::fromJSON(as.character(payload),simplifyVector=FALSE),error=function(e)list())
+      condition<-tolower(as.character(payload$condition%||%""));if(condition%in%c("hidden","invisible"))hidden_ids<-c(hidden_ids,as.character(effects$target_actor_id[[i]]%||%""))
+    }
+  }
+  hidden_ids<-unique(hidden_ids[nzchar(hidden_ids)]);if(!length(hidden_ids))return(snapshot)
+  snapshot$enemies<-enemies[!as.character(enemies$enemy_uuid)%in%hidden_ids,,drop=FALSE]
+  positions<-snapshot$positions%||%data.frame();if(is.data.frame(positions)&&nrow(positions))snapshot$positions<-positions[!(as.character(positions$actor_type)=="enemy"&as.character(positions$actor_id)%in%hidden_ids),,drop=FALSE]
+  events<-snapshot$events%||%data.frame();if(is.data.frame(events)&&nrow(events)){actor_hidden<-as.character(events$actor_id%||%"")%in%hidden_ids;target_hidden<-as.character(events$target_id%||%"")%in%hidden_ids;snapshot$events<-events[!actor_hidden&!target_hidden,,drop=FALSE]}
+  snapshot$effects<-effects[!(as.character(effects$target_actor_type%||%"")=="enemy"&as.character(effects$target_actor_id%||%"")%in%hidden_ids),,drop=FALSE]
+  snapshot
+}
+
 get_player_live_snapshot <- function(session_id, character_id = NULL,
                                      encounter_id = NULL, event_limit = 20L,
                                      connection_factory = get_db_connection,
@@ -1627,7 +1648,7 @@ get_player_live_snapshot <- function(session_id, character_id = NULL,
     ]
   }
 
-  list(
+  filter_player_snapshot_visibility(list(
     session = session_row,
     self_player = self_player,
     players = players,
@@ -1639,7 +1660,7 @@ get_player_live_snapshot <- function(session_id, character_id = NULL,
     effects = effects,
     summons = summons,
     fetched_at = Sys.time()
-  )
+  ))
 }
 
 create_encounter_effect <- function(encounter_id, source_actor_type, source_actor_id,
