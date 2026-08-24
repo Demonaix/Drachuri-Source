@@ -1528,10 +1528,22 @@ test("lean 3D renderer pins live combatant posters to the tavern wall", {
   stopifnot(grepl("posterCanvas", js, fixed = TRUE))
   stopifnot(grepl("updateWallPosters", js, fixed = TRUE))
   stopifnot(grepl("occupant_current_hp", js, fixed = TRUE))
+  stopifnot(grepl("occupant_sindre_cur", js, fixed = TRUE))
+  stopifnot(grepl("canvas.width=640", js, fixed = TRUE))
   stopifnot(grepl("state.roomDepth/2", js, fixed = TRUE))
   player_combat <- paste(readLines(file.path("DND APP Drachuri Edition Player_v2", "server", "debug_combat_module.R"), warn = FALSE), collapse = "\n")
   control_combat <- paste(readLines(file.path("DND APP Drachuri Edition 2 Control", "control_app", "modules", "control_live_combat_module.R"), warn = FALSE), collapse = "\n")
   stopifnot(all(vapply(c(player_combat, control_combat), function(src) grepl("occupant_conditions", src, fixed = TRUE), logical(1))))
+  stopifnot(all(vapply(c(player_combat, control_combat), function(src) grepl("poster_resource_cache", src, fixed = TRUE), logical(1))))
+})
+
+test("lean 3D tavern is enclosed with a door, ceiling, rafters and camera bounds", {
+  js <- paste(readLines(file.path("DND APP Drachuri Edition Player_v2", "www", "js", "combat3d_lean.js"), warn = FALSE), collapse = "\n")
+  stopifnot(grepl("tavern_door_oak.jpg", js, fixed = TRUE))
+  stopifnot(grepl("const ceiling=new THREE.Mesh", js, fixed = TRUE))
+  stopifnot(grepl("rafterCount", js, fixed = TRUE))
+  stopifnot(grepl("constrainCamera", js, fixed = TRUE))
+  stopifnot(grepl("controls.maxDistance", js, fixed = TRUE))
 })
 
 test("control encounter workflow uses named selectors", {
@@ -1562,7 +1574,7 @@ test("generated environment textures are shipped and wired into 3D", {
     "grass.jpg", "dirt.jpg", "forest.jpg", "swamp.jpg", "stone.jpg",
     "water.jpg", "ravine.jpg", "pit.jpg", "bark.jpg", "leaves.jpg",
     "tavern_table_oak.jpg", "tavern_floorboards.jpg",
-    "tavern_plaster_timbers.jpg", "battlefield_fieldstone.jpg"
+    "tavern_plaster_timbers.jpg", "tavern_door_oak.jpg", "battlefield_fieldstone.jpg"
   )
   stopifnot(all(file.exists(file.path(texture_dir, assets))))
   stopifnot(all(file.info(file.path(texture_dir, assets))$size > 100000))

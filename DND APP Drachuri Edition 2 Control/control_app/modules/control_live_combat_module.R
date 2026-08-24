@@ -576,6 +576,21 @@ limit 1
     map_send_generation <- reactiveVal(0L)
     map_ui_ready <- reactiveVal(FALSE)
     pending_move <- reactiveVal(NULL)
+    poster_resource_cache <- new.env(parent = emptyenv())
+    poster_resources <- function(actor_id, actor_type = "player") {
+      empty <- list(cur = NA_integer_, total = NA_integer_, temp = 0L)
+      if (!identical(as.character(actor_type), "player")) return(empty)
+      key <- as.character(actor_id %||% "")
+      if (!nzchar(key)) return(empty)
+      cached <- get0(key, envir = poster_resource_cache, inherits = FALSE)
+      if (is.list(cached) && difftime(Sys.time(), cached$loaded_at, units = "secs") < 30) return(cached$value)
+      ch <- tryCatch(validate_character(load_character_from_db(key)), error = function(e) NULL)
+      if (is.null(ch)) return(empty)
+      s <- ch$resources$sindre %||% list()
+      value <- list(cur = as.integer(s$cur %||% 0L), total = as.integer(s$total %||% 0L), temp = as.integer(s$temp %||% 0L))
+      assign(key, list(loaded_at = Sys.time(), value = value), envir = poster_resource_cache)
+      value
+    }
     
     last_positions_sig <- reactiveVal("")
     last_combat_sig <- reactiveVal("")
@@ -2469,6 +2484,9 @@ limit 1
       render_df$occupant_max_hp <- NA_integer_
       render_df$occupant_temp_hp <- 0L
       render_df$occupant_conditions <- ""
+      render_df$occupant_sindre_cur <- NA_integer_
+      render_df$occupant_sindre_max <- NA_integer_
+      render_df$occupant_sindre_temp <- 0L
       
       if (is.data.frame(actors_lookup) && nrow(actors_lookup) > 0) {
         for (i in seq_len(nrow(render_df))) {
@@ -2490,6 +2508,10 @@ limit 1
             render_df$occupant_temp_hp[i] <- suppressWarnings(as.integer(row$temp_hp[1] %||% 0L))
             raw_conditions <- row$conditions[1] %||% row$status_effects[1] %||% ""
             render_df$occupant_conditions[i] <- paste(as.character(unlist(raw_conditions)), collapse = ", ")
+            resource <- poster_resources(oid, as.character(row$actor_type[1] %||% "player"))
+            render_df$occupant_sindre_cur[i] <- resource$cur
+            render_df$occupant_sindre_max[i] <- resource$total
+            render_df$occupant_sindre_temp[i] <- resource$temp
           }
         }
       }

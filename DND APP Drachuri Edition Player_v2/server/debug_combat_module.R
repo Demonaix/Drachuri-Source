@@ -72,6 +72,25 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     current_attack_is_opp <- reactiveVal(FALSE)
     current_attack_is_ready <- reactiveVal(FALSE)
     prompted_opportunity_events <- reactiveVal(character())
+    poster_resource_cache <- new.env(parent = emptyenv())
+    poster_resources <- function(actor_id, actor_type = "player") {
+      empty <- list(cur = NA_integer_, total = NA_integer_, temp = 0L)
+      if (!identical(as.character(actor_type), "player")) return(empty)
+      key <- as.character(actor_id %||% "")
+      if (!nzchar(key)) return(empty)
+      if (identical(key, as.character(core$state$char_id %||% ""))) {
+        ch <- tryCatch(validate_character(core$state$char), error = function(e) NULL)
+      } else {
+        cached <- get0(key, envir = poster_resource_cache, inherits = FALSE)
+        if (is.list(cached) && difftime(Sys.time(), cached$loaded_at, units = "secs") < 30) return(cached$value)
+        ch <- tryCatch(validate_character(load_character_from_db(key)), error = function(e) NULL)
+      }
+      if (is.null(ch)) return(empty)
+      s <- ch$resources$sindre %||% list()
+      value <- list(cur = as.integer(s$cur %||% 0L), total = as.integer(s$total %||% 0L), temp = as.integer(s$temp %||% 0L))
+      if (!identical(key, as.character(core$state$char_id %||% ""))) assign(key, list(loaded_at = Sys.time(), value = value), envir = poster_resource_cache)
+      value
+    }
     
     bump_map_visual <- function() {
       map_visual_key(isolate(map_visual_key()) + 1L)
@@ -2739,6 +2758,9 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       render_df$occupant_max_hp <- NA_integer_
       render_df$occupant_temp_hp <- 0L
       render_df$occupant_conditions <- ""
+      render_df$occupant_sindre_cur <- NA_integer_
+      render_df$occupant_sindre_max <- NA_integer_
+      render_df$occupant_sindre_temp <- 0L
       
       if (is.data.frame(actors_lookup) && nrow(actors_lookup) > 0) {
         for (i in seq_len(nrow(render_df))) {
@@ -2759,6 +2781,10 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
             render_df$occupant_max_hp[i] <- suppressWarnings(as.integer(row$max_hp[1] %||% row$hp_max[1] %||% NA))
             render_df$occupant_temp_hp[i] <- suppressWarnings(as.integer(row$temp_hp[1] %||% 0L))
             render_df$occupant_conditions[i] <- paste(actor_conditions(oid), collapse = ", ")
+            resource <- poster_resources(oid, as.character(row$actor_type[1] %||% "player"))
+            render_df$occupant_sindre_cur[i] <- resource$cur
+            render_df$occupant_sindre_max[i] <- resource$total
+            render_df$occupant_sindre_temp[i] <- resource$temp
           }
         }
       }
