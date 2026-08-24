@@ -1788,15 +1788,79 @@ weapon_meta_defaults_global <- function(meta = NULL) {
   meta
 }
 
-standard_spear_attack_modes <- function() list(
-  list(id="one_handed", name="One-handed", damage="1d6", damage_type="Piercing", stat="str", hands=1L, range_ft=5L),
-  list(id="two_handed", name="Two-handed", damage="1d8", damage_type="Piercing", stat="str", hands=2L, range_ft=5L),
-  list(id="thrown", name="Thrown (20/60 ft)", damage="1d6", damage_type="Piercing", stat="str", hands=1L, range_ft=20L, long_range_ft=60L)
+upgrade_weapon_damage_die <- function(damage) {
+  damage <- as.character(damage %||% "1d4")
+  replacements <- c("d4" = "d6", "d6" = "d8", "d8" = "d10", "d10" = "d12")
+  for (needle in names(replacements)) {
+    if (grepl(needle, damage, fixed = TRUE)) return(sub(needle, replacements[[needle]], damage, fixed = TRUE))
+  }
+  damage
+}
+
+standard_weapon_attack_modes <- function(name, meta = list()) {
+  key <- tolower(trimws(as.character(name %||% "")))
+  damage <- as.character(meta$damage1 %||% "1d4")
+  damage_type <- as.character(meta$dmg_type1 %||% "Other")
+  family <- function(pattern) grepl(pattern, key, perl = TRUE)
+  mode <- function(id, label, stat = "str", die = damage, hands = 1L,
+                   range_ft = 5L, long_range_ft = range_ft) {
+    list(id = id, name = label, damage = die, damage_type = damage_type,
+         stat = stat, hands = hands, range_ft = range_ft, long_range_ft = long_range_ft)
+  }
+
+  finesse <- family("\\b(dagger|rapier|shortsword|scimitar|whip|sabre)\\b")
+  if (finesse) meta$finesse <- TRUE
+
+  if (family("\\b(spear|trident)\\b")) {
+    return(list(
+      mode("one_handed", "One-handed", "str"),
+      mode("two_handed", "Two-handed", "str", upgrade_weapon_damage_die(damage), 2L),
+      mode("thrown", "Thrown (20/60 ft)", "str", damage, 1L, 20L, 60L)
+    ))
+  }
+  if (family("\\b(battleaxe|longsword|quarterstaff|warhammer)\\b") ||
+      family("\\bstaff\\b")) {
+    return(list(
+      mode("one_handed", "One-handed", "str"),
+      mode("two_handed", "Two-handed", "str", upgrade_weapon_damage_die(damage), 2L)
+    ))
+  }
+  if (family("\\bdagger\\b")) {
+    return(list(
+      mode("melee", "Melee (finesse)", "finesse"),
+      mode("thrown", "Thrown (20/60 ft, finesse)", "finesse", damage, 1L, 20L, 60L)
+    ))
+  }
+  if (family("\\b(handaxe|light hammer)\\b")) {
+    return(list(
+      mode("melee", "Melee", "str"),
+      mode("thrown", "Thrown (20/60 ft)", "str", damage, 1L, 20L, 60L)
+    ))
+  }
+  if (family("\\bjavelin\\b")) {
+    return(list(
+      mode("melee", "Melee", "str"),
+      mode("thrown", "Thrown (30/120 ft)", "str", damage, 1L, 30L, 120L)
+    ))
+  }
+  if (finesse) return(list(mode("finesse", "Finesse (STR or DEX)", "finesse")))
+  if (family("\\blongbow\\b")) return(list(mode("ranged", "Ranged (150/600 ft)", "dex", damage, 2L, 150L, 600L)))
+  if (family("\\bshortbow\\b")) return(list(mode("ranged", "Ranged (80/320 ft)", "dex", damage, 2L, 80L, 320L)))
+  if (family("\\bbow\\b")) return(list(mode("ranged", "Ranged (80/320 ft)", "dex", damage, 2L, 80L, 320L)))
+  list()
+}
+
+standard_spear_attack_modes <- function() standard_weapon_attack_modes(
+  "Spear", list(damage1 = "1d6", dmg_type1 = "Piercing")
 )
 
 normalise_weapon_attack_modes <- function(name, meta=list()) {
   meta <- weapon_meta_defaults_global(meta)
-  if (!length(meta$attack_modes) && grepl("^spear(?:\\s*\\(.*\\))?$", trimws(as.character(name%||%"")), ignore.case=TRUE, perl=TRUE)) meta$attack_modes <- standard_spear_attack_modes()
+  inferred <- standard_weapon_attack_modes(name, meta)
+  if (!length(meta$attack_modes) && length(inferred)) meta$attack_modes <- inferred
+  if (grepl("\\b(dagger|rapier|shortsword|scimitar|whip|sabre)\\b", tolower(as.character(name %||% "")), perl = TRUE)) {
+    meta$finesse <- TRUE
+  }
   meta
 }
 
@@ -1901,6 +1965,11 @@ get_weapon_hit_bonus <- function(char, weapon_row) {
   char <- validate_character(char)
   
   stat <- as.character(weapon_row$stat[1] %||% "str")
+  if (identical(tolower(stat), "finesse")) {
+    str_mod <- get_character_ability_mod(char, "str")
+    dex_mod <- get_character_ability_mod(char, "dex")
+    stat <- if (dex_mod > str_mod) "dex" else "str"
+  }
   stat_mod <- get_character_ability_mod(char, stat)
   prof_bonus <- if (isTRUE(weapon_row$proficient[1] %||% FALSE)) get_character_prof_bonus(char) else 0L
   flat_bonus <- suppressWarnings(as.integer(weapon_row$to_hit_bonus[1] %||% 0))

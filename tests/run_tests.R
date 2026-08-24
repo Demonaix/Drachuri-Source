@@ -54,6 +54,7 @@ load_functions(global_file, c(
   "camp_foraging_reward", "merchant_stock_category", "merchant_select_stock",
   "equipped_magical_traits", "new_character", "validate_character", "inventory_empty", "inventory_normalize",
   "weapon_meta_defaults_global", "standard_spear_attack_modes",
+  "upgrade_weapon_damage_die", "standard_weapon_attack_modes",
   "normalise_weapon_attack_modes", "merge_legacy_weapon_mode_items"
 ))
 load_functions(relational_inventory_file, c("equipment_material_is_eligible", "inventory_item_category", "equipment_adjusted_value"))
@@ -273,6 +274,21 @@ test("legacy spear variants become one weapon with three attack modes", {
   merged <- test_env$merge_legacy_weapon_mode_items(items)
   stopifnot(nrow(merged) == 1L, identical(merged$name[[1L]], "Spear"))
   stopifnot(length(merged$meta[[1L]]$attack_modes) == 3L)
+})
+
+test("standard weapon families expose their valid attack modes", {
+  longsword <- test_env$standard_weapon_attack_modes(
+    "Ember Longsword", list(damage1 = "1d8", dmg_type1 = "slashing")
+  )
+  dagger <- test_env$standard_weapon_attack_modes(
+    "Frostbite Dagger", list(damage1 = "1d6", dmg_type1 = "piercing")
+  )
+  javelin <- test_env$standard_weapon_attack_modes(
+    "Comet Javelin", list(damage1 = "1d8", dmg_type1 = "piercing")
+  )
+  stopifnot(length(longsword) == 2L, identical(longsword[[2L]]$damage, "1d10"))
+  stopifnot(length(dagger) == 2L, identical(dagger[[1L]]$stat, "finesse"))
+  stopifnot(length(javelin) == 2L, identical(javelin[[2L]]$long_range_ft, 120L))
 })
 
 test("combat does not skip actors tied on turn order", {
@@ -1209,6 +1225,19 @@ test("weapon attack bonus includes material and build quality", {
     material_attack_bonus = 1, quality_attack_bonus = 2
   )
   stopifnot(test_env$get_weapon_hit_bonus(list(), weapon) == 10L)
+})
+
+test("finesse weapons automatically use the better STR or DEX modifier", {
+  test_env$validate_character <- identity
+  test_env$get_character_ability_mod <- function(char, stat) {
+    if (identical(stat, "str")) 1L else if (identical(stat, "dex")) 4L else 0L
+  }
+  test_env$get_character_prof_bonus <- function(char) 3L
+  weapon <- data.frame(
+    stat = "finesse", proficient = TRUE, to_hit_bonus = 0,
+    material_attack_bonus = 0, quality_attack_bonus = 0
+  )
+  stopifnot(test_env$get_weapon_hit_bonus(list(), weapon) == 7L)
 })
 
 test("material eligibility enforces Fae and Boss loot rules", {
