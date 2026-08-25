@@ -1702,4 +1702,14 @@ test("installed player UI re-anchors late Shiny sessions to the app root", {
   stopifnot(grepl("setwd(normalizePath(drachuri_app_root", ui_source, fixed = TRUE))
 })
 
+test("control dashboard ships its branded lightweight DM desk theme", {
+  control_ui <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition 2 Control", "ui.R"), warn = FALSE), collapse = "\n")
+  control_www <- file.path(project_dir, "DND APP Drachuri Edition 2 Control", "www")
+  stopifnot(file.exists(file.path(control_www, "drachuri-control-logo.png")))
+  stopifnot(file.exists(file.path(control_www, "control-desk-bg.jpg")))
+  stopifnot(file.info(file.path(control_www, "control-desk-bg.jpg"))$size < 600000)
+  stopifnot(grepl("DM desk theme", control_ui, fixed = TRUE))
+  stopifnot(grepl('class = "control-brand-mark"', control_ui, fixed = TRUE))
+})
+
 cat("\n", tests_run, " tests passed.\n", sep = "")

@@ -26,7 +26,7 @@ R_LIBS_USER="$control_source/launcher/bootstrap-library:$player_source/launcher/
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $numeric_version" "$app/Contents/Info.plist"
 find "$app" -name '._*' -delete
 chmod -R a+rX "$app"; xattr -cr "$app"; codesign --force --deep --sign - "$app"
-pkgbuild --root "$build/root" --identifier com.kerrybrown.drachuri.control.pkg --version "$numeric_version.1" --install-location / --component-plist "$installer_dir/component.plist" "$build/DrachuriControlApp.pkg"
+pkgbuild --root "$build/root" --identifier com.kerrybrown.drachuri.control.pkg --version "$numeric_version.2" --install-location / --component-plist "$installer_dir/component.plist" "$build/DrachuriControlApp.pkg"
 pkgutil --expand "$r_pkg" "$build/R-expanded"
 pkgutil --flatten "$build/R-expanded/R-fw.pkg" "$build/RFramework.pkg"
 productbuild --synthesize --package "$build/RFramework.pkg" --package "$build/DrachuriControlApp.pkg" "$build/Distribution.xml"
