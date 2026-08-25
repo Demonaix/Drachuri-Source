@@ -16,6 +16,8 @@ renv_new/
 backups/
 releases/
 installer/player/build/
+installer/mac/build/
+installer/mac/cache/
 test-env/.postgres-data/
 test-env/.postgres-socket/
 test-env/logs/

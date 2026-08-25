@@ -1670,4 +1670,20 @@ test("Windows player installer is self-contained and does not require RStudio", 
   stopifnot(!grepl("RStudio", launch, fixed = TRUE))
 })
 
+test("Mac player installer builds one DMG with app, R and locked packages", {
+  installer_dir <- file.path("installer", "mac")
+  required <- c("Drachuri Player", "Info.plist", "prepare_mac_library.R", "build_mac_installer.sh", "README.md")
+  stopifnot(all(file.exists(file.path(installer_dir, required))))
+  stopifnot(file.exists("Build Drachuri Player Mac Installer.command"))
+  build <- paste(readLines(file.path(installer_dir, "build_mac_installer.sh"), warn = FALSE), collapse = "\n")
+  launch <- paste(readLines(file.path(installer_dir, "Drachuri Player"), warn = FALSE), collapse = "\n")
+  runner <- paste(readLines(file.path("installer", "player", "installed_run.R"), warn = FALSE), collapse = "\n")
+  stopifnot(grepl('r_version="4.2.3"', build, fixed = TRUE))
+  stopifnot(grepl("RFramework.pkg", build, fixed = TRUE))
+  stopifnot(grepl("hdiutil create", build, fixed = TRUE))
+  stopifnot(grepl("RENV_CONFIG_AUTOLOADER_ENABLED=FALSE", launch, fixed = TRUE))
+  stopifnot(grepl("Install Rosetta", launch, fixed = TRUE))
+  stopifnot(grepl("DRACHURI_LOG_DIR", runner, fixed = TRUE))
+})
+
 cat("\n", tests_run, " tests passed.\n", sep = "")

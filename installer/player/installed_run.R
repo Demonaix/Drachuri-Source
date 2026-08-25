@@ -1,6 +1,6 @@
 app_dir <- normalizePath(Sys.getenv("DRACHURI_APP_DIR"), mustWork = TRUE)
 install_dir <- normalizePath(Sys.getenv("DRACHURI_INSTALL_DIR"), mustWork = TRUE)
-log_dir <- file.path(install_dir, "logs")
+log_dir <- Sys.getenv("DRACHURI_LOG_DIR", file.path(install_dir, "logs"))
 dir.create(log_dir, recursive = TRUE, showWarnings = FALSE)
 log_file <- file.path(log_dir, "player.log")
 

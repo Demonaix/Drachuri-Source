@@ -1,0 +1,30 @@
+#!/bin/sh
+set -eu
+
+macos_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+resources_dir=$(CDPATH= cd -- "$macos_dir/../Resources" && pwd)
+support_dir="$HOME/Library/Application Support/Drachuri Player"
+mkdir -p "$support_dir/logs" "$support_dir/R-user"
+
+export DRACHURI_INSTALL_DIR="$resources_dir"
+export DRACHURI_APP_DIR="$resources_dir/app"
+export DRACHURI_LOG_DIR="$support_dir/logs"
+export R_HOME="/Library/Frameworks/R.framework/Resources"
+export R_LIBS_USER="$resources_dir/library"
+export R_USER="$support_dir/R-user"
+export RENV_CONFIG_AUTOLOADER_ENABLED=FALSE
+
+if [ ! -x "$R_HOME/bin/Rscript" ]; then
+  osascript -e 'display alert "Drachuri Player could not start" message "The R runtime is missing. Run the Drachuri Player installer again." as critical'
+  exit 1
+fi
+
+if [ "$(uname -m)" = "arm64" ] && ! /usr/bin/arch -x86_64 /usr/bin/true 2>/dev/null; then
+  if osascript -e 'display dialog "Drachuri Player uses its tested Intel game runtime. Rosetta is required once on this Mac." buttons {"Cancel", "Install Rosetta"} default button "Install Rosetta" with title "Drachuri Player"' >/dev/null; then
+    osascript -e 'do shell script "/usr/sbin/softwareupdate --install-rosetta --agree-to-license" with administrator privileges'
+  else
+    exit 1
+  fi
+fi
+
+exec /usr/bin/arch -x86_64 "$R_HOME/bin/Rscript" --vanilla "$resources_dir/installed_run.R"
