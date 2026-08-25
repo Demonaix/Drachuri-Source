@@ -38,12 +38,14 @@ R_LIBS_USER="$player_source/launcher/bootstrap-library" \
 
 echo "Creating Drachuri Player.app..."
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $numeric_version" "$app/Contents/Info.plist"
+find "$app" -name '._*' -delete
 xattr -cr "$app"
 codesign --force --deep --sign - "$app"
 pkgbuild --root "$build/root" \
   --identifier com.kerrybrown.drachuri.player.pkg \
   --version "$numeric_version" \
   --install-location / \
+  --component-plist "$installer_dir/component.plist" \
   "$build/DrachuriPlayerApp.pkg"
 
 if [ ! -f "$r_pkg" ]; then
