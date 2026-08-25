@@ -1679,7 +1679,7 @@ test("Mac player installer builds one DMG with app, R and locked packages", {
   launch <- paste(readLines(file.path(installer_dir, "Drachuri Player"), warn = FALSE), collapse = "\n")
   runner <- paste(readLines(file.path("installer", "player", "installed_run.R"), warn = FALSE), collapse = "\n")
   stopifnot(grepl('r_version="4.2.3"', build, fixed = TRUE))
-  stopifnot(grepl('package_version="$numeric_version.5"', build, fixed = TRUE))
+  stopifnot(grepl('package_version="$numeric_version.6"', build, fixed = TRUE))
   stopifnot(grepl("RFramework.pkg", build, fixed = TRUE))
   stopifnot(grepl("--component-plist", build, fixed = TRUE))
   component <- paste(readLines(file.path(installer_dir, "component.plist"), warn = FALSE), collapse = "\n")
@@ -1694,6 +1694,12 @@ test("Mac player installer builds one DMG with app, R and locked packages", {
   stopifnot(grepl("DRACHURI_LOG_DIR", runner, fixed = TRUE))
   stopifnot(grepl("Database probe", runner, fixed = TRUE))
   stopifnot(grepl("DND_LAUNCH_PORT", runner, fixed = TRUE))
+})
+
+test("installed player UI re-anchors late Shiny sessions to the app root", {
+  ui_source <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition Player_v2", "ui.R"), warn = FALSE), collapse = "\n")
+  stopifnot(grepl('Sys.getenv("DRACHURI_APP_DIR", "")', ui_source, fixed = TRUE))
+  stopifnot(grepl("setwd(normalizePath(drachuri_app_root", ui_source, fixed = TRUE))
 })
 
 cat("\n", tests_run, " tests passed.\n", sep = "")

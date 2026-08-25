@@ -1,4 +1,11 @@
 # ui.R
+# Shiny may re-source this legacy UI file for a new browser session after
+# runApp() has restored its caller's working directory. Installed launches
+# therefore anchor every relative source and asset lookup back to the app.
+drachuri_app_root <- Sys.getenv("DRACHURI_APP_DIR", "")
+if (nzchar(drachuri_app_root) && dir.exists(drachuri_app_root)) {
+  setwd(normalizePath(drachuri_app_root, mustWork = TRUE))
+}
 source("library.R")
 source("plug/game_data.R")
 source("shared/class_feature_core.R")
