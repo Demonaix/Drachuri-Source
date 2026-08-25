@@ -10,6 +10,7 @@ cache="$installer_dir/cache"
 release_dir="$root/releases"
 version=$(tr -d '\r\n' < "$root/VERSION")
 numeric_version=$(printf '%s' "$version" | sed 's/[^0-9.].*$//')
+package_version="$numeric_version.1"
 r_version="4.2.3"
 r_pkg="$cache/R-$r_version-x86_64.pkg"
 r_url="https://cran.r-project.org/bin/macosx/base/R-$r_version.pkg"
@@ -43,7 +44,7 @@ xattr -cr "$app"
 codesign --force --deep --sign - "$app"
 pkgbuild --root "$build/root" \
   --identifier com.kerrybrown.drachuri.player.pkg \
-  --version "$numeric_version" \
+  --version "$package_version" \
   --install-location / \
   --component-plist "$installer_dir/component.plist" \
   "$build/DrachuriPlayerApp.pkg"
