@@ -1556,6 +1556,16 @@ test("control loads the Three import map before its 3D module", {
   stopifnot(import_at > 0L, module_at > import_at)
 })
 
+test("3D camera and canvas survive ordinary turn and movement refreshes", {
+  player_combat <- paste(readLines(file.path("DND APP Drachuri Edition Player_v2", "server", "debug_combat_module.R"), warn = FALSE), collapse = "\n")
+  renderer <- paste(readLines(file.path("DND APP Drachuri Edition Player_v2", "www", "js", "combat3d_lean.js"), warn = FALSE), collapse = "\n")
+  stopifnot(grepl('combat_layout_phase <- reactiveVal("")', player_combat, fixed = TRUE))
+  stopifnot(grepl("phase <- combat_layout_phase()", player_combat, fixed = TRUE))
+  stopifnot(!grepl("output$combat_layout_ui <- renderUI({\n      combat <- combat_tbl()", player_combat, fixed = TRUE))
+  stopifnot(grepl("restoredView=previous?.camera", renderer, fixed = TRUE))
+  stopifnot(grepl("state.camera.position.copy(state.restoredView.position)", renderer, fixed = TRUE))
+})
+
 test("Dracnos wanted sketch is pinned away from the live HUD wall", {
   js <- paste(readLines(file.path("DND APP Drachuri Edition Player_v2", "www", "js", "combat3d_lean.js"), warn = FALSE), collapse = "\n")
   poster <- file.path("DND APP Drachuri Edition Player_v2", "www", "assets", "textures", "wanted_dracnos_text.png")
@@ -1688,7 +1698,7 @@ test("Mac player installer builds one DMG with app, R and locked packages", {
   launch <- paste(readLines(file.path(installer_dir, "Drachuri Player"), warn = FALSE), collapse = "\n")
   runner <- paste(readLines(file.path("installer", "player", "installed_run.R"), warn = FALSE), collapse = "\n")
   stopifnot(grepl('r_version="4.2.3"', build, fixed = TRUE))
-  stopifnot(grepl('package_version="$numeric_version.7"', build, fixed = TRUE))
+  stopifnot(grepl('package_version="$numeric_version.8"', build, fixed = TRUE))
   stopifnot(grepl("RFramework.pkg", build, fixed = TRUE))
   stopifnot(grepl("--component-plist", build, fixed = TRUE))
   component <- paste(readLines(file.path(installer_dir, "component.plist"), warn = FALSE), collapse = "\n")

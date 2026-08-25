@@ -47,7 +47,7 @@ function texture(state,file,repeatX=1.5,repeatY=repeatX){
 }
 function makeState(containerId,inputIds,quality){
   const el=document.getElementById(containerId);if(!el)return null;
-  const previous=states.get(containerId);if(previous)disposeState(previous);
+  const previous=states.get(containerId),restoredView=previous?.camera&&previous?.controls?{position:previous.camera.position.clone(),target:previous.controls.target.clone()}:null;if(previous)disposeState(previous);
   const renderer=new THREE.WebGLRenderer({antialias:quality!=="low",powerPreference:"high-performance"});
   renderer.setPixelRatio(quality==="low"?1:Math.min(devicePixelRatio||1,1.5));renderer.setSize(Math.max(1,el.clientWidth),Math.max(1,el.clientHeight),false);
   renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.shadowMap.enabled=quality==="decorative";el.replaceChildren(renderer.domElement);
@@ -56,7 +56,7 @@ function makeState(containerId,inputIds,quality){
   if(sun.castShadow){sun.shadow.mapSize.set(1024,1024);sun.shadow.camera.left=-30;sun.shadow.camera.right=30;sun.shadow.camera.top=30;sun.shadow.camera.bottom=-30;}scene.add(sun);
   const camera=new THREE.PerspectiveCamera(48,1,.1,500),controls=new OrbitControls(camera,renderer.domElement);
   controls.enableDamping=false;controls.maxPolarAngle=Math.PI*.47;controls.minPolarAngle=.12;controls.minDistance=4;controls.maxDistance=100;
-  const state={containerId,el,renderer,scene,camera,controls,inputIds:inputIds||{},quality,textures:{},terrainRoot:new THREE.Group(),tokenRoot:new THREE.Group(),decorRoot:new THREE.Group(),overlayRoot:new THREE.Group(),posterRoot:new THREE.Group(),tiles:[],tileByKey:new Map(),signature:"",posterSignature:"",boundsSignature:"",centerX:0,centerY:0,roomWidth:40,roomDepth:40,roomFloorY:-6.7,roomCeilingY:22.5,renderPending:false};
+  const state={containerId,el,renderer,scene,camera,controls,inputIds:inputIds||{},quality,textures:{},terrainRoot:new THREE.Group(),tokenRoot:new THREE.Group(),decorRoot:new THREE.Group(),overlayRoot:new THREE.Group(),posterRoot:new THREE.Group(),tiles:[],tileByKey:new Map(),signature:"",posterSignature:"",boundsSignature:"",centerX:0,centerY:0,roomWidth:40,roomDepth:40,roomFloorY:-6.7,roomCeilingY:22.5,restoredView,renderPending:false};
   scene.add(state.terrainRoot,state.decorRoot,state.overlayRoot,state.tokenRoot,state.posterRoot);controls.addEventListener("change",()=>{constrainCamera(state);requestRender(state);});
   const resize=()=>{const w=Math.max(1,el.clientWidth),h=Math.max(1,el.clientHeight);camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h,false);requestRender(state);};
   state.resizeObserver=new ResizeObserver(resize);state.resizeObserver.observe(el);states.set(containerId,state);setupPicking(state);resize();return state;
@@ -165,7 +165,7 @@ function buildTerrain(state,rows){
   }
   buildTabletop(state,rows,xs,ys);
   if(state.quality!=="low")buildDecor(state,rows);
-  const boundsSignature=[Math.min(...xs),Math.max(...xs),Math.min(...ys),Math.max(...ys)].join(",");if(state.boundsSignature!==boundsSignature){const size=Math.max(Math.max(...xs)-Math.min(...xs)+1,Math.max(...ys)-Math.min(...ys)+1),dist=Math.max(12,size*1.25);state.controls.target.set(0,0,0);state.camera.position.set(dist,dist*.78,dist);state.controls.update();state.boundsSignature=boundsSignature;}
+  const boundsSignature=[Math.min(...xs),Math.max(...xs),Math.min(...ys),Math.max(...ys)].join(",");if(state.boundsSignature!==boundsSignature){if(state.restoredView){state.camera.position.copy(state.restoredView.position);state.controls.target.copy(state.restoredView.target);state.restoredView=null;constrainCamera(state);}else{const size=Math.max(Math.max(...xs)-Math.min(...xs)+1,Math.max(...ys)-Math.min(...ys)+1),dist=Math.max(12,size*1.25);state.controls.target.set(0,0,0);state.camera.position.set(dist,dist*.78,dist);}state.controls.update();state.boundsSignature=boundsSignature;}
 }
 function buildDecor(state,rows){
   const forests=rows.filter(r=>["forest","woodland"].includes(terrainName(r.terrain)));if(!forests.length)return;

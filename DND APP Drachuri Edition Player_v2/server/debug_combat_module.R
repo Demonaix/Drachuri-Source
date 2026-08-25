@@ -65,6 +65,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     events_key <- reactiveVal(0)
     
     map_ui_ready <- reactiveVal(FALSE)
+    combat_layout_phase <- reactiveVal("")
     
     map_visual_key <- reactiveVal(0L)
     map_send_generation <- reactiveVal(0L)
@@ -1614,6 +1615,14 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       
       df <- snapshot_data()$combat %||% data.frame()
       if (!is.data.frame(df)) data.frame() else df
+    })
+    observe({
+      combat <- combat_tbl()
+      next_phase <- if (is.data.frame(combat) && nrow(combat)) {
+        tolower(as.character(combat$phase[[1L]] %||% ""))
+      } else ""
+      if (!next_phase %in% c("combat", "exploration")) next_phase <- ""
+      if (!identical(next_phase, isolate(combat_layout_phase()))) combat_layout_phase(next_phase)
     })
     observeEvent({x<-combat_tbl();if(!nrow(x))NULL else c(current_encounter_id(),as.integer(x$round_number[[1L]]%||%1L))},{x<-combat_tbl();ticks<-tick_active_rune_zones(current_encounter_id(),as.integer(x$round_number[[1L]]%||%1L));if(length(ticks)){refresh_key(refresh_key()+1L);events_key(events_key()+1L);bump_map_visual()}},ignoreInit=FALSE)
     
@@ -4021,8 +4030,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     
     
     output$combat_layout_ui <- renderUI({
-      combat <- combat_tbl()
-      phase<-if(is.data.frame(combat)&&nrow(combat))tolower(as.character(combat$phase[[1L]]%||%""))else""
+      phase <- combat_layout_phase()
       if (!phase%in%c("combat","exploration")) {
         return(div(class = "combat-card", style = "padding:32px;text-align:center;",
                    tags$h3("No active combat"),
