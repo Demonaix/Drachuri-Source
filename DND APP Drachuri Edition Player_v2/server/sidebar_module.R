@@ -48,6 +48,28 @@ sidebarTabUI <- function(id) {
             ),
             tags$p(class = "help-block", "Press Escape at any time to leave full screen.")
         ),
+
+        div(class = "card",
+            h4("Report an Issue"),
+            p("Send a problem or improvement idea directly to the DM."),
+            radioButtons(
+              ns("issue_category"), "Report type",
+              choices = c("Error / something went wrong" = "error",
+                          "Feature upgrade / suggestion" = "feature_upgrade"),
+              selected = "error", inline = TRUE
+            ),
+            textAreaInput(
+              ns("issue_description"), "What happened, or what would you like changed?",
+              rows = 5, width = "100%",
+              placeholder = "Include what you clicked, what you expected, and what happened instead."
+            ),
+            tags$p(
+              class = "help-block",
+              "The recent Player diagnostic logs are attached automatically (maximum 200 KB). Password-like values are redacted."
+            ),
+            actionButton(ns("submit_issue"), "Send Report to DM", class = "btn btn-primary"),
+            uiOutput(ns("issue_status"))
+        ),
         
         # Download + log always accessible
         div(class = "card",
@@ -129,6 +151,66 @@ sidebarTabServer <- function(id, state, restoring, char_rev, add_log = NULL) {
         ))
       }
     }
+
+    issue_status <- reactiveVal(NULL)
+    output$issue_status <- renderUI({
+      msg <- issue_status()
+      if (is.null(msg)) return(NULL)
+      tags$p(style = "margin-top:10px;font-weight:700;color:#35653b;", msg)
+    })
+
+    collect_issue_logs <- function(max_bytes = 200000L) {
+      candidates <- unique(c(
+        file.path(Sys.getenv("DRACHURI_LOG_DIR", unset = ""), "player.log"),
+        file.path(Sys.getenv("DRACHURI_LOG_DIR", unset = ""), "launcher-console.log"),
+        file.path(getwd(), "launcher", "logs", "launcher.log"),
+        file.path(getwd(), "logs", "player.log")
+      ))
+      candidates <- candidates[nzchar(dirname(candidates)) & file.exists(candidates)]
+      if (!length(candidates)) return("No diagnostic log files were found.")
+      sections <- lapply(candidates, function(path) {
+        lines <- tryCatch(readLines(path, warn = FALSE, encoding = "UTF-8"), error = function(e) character())
+        lines <- tail(lines, 1500L)
+        txt <- paste(lines, collapse = "\n")
+        txt <- gsub("(?i)(password|passwd|pwd|token|secret)(\\s*[=:]\\s*)[^\\s,;]+", "\\1\\2[REDACTED]", txt, perl = TRUE)
+        paste0("--- ", basename(path), " ---\n", txt)
+      })
+      result <- paste(unlist(sections), collapse = "\n\n")
+      while (nchar(result, type = "bytes") > max_bytes && length(sections)) {
+        result <- substr(result, max(1L, nchar(result) - floor(nchar(result) * 0.85)), nchar(result))
+      }
+      result
+    }
+
+    observeEvent(input$submit_issue, {
+      description <- trimws(as.character(input$issue_description %||% ""))
+      if (!nzchar(description)) {
+        showNotification("Please add a short description before sending.", type = "warning", duration = 6)
+        return()
+      }
+      if (isTRUE(state$offline_mode)) {
+        showNotification("Reports need an online connection to reach the DM.", type = "error", duration = 8)
+        return()
+      }
+      character_name <- as.character(state$char$meta$name %||% "Unknown Player")
+      report_id <- create_player_issue_report(
+        session_id = state$active_session_id,
+        character_id = state$char_id,
+        character_name = character_name,
+        category = input$issue_category %||% "error",
+        description = description,
+        log_text = collect_issue_logs(),
+        app_version = Sys.getenv("DRACHURI_APP_VERSION", unset = "0.4.0-launcher"),
+        platform = paste(R.version$platform, Sys.info()[["sysname"]], Sys.info()[["release"]])
+      )
+      if (is.null(report_id)) {
+        showNotification("The report could not be saved. Please check the connection and try again.", type = "error", duration = 10)
+        return()
+      }
+      updateTextAreaInput(session, "issue_description", value = "")
+      issue_status(paste0("Report #", report_id, " was sent to the DM."))
+      showNotification(paste0("Report #", report_id, " sent. Thank you."), type = "message", duration = 8)
+    }, ignoreInit = TRUE)
     
     show_menu <- function() {
       shinyjs::show("menu")

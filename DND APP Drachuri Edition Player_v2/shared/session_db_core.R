@@ -1838,6 +1838,101 @@ get_session_notifications_after <- function(session_id,after_id=0L,limit=50L) {
   tryCatch(DBI::dbGetQuery(con,"SELECT * FROM session_notifications WHERE session_id=$1 AND id>$2 ORDER BY id LIMIT $3",params=list(sid,after,max(1L,as.integer(limit)))),error=function(e)data.frame())
 }
 
+create_player_issue_report <- function(session_id = NULL, character_id = NULL,
+                                       character_name = "Unknown Player",
+                                       category = "error", description,
+                                       log_text = "", app_version = NULL,
+                                       platform = NULL) {
+  category <- match.arg(as.character(category), c("error", "feature_upgrade"))
+  description <- trimws(as.character(description %||% ""))
+  if (!nzchar(description)) stop("Please describe what happened or what you would like changed.")
+  sid <- suppressWarnings(as.integer(session_id %||% NA_integer_))
+  if (is.na(sid) || sid < 1L) sid <- NA_integer_
+  log_text <- enc2utf8(as.character(log_text %||% ""))
+  con <- get_db_connection()
+  if (is.null(con)) return(NULL)
+  on.exit(release_db_connection(con), add = TRUE)
+  tryCatch(DBI::dbWithTransaction(con, {
+    row <- DBI::dbGetQuery(con, paste(
+      "INSERT INTO player_issue_reports",
+      "(session_id, character_id, character_name, category, description, log_text, log_bytes, app_version, platform)",
+      "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id"
+    ), params = list(
+      sid, as.character(character_id %||% NA_character_),
+      as.character(character_name %||% "Unknown Player"), category,
+      description, log_text, nchar(log_text, type = "bytes"),
+      as.character(app_version %||% NA_character_),
+      as.character(platform %||% NA_character_)
+    ))
+    report_id <- as.integer(row$id[[1L]])
+    if (!is.na(sid)) {
+      label <- if (identical(category, "error")) "reported an error" else "requested a feature upgrade"
+      DBI::dbExecute(con, paste(
+        "INSERT INTO session_notifications",
+        "(session_id,source_character_id,source_name,message,notification_type,dedupe_key)",
+        "VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(dedupe_key) DO NOTHING"
+      ), params = list(
+        sid, as.character(character_id %||% NA_character_),
+        as.character(character_name %||% "Player"),
+        paste0(label, " (report #", report_id, ")."),
+        if (identical(category, "error")) "warning" else "message",
+        paste0("player-report|", report_id)
+      ))
+    }
+    report_id
+  }), error = function(e) {
+    message("create_player_issue_report failed: ", e$message)
+    NULL
+  })
+}
+
+get_player_issue_reports <- function(status = NULL, session_id = NULL, limit = 250L) {
+  con <- get_db_connection()
+  if (is.null(con)) return(data.frame())
+  on.exit(release_db_connection(con), add = TRUE)
+  clauses <- character()
+  params <- list()
+  if (!is.null(status) && nzchar(as.character(status)) && status != "all") {
+    clauses <- c(clauses, paste0("status=$", length(params) + 1L))
+    params <- c(params, list(as.character(status)))
+  }
+  sid <- suppressWarnings(as.integer(session_id %||% NA_integer_))
+  if (!is.na(sid) && sid > 0L) {
+    clauses <- c(clauses, paste0("session_id=$", length(params) + 1L))
+    params <- c(params, list(sid))
+  }
+  params <- c(params, list(max(1L, min(1000L, as.integer(limit)))))
+  sql <- paste(
+    "SELECT id,session_id,character_id,character_name,category,description,",
+    "log_text,log_bytes,app_version,platform,status,dm_notes,created_at,updated_at",
+    "FROM player_issue_reports",
+    if (length(clauses)) paste("WHERE", paste(clauses, collapse = " AND ")) else "",
+    paste0("ORDER BY created_at DESC LIMIT $", length(params))
+  )
+  tryCatch(DBI::dbGetQuery(con, sql, params = params), error = function(e) {
+    message("get_player_issue_reports failed: ", e$message)
+    data.frame()
+  })
+}
+
+update_player_issue_report <- function(report_id, status, dm_notes = "") {
+  status <- match.arg(as.character(status), c("open", "acknowledged", "resolved"))
+  con <- get_db_connection()
+  if (is.null(con)) return(FALSE)
+  on.exit(release_db_connection(con), add = TRUE)
+  tryCatch({
+    DBI::dbExecute(con, paste(
+      "UPDATE player_issue_reports SET status=$2,dm_notes=$3,updated_at=now(),",
+      "acknowledged_at=CASE WHEN $2='acknowledged' THEN COALESCE(acknowledged_at,now()) ELSE acknowledged_at END,",
+      "resolved_at=CASE WHEN $2='resolved' THEN now() WHEN $2='open' THEN NULL ELSE resolved_at END",
+      "WHERE id=$1"
+    ), params = list(as.integer(report_id), status, as.character(dm_notes %||% ""))) > 0L
+  }, error = function(e) {
+    message("update_player_issue_report failed: ", e$message)
+    FALSE
+  })
+}
+
 get_active_encounter_conditions <- function(encounter_id, target_actor_id = NULL) {
   con <- get_db_connection()
   if (is.null(con)) return(data.frame())

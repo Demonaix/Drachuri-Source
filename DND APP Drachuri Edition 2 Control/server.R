@@ -143,6 +143,7 @@ server_control <- function(input, output, session) {
   source("control_app/modules/control_npc_attacks_module.R", local = FALSE)
   source("control_app/modules/control_merchants_module.R", local = FALSE)
   source("control_app/modules/control_story_module.R", local = FALSE)
+  source("control_app/modules/control_issue_reports_module.R", local = FALSE)
   
  
   # ------------------------------------------------------------
@@ -214,5 +215,6 @@ server_control <- function(input, output, session) {
   controlNpcAttacksServer("npc_attacks")
   controlMerchantsServer("merchants",ctrl,players_tbl,bump_refresh)
   controlStoryServer("story",ctrl)
+  controlIssueReportsServer("issue_reports")
   
 }

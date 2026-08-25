@@ -26,6 +26,7 @@ source("control_app/modules/control_npc_features_module.R", local = FALSE)
 source("control_app/modules/control_npc_attacks_module.R", local = FALSE)
 source("control_app/modules/control_merchants_module.R", local = FALSE)
 source("control_app/modules/control_story_module.R", local = FALSE)
+source("control_app/modules/control_issue_reports_module.R", local = FALSE)
 source("../DND APP Drachuri Edition Player_v2/server/party_hud_module.R", local = FALSE)
 
 ui_control <- fluidPage(
@@ -379,6 +380,10 @@ ui_control <- fluidPage(
       tabPanel(
         title = "Players",
         controlPlayersUI("players")
+      ),
+      tabPanel(
+        title = "Player Reports",
+        controlIssueReportsUI("issue_reports")
       ),
       
       tabPanel(
