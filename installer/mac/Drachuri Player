@@ -13,6 +13,8 @@ export R_HOME="/Library/Frameworks/R.framework/Resources"
 export R_LIBS_USER="$resources_dir/library"
 export R_USER="$support_dir/R-user"
 export RENV_CONFIG_AUTOLOADER_ENABLED=FALSE
+export LANG="en_GB.UTF-8"
+export LC_ALL="en_GB.UTF-8"
 
 if [ ! -x "$R_HOME/bin/Rscript" ]; then
   osascript -e 'display alert "Drachuri Player could not start" message "The R runtime is missing. Run the Drachuri Player installer again." as critical'

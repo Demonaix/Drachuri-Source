@@ -3,6 +3,14 @@ install_dir <- normalizePath(Sys.getenv("DRACHURI_INSTALL_DIR"), mustWork = TRUE
 log_dir <- Sys.getenv("DRACHURI_LOG_DIR", file.path(install_dir, "logs"))
 dir.create(log_dir, recursive = TRUE, showWarnings = FALSE)
 log_file <- file.path(log_dir, "player.log")
+log_connection <- file(log_file, open = "at", encoding = "UTF-8")
+sink(log_connection, type = "output", append = TRUE)
+sink(log_connection, type = "message", append = TRUE)
+on.exit({
+  try(sink(type = "message"), silent = TRUE)
+  try(sink(type = "output"), silent = TRUE)
+  try(close(log_connection), silent = TRUE)
+}, add = TRUE)
 
 log_message <- function(...) {
   line <- paste(format(Sys.time(), "%Y-%m-%d %H:%M:%S"), paste0(..., collapse = ""))
@@ -24,6 +32,29 @@ required <- c("shiny", "shinyjs", "dplyr", "jsonlite", "DBI", "RPostgres", "pool
 missing <- required[!vapply(required, requireNamespace, logical(1), quietly = TRUE)]
 if (length(missing)) fail(paste("The installation is missing:", paste(missing, collapse = ", "),
                                 "Run the installer again to repair it."))
+
+# Finder can launch immediately after login or network changes, before DNS is
+# fully ready. Warm the exact Supabase route and record useful diagnostics.
+if (file.exists(file.path(app_dir, "env.R"))) sys.source(file.path(app_dir, "env.R"), envir = globalenv())
+db_ready <- FALSE
+for (attempt in seq_len(3L)) {
+  probe <- tryCatch(
+    DBI::dbConnect(
+      RPostgres::Postgres(), host = Sys.getenv("SUPABASE_HOST"),
+      port = as.integer(Sys.getenv("SUPABASE_PORT", "5432")),
+      dbname = Sys.getenv("SUPABASE_DBNAME"), user = Sys.getenv("SUPABASE_USER"),
+      password = Sys.getenv("SUPABASE_DB_PASSWORD"), sslmode = "require"
+    ),
+    error = function(e) { log_message("Database probe ", attempt, " failed: ", conditionMessage(e)); NULL }
+  )
+  if (!is.null(probe)) {
+    db_ready <- isTRUE(tryCatch(DBI::dbGetQuery(probe, "SELECT 1 AS ok")$ok[[1L]] == 1L, error = function(e) FALSE))
+    try(DBI::dbDisconnect(probe), silent = TRUE)
+  }
+  if (db_ready) break
+  Sys.sleep(1)
+}
+log_message("UTF-8 locale: ", Sys.getlocale("LC_CTYPE"), "; database warm-up: ", if (db_ready) "online" else "offline")
 
 tryCatch({
   options(shiny.launch.browser = TRUE)

@@ -10,7 +10,7 @@ cache="$installer_dir/cache"
 release_dir="$root/releases"
 version=$(tr -d '\r\n' < "$root/VERSION")
 numeric_version=$(printf '%s' "$version" | sed 's/[^0-9.].*$//')
-package_version="$numeric_version.1"
+package_version="$numeric_version.2"
 r_version="4.2.3"
 r_pkg="$cache/R-$r_version-x86_64.pkg"
 r_url="https://cran.r-project.org/bin/macosx/base/R-$r_version.pkg"
@@ -22,7 +22,7 @@ mkdir -p "$resources/app" "$resources/library" "$app/Contents/MacOS" "$cache" "$
 echo "Copying the player application..."
 rsync -a \
   --exclude '.Rproj.user' --exclude '.RData' --exclude '.Rhistory' --exclude '.DS_Store' \
-  --exclude 'renv/library' --exclude 'renv/cache' --exclude 'renv_new' \
+  --exclude 'renv/library' --exclude 'renv/cache' --exclude 'renv/staging' --exclude 'renv_new' \
   --exclude 'launcher/bootstrap-library' --exclude 'launcher/logs' --exclude 'rsconnect' \
   --exclude 'www/models' \
   "$player_source/" "$resources/app/"
@@ -40,6 +40,7 @@ R_LIBS_USER="$player_source/launcher/bootstrap-library" \
 echo "Creating Drachuri Player.app..."
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $numeric_version" "$app/Contents/Info.plist"
 find "$app" -name '._*' -delete
+chmod -R a+rX "$app"
 xattr -cr "$app"
 codesign --force --deep --sign - "$app"
 pkgbuild --root "$build/root" \
