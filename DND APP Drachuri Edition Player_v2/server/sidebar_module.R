@@ -27,6 +27,27 @@ sidebarTabUI <- function(id) {
               actionButton(ns("clear_cache"), "Clear Character", class = "btn btn-danger")
             )
         ),
+
+        div(class = "card",
+            h4("Display & Sound"),
+            tags$label(`for` = ns("master_volume"), "Music & ambience volume"),
+            tags$div(
+              style = "display:flex;align-items:center;gap:12px;max-width:520px;",
+              tags$input(
+                id = ns("master_volume"), type = "range",
+                min = "0", max = "1", step = "0.05", value = "0.7",
+                style = "flex:1;"
+              ),
+              tags$span(id = ns("master_volume_value"), "70%", style = "min-width:44px;font-weight:700;")
+            ),
+            tags$p(class = "help-block", "This setting is remembered on this computer."),
+            tags$button(
+              id = ns("browser_fullscreen"), type = "button",
+              class = "btn btn-default",
+              "Enter Full Screen"
+            ),
+            tags$p(class = "help-block", "Press Escape at any time to leave full screen.")
+        ),
         
         # Download + log always accessible
         div(class = "card",

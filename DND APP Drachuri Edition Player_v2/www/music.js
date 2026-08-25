@@ -252,10 +252,19 @@ document.addEventListener("DOMContentLoaded", function () {
 
     volumeSlider.value = masterVolume;
 
+    function refreshVolumeLabel() {
+      const label = document.querySelector('[id$="-master_volume_value"]');
+      if (label) label.textContent = Math.round(masterVolume * 100) + "%";
+    }
+
+    refreshVolumeLabel();
+
     volumeSlider.addEventListener("input", function () {
       masterVolume = clampVolume(volumeSlider.value);
 
       localStorage.setItem("dnd_master_volume", masterVolume);
+
+      refreshVolumeLabel();
 
       syncAllAmbience();
     });

@@ -1,0 +1,37 @@
+#!/bin/sh
+set -eu
+macos_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+resources_dir=$(CDPATH= cd -- "$macos_dir/../Resources" && pwd)
+support_dir="$HOME/Library/Application Support/Drachuri Control"
+mkdir -p "$support_dir/logs" "$support_dir/R-user"
+pid_file="$support_dir/control.pid"
+launch_url="http://127.0.0.1:48628"
+export DRACHURI_INSTALL_DIR="$resources_dir"
+export DRACHURI_APP_DIR="$resources_dir/workspace/DND APP Drachuri Edition 2 Control"
+export DRACHURI_LOG_DIR="$support_dir/logs"
+export DRACHURI_APP_NAME="Drachuri Control"
+export DRACHURI_REQUIRED_PACKAGES="shiny,shinyjs,DT,dplyr,jsonlite,DBI,RPostgres,pool"
+export R_HOME="/Library/Frameworks/R.framework/Resources"
+export R_LIBS_USER="$resources_dir/library"
+export R_USER="$support_dir/R-user"
+export RENV_CONFIG_AUTOLOADER_ENABLED=FALSE
+export LANG="en_GB.UTF-8"
+export LC_ALL="en_GB.UTF-8"
+export DRACHURI_PID_FILE="$pid_file"
+export DND_LAUNCH_PORT="48628"
+if [ ! -x "$R_HOME/bin/Rscript" ]; then
+  osascript -e 'display alert "Drachuri Control could not start" message "The R runtime is missing. Run the Drachuri Control installer again." as critical'
+  exit 1
+fi
+if [ "$(uname -m)" = "arm64" ] && ! /usr/bin/arch -x86_64 /usr/bin/true 2>/dev/null; then
+  osascript -e 'display alert "Rosetta is required" message "Install Rosetta, then open Drachuri Control again." as critical'
+  exit 1
+fi
+if [ -f "$pid_file" ]; then
+  existing_pid=$(cat "$pid_file" 2>/dev/null || true)
+  if [ -n "$existing_pid" ] && kill -0 "$existing_pid" 2>/dev/null; then open "$launch_url"; exit 0; fi
+  rm -f "$pid_file"
+fi
+nohup /usr/bin/arch -x86_64 "$R_HOME/bin/Rscript" --vanilla "$resources_dir/installed_run.R" >> "$support_dir/logs/launcher-console.log" 2>&1 </dev/null &
+echo $! > "$pid_file"
+exit 0

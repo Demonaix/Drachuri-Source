@@ -3,6 +3,7 @@ install_dir <- normalizePath(Sys.getenv("DRACHURI_INSTALL_DIR"), mustWork = TRUE
 log_dir <- Sys.getenv("DRACHURI_LOG_DIR", file.path(install_dir, "logs"))
 dir.create(log_dir, recursive = TRUE, showWarnings = FALSE)
 log_file <- file.path(log_dir, "player.log")
+app_name <- Sys.getenv("DRACHURI_APP_NAME", "Drachuri Player")
 log_connection <- file(log_file, open = "at", encoding = "UTF-8")
 sink(log_connection, type = "output", append = TRUE)
 sink(log_connection, type = "message", append = TRUE)
@@ -15,15 +16,15 @@ log_message <- function(...) {
 fail <- function(message) {
   log_message("ERROR: ", message)
   if (.Platform$OS.type == "windows") {
-    utils::winDialog("ok", paste("Drachuri Player could not start.\n\n", message,
+    utils::winDialog("ok", paste(app_name, " could not start.\n\n", message,
                                   "\n\nDiagnostic log:\n", log_file))
   }
   quit(save = "no", status = 1L)
 }
 
 setwd(app_dir)
-log_message("Starting installed Drachuri Player from ", app_dir)
-required <- c("shiny", "shinyjs", "dplyr", "jsonlite", "DBI", "RPostgres", "pool")
+log_message("Starting installed ", app_name, " from ", app_dir)
+required <- strsplit(Sys.getenv("DRACHURI_REQUIRED_PACKAGES", "shiny,shinyjs,dplyr,jsonlite,DBI,RPostgres,pool"), ",", fixed = TRUE)[[1L]]
 missing <- required[!vapply(required, requireNamespace, logical(1), quietly = TRUE)]
 if (length(missing)) fail(paste("The installation is missing:", paste(missing, collapse = ", "),
                                 "Run the installer again to repair it."))

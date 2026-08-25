@@ -64,7 +64,7 @@ ui_player <- fluidPage(
 })();
 ")),
 
-    tags$link(rel = "icon", href = "favicon.ico"),
+    tags$link(rel = "icon", type = "image/png", href = "drachuri-player-logo.png"),
 
     tags$script(HTML("
 document.addEventListener('click', function(e){
@@ -81,6 +81,7 @@ document.addEventListener('click', function(e){
 
     # Music controller
     tags$script(src = "music.js"),
+    tags$script(src = "settings.js"),
 
     # -----------------------------
     # CSS

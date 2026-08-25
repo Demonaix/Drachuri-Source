@@ -20,6 +20,8 @@ Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayName=Drachuri Player
+SetupIconFile=DrachuriPlayer.ico
+UninstallDisplayIcon={app}\DrachuriPlayer.ico
 VersionInfoDescription=Drachuri Player Installer
 ChangesAssociations=no
 CloseApplications=yes
@@ -32,10 +34,11 @@ Source: "build\library\*"; DestDir: "{app}\library"; Flags: ignoreversion recurs
 Source: "installed_run.R"; DestDir: "{app}"; Flags: ignoreversion
 Source: "Drachuri Player.cmd"; DestDir: "{app}"; Flags: ignoreversion
 Source: "Drachuri Player.vbs"; DestDir: "{app}"; Flags: ignoreversion
+Source: "DrachuriPlayer.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{autoprograms}\Drachuri Player"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\Drachuri Player.vbs"""; WorkingDir: "{app}"
-Name: "{autodesktop}\Drachuri Player"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\Drachuri Player.vbs"""; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{autoprograms}\Drachuri Player"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\Drachuri Player.vbs"""; WorkingDir: "{app}"; IconFilename: "{app}\DrachuriPlayer.ico"
+Name: "{autodesktop}\Drachuri Player"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\Drachuri Player.vbs"""; WorkingDir: "{app}"; IconFilename: "{app}\DrachuriPlayer.ico"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Shortcuts:"; Flags: checkedonce

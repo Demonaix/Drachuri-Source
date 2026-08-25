@@ -1,19 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
+<plist version="1.0"><dict>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
-  <key>CFBundleDisplayName</key><string>Drachuri Player</string>
-  <key>CFBundleExecutable</key><string>Drachuri Player</string>
-  <key>CFBundleIdentifier</key><string>com.kerrybrown.drachuri.player</string>
-  <key>CFBundleIconFile</key><string>DrachuriPlayer.icns</string>
+  <key>CFBundleDisplayName</key><string>Drachuri Control</string>
+  <key>CFBundleExecutable</key><string>Drachuri Control</string>
+  <key>CFBundleIdentifier</key><string>com.kerrybrown.drachuri.control</string>
+  <key>CFBundleIconFile</key><string>DrachuriControl.icns</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-  <key>CFBundleName</key><string>Drachuri Player</string>
+  <key>CFBundleName</key><string>Drachuri Control</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>0.4.0</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>11.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
-</dict>
-</plist>
+</dict></plist>

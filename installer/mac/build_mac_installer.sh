@@ -10,7 +10,7 @@ cache="$installer_dir/cache"
 release_dir="$root/releases"
 version=$(tr -d '\r\n' < "$root/VERSION")
 numeric_version=$(printf '%s' "$version" | sed 's/[^0-9.].*$//')
-package_version="$numeric_version.4"
+package_version="$numeric_version.5"
 r_version="4.2.3"
 r_pkg="$cache/R-$r_version-x86_64.pkg"
 r_url="https://cran.r-project.org/bin/macosx/base/R-$r_version.pkg"
@@ -28,6 +28,7 @@ rsync -a \
   "$player_source/" "$resources/app/"
 
 cp "$installer_dir/Info.plist" "$app/Contents/Info.plist"
+cp "$installer_dir/DrachuriPlayer.icns" "$resources/DrachuriPlayer.icns"
 cp "$installer_dir/Drachuri Player" "$app/Contents/MacOS/Drachuri Player"
 cp "$root/installer/player/installed_run.R" "$resources/installed_run.R"
 chmod 755 "$app/Contents/MacOS/Drachuri Player"
@@ -80,5 +81,10 @@ EOF
 
 output="$release_dir/Drachuri-Player-Mac-$version.dmg"
 rm -f "$output"
-hdiutil create -volname "Drachuri Player" -srcfolder "$dmg_root" -format UDZO -ov "$output"
-echo "Mac installer ready: $output"
+if hdiutil create -volname "Drachuri Player" -srcfolder "$dmg_root" -format UDZO -ov "$output"; then
+  echo "Mac installer ready: $output"
+else
+  fallback="$release_dir/Drachuri-Player-Mac-$version.pkg"
+  cp "$build/Drachuri-Player-$version.pkg" "$fallback"
+  echo "DMG creation failed; Mac installer saved as: $fallback"
+fi

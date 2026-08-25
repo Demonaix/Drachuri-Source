@@ -1679,7 +1679,7 @@ test("Mac player installer builds one DMG with app, R and locked packages", {
   launch <- paste(readLines(file.path(installer_dir, "Drachuri Player"), warn = FALSE), collapse = "\n")
   runner <- paste(readLines(file.path("installer", "player", "installed_run.R"), warn = FALSE), collapse = "\n")
   stopifnot(grepl('r_version="4.2.3"', build, fixed = TRUE))
-  stopifnot(grepl('package_version="$numeric_version.4"', build, fixed = TRUE))
+  stopifnot(grepl('package_version="$numeric_version.5"', build, fixed = TRUE))
   stopifnot(grepl("RFramework.pkg", build, fixed = TRUE))
   stopifnot(grepl("--component-plist", build, fixed = TRUE))
   component <- paste(readLines(file.path(installer_dir, "component.plist"), warn = FALSE), collapse = "\n")

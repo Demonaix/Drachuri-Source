@@ -42,6 +42,7 @@ ui_control <- fluidPage(
   
   tags$head(
     tags$title("DND Control Dashboard"),
+    tags$link(rel = "icon", type = "image/png", href = "drachuri-control-logo.png"),
     tags$script(type = "module", src = paste0("player-assets/js/combat3d_lean.js?v=", as.integer(Sys.time()))),
     tags$meta(name = "viewport", content = "width=device-width, initial-scale=1"),
     tags$link(
