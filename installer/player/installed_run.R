@@ -6,11 +6,6 @@ log_file <- file.path(log_dir, "player.log")
 log_connection <- file(log_file, open = "at", encoding = "UTF-8")
 sink(log_connection, type = "output", append = TRUE)
 sink(log_connection, type = "message", append = TRUE)
-on.exit({
-  try(sink(type = "message"), silent = TRUE)
-  try(sink(type = "output"), silent = TRUE)
-  try(close(log_connection), silent = TRUE)
-}, add = TRUE)
 
 log_message <- function(...) {
   line <- paste(format(Sys.time(), "%Y-%m-%d %H:%M:%S"), paste0(..., collapse = ""))
@@ -58,5 +53,13 @@ log_message("UTF-8 locale: ", Sys.getlocale("LC_CTYPE"), "; database warm-up: ",
 
 tryCatch({
   options(shiny.launch.browser = TRUE)
-  shiny::runApp(appDir = app_dir, launch.browser = TRUE)
-}, error = function(e) fail(conditionMessage(e)))
+  launch_port <- suppressWarnings(as.integer(Sys.getenv("DND_LAUNCH_PORT", "")))
+  if (is.na(launch_port) || launch_port < 1L) launch_port <- NULL
+  shiny::runApp(appDir = app_dir, launch.browser = TRUE, port = launch_port)
+}, error = function(e) fail(conditionMessage(e)), finally = {
+  pid_file <- Sys.getenv("DRACHURI_PID_FILE", "")
+  if (nzchar(pid_file)) try(unlink(pid_file), silent = TRUE)
+  try(sink(type = "message"), silent = TRUE)
+  try(sink(type = "output"), silent = TRUE)
+  try(close(log_connection), silent = TRUE)
+})
