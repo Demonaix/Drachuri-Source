@@ -1503,7 +1503,7 @@ test("lean 3D renderer keeps costly features optional", {
   stopifnot(grepl("InstancedMesh", js, fixed = TRUE))
   stopifnot(grepl("buildSurfaceGeometry", js, fixed = TRUE))
   stopifnot(grepl("buildTabletop", js, fixed = TRUE))
-  stopifnot(grepl("tableWidth", js, fixed = TRUE), grepl("wallH=18", js, fixed = TRUE))
+  stopifnot(grepl("tableWidth", js, fixed = TRUE), grepl("wallH=20", js, fixed = TRUE), grepl("roofRise=10", js, fixed = TRUE))
   stopifnot(grepl("controls.maxPolarAngle=Math.PI*.47", js, fixed = TRUE))
   stopifnot(grepl('ravine:{color:0x17151a,tex:"ravine.jpg",h:-2.65}', js, fixed = TRUE))
   stopifnot(grepl('const height=name==="wall"?1.65', js, fixed = TRUE))
@@ -1519,7 +1519,7 @@ test("lean 3D renderer keeps costly features optional", {
   stopifnot(grepl('quality==="decorative"', js, fixed = TRUE))
   stopifnot(!grepl("GLTFLoader", js, fixed = TRUE))
   stopifnot(grepl("makeMiniature", js, fixed = TRUE), grepl("actorColour", js, fixed = TRUE))
-  stopifnot(!grepl("PointLight", js, fixed = TRUE))
+  stopifnot(grepl("PointLight", js, fixed = TRUE), grepl("chandelierLight", js, fixed = TRUE))
   stopifnot(!grepl("function animate", js, fixed = TRUE))
 })
 
@@ -1537,14 +1537,23 @@ test("lean 3D renderer pins live combatant posters to the tavern wall", {
   stopifnot(all(vapply(c(player_combat, control_combat), function(src) grepl("poster_resource_cache", src, fixed = TRUE), logical(1))))
 })
 
-test("lean 3D tavern is enclosed with a door, ceiling, rafters and camera bounds", {
+test("lean 3D tavern has a door, pitched roof, rafters, chandelier and camera bounds", {
   js <- paste(readLines(file.path("DND APP Drachuri Edition Player_v2", "www", "js", "combat3d_lean.js"), warn = FALSE), collapse = "\n")
   stopifnot(grepl("tavern_wall_door_complete.png", js, fixed = TRUE))
   stopifnot(grepl("roomSpan=Math.max(48", js, fixed = TRUE))
-  stopifnot(grepl("const ceiling=new THREE.Mesh", js, fixed = TRUE))
+  stopifnot(grepl("slopeLength=Math.hypot", js, fixed = TRUE))
+  stopifnot(grepl("gableGeometry", js, fixed = TRUE))
   stopifnot(grepl("rafterCount", js, fixed = TRUE))
+  stopifnot(grepl("const chandelier=new THREE.Group", js, fixed = TRUE))
   stopifnot(grepl("constrainCamera", js, fixed = TRUE))
   stopifnot(grepl("controls.maxDistance", js, fixed = TRUE))
+})
+
+test("control loads the Three import map before its 3D module", {
+  control_ui <- paste(readLines(file.path("DND APP Drachuri Edition 2 Control", "ui.R"), warn = FALSE), collapse = "\n")
+  import_at <- regexpr('type = "importmap"', control_ui, fixed = TRUE)[[1L]]
+  module_at <- regexpr('type = "module"', control_ui, fixed = TRUE)[[1L]]
+  stopifnot(import_at > 0L, module_at > import_at)
 })
 
 test("Dracnos wanted sketch is pinned away from the live HUD wall", {
@@ -1679,7 +1688,7 @@ test("Mac player installer builds one DMG with app, R and locked packages", {
   launch <- paste(readLines(file.path(installer_dir, "Drachuri Player"), warn = FALSE), collapse = "\n")
   runner <- paste(readLines(file.path("installer", "player", "installed_run.R"), warn = FALSE), collapse = "\n")
   stopifnot(grepl('r_version="4.2.3"', build, fixed = TRUE))
-  stopifnot(grepl('package_version="$numeric_version.6"', build, fixed = TRUE))
+  stopifnot(grepl('package_version="$numeric_version.7"', build, fixed = TRUE))
   stopifnot(grepl("RFramework.pkg", build, fixed = TRUE))
   stopifnot(grepl("--component-plist", build, fixed = TRUE))
   component <- paste(readLines(file.path(installer_dir, "component.plist"), warn = FALSE), collapse = "\n")

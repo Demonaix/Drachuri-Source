@@ -2535,7 +2535,7 @@ limit 1
       if (nrow(zone_df)) zone_df <- zone_df[, intersect(c("id","glyph_type","name","rank","center_x","center_y","area_ft","colour","tooltip"), names(zone_df)), drop=FALSE]
       generation <- isolate(map_send_generation()) + 1L
       map_send_generation(generation)
-      later::later(function() {
+      send_map_message <- function() {
         if (!identical(isolate(map_send_generation()), generation)) return()
         mode <- isolate(input$map_render_mode %||% "2d")
         session$sendCustomMessage(
@@ -2548,7 +2548,11 @@ limit 1
             inputIds = list(move = session$ns("move_to_tile"), target = session$ns("map_target_click"))
           )
         )
-      }, delay = 0.1)
+      }
+      # renderUI replaces the canvas when the mode changes. Wait for that DOM
+      # flush, then repeat once so a slow browser cannot miss its first frame.
+      later::later(send_map_message, delay = 0.35)
+      later::later(send_map_message, delay = 0.9)
     })
     
     # --------------------------------------------------

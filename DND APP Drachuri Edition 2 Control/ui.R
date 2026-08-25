@@ -30,8 +30,13 @@ source("../DND APP Drachuri Edition Player_v2/server/party_hud_module.R", local 
 
 ui_control <- fluidPage(
   useShinyjs(),
-  
-  tags$script(type = "importmap", HTML('
+
+  tags$head(
+    tags$title("DND Control Dashboard"),
+    tags$link(rel = "icon", type = "image/png", href = "drachuri-control-logo.png"),
+    # Import maps must precede the module which imports `three`. Keeping both
+    # in the head avoids browsers executing the module before a body importmap.
+    tags$script(type = "importmap", HTML('
 {
   "imports": {
     "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
@@ -39,10 +44,6 @@ ui_control <- fluidPage(
   }
 }
 ')),
-  
-  tags$head(
-    tags$title("DND Control Dashboard"),
-    tags$link(rel = "icon", type = "image/png", href = "drachuri-control-logo.png"),
     tags$script(type = "module", src = paste0("player-assets/js/combat3d_lean.js?v=", as.integer(Sys.time()))),
     tags$meta(name = "viewport", content = "width=device-width, initial-scale=1"),
     tags$link(
