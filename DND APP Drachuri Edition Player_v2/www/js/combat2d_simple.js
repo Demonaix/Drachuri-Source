@@ -839,6 +839,7 @@ function setupCombat2DResizeHandler() {
   });
 
   document.addEventListener("fullscreenchange", () => {
+    document.body.classList.toggle("combat-document-fullscreen", !!document.fullscreenElement);
     setTimeout(() => scrollActiveTokenIntoView2D(), 120);
   });
 
@@ -892,10 +893,11 @@ function setupFullscreen2DHandler() {
 
     try {
       if (!document.fullscreenElement) {
-        if (shell.requestFullscreen) {
-          await shell.requestFullscreen();
-        } else if (shell.webkitRequestFullscreen) {
-          shell.webkitRequestFullscreen();
+        const fullscreenRoot = document.documentElement;
+        if (fullscreenRoot.requestFullscreen) {
+          await fullscreenRoot.requestFullscreen();
+        } else if (fullscreenRoot.webkitRequestFullscreen) {
+          fullscreenRoot.webkitRequestFullscreen();
         }
       } else {
         if (document.exitFullscreen) {

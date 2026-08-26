@@ -29,12 +29,18 @@ debugCombatUI <- function(id) {
           div(
             class = "combat-command-bar",
             div(
-              class = "combat-command-actions",
-              div(id=ns("combat_movement_group"),class="combat-action-group",span(class="combat-action-label","Movement"),uiOutput(ns("dash_button_ui")),uiOutput(ns("phase_move_ui"))),
-              div(id=ns("combat_actions_group"),class="combat-action-group",span(class="combat-action-label","Actions"),actionButton(ns("open_standard_actions"),"Combat Actions",class="btn btn-default"),uiOutput(ns("level_two_actions_ui")),uiOutput(ns("level_three_actions_ui")),uiOutput(ns("class_actions_ui")),uiOutput(ns("rogue_combat_ui"))),
-              div(class="combat-action-group",span(class="combat-action-label","Glyphs"),uiOutput(ns("combat_runes_ui")),uiOutput(ns("combat_wards_ui")))
+              id=ns("combat_primary_controls"),class = "combat-primary-controls",
+              actionButton(ns("toggle_movement_menu"),"↟ Movement",class="btn combat-main-command"),
+              actionButton(ns("toggle_actions_menu"),"⚔ Actions",class="btn combat-main-command"),
+              actionButton(ns("toggle_glyphs_menu"),"✦ Glyphs",class="btn combat-main-command"),
+              actionButton(ns("toggle_turn_menu"),"◆ Turn",class="btn combat-main-command")
             ),
-            div(id=ns("combat_turn_group"),class="combat-command-turn",span(class="combat-action-label","Turn"),actionButton(ns("open_loot"),"Loot Defeated",class="btn btn-success"),actionButton(ns("override_action_budget"),"Override",class="btn btn-default"),actionButton(ns("end_turn"),"End Turn",class="btn btn-warning"))
+            div(class="combat-command-menus",
+              shinyjs::hidden(div(id=ns("combat_movement_panel"),class="combat-action-panel",span(class="combat-action-label","Movement"),uiOutput(ns("dash_button_ui")),uiOutput(ns("phase_move_ui")))),
+              shinyjs::hidden(div(id=ns("combat_actions_panel"),class="combat-action-panel",span(class="combat-action-label","Actions"),actionButton(ns("open_standard_actions"),"Combat Actions",class="btn btn-default"),uiOutput(ns("level_two_actions_ui")),uiOutput(ns("level_three_actions_ui")),uiOutput(ns("class_actions_ui")),uiOutput(ns("rogue_combat_ui")))),
+              shinyjs::hidden(div(id=ns("combat_glyphs_panel"),class="combat-action-panel",span(class="combat-action-label","Glyphs"),uiOutput(ns("combat_runes_ui")),uiOutput(ns("combat_wards_ui")))),
+              shinyjs::hidden(div(id=ns("combat_turn_panel"),class="combat-action-panel",span(class="combat-action-label","Turn"),actionButton(ns("open_loot"),"Loot Defeated",class="btn btn-success"),actionButton(ns("override_action_budget"),"Override",class="btn btn-default"),actionButton(ns("end_turn"),"End Turn",class="btn btn-warning")))
+            )
           ),
           div(id=ns("combat_status_group"),class="combat-status-strip",uiOutput(ns("turn_actions_ui")),div(class="combat-turn-box",uiOutput(ns("turn_notice_ui")))
           )
@@ -1451,7 +1457,11 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       }
     }
     is_exploration_phase <- reactive({combat<-combat_tbl();is.data.frame(combat)&&nrow(combat)>0L&&identical(tolower(as.character(combat$phase[[1L]]%||%"")),"exploration")})
-    observe({exploring<-isTRUE(is_exploration_phase());for(id in c("combat_movement_group","combat_actions_group","combat_turn_group","combat_status_group","combat_runes_ui"))shinyjs::toggle(id=session$ns(id),condition=!exploring)})
+    observe({exploring<-isTRUE(is_exploration_phase());for(id in c("combat_primary_controls","combat_status_group"))shinyjs::toggle(id=session$ns(id),condition=!exploring)})
+    observeEvent(input$toggle_movement_menu,{shinyjs::toggle(id=session$ns("combat_movement_panel"))},ignoreInit=TRUE)
+    observeEvent(input$toggle_actions_menu,{shinyjs::toggle(id=session$ns("combat_actions_panel"))},ignoreInit=TRUE)
+    observeEvent(input$toggle_glyphs_menu,{shinyjs::toggle(id=session$ns("combat_glyphs_panel"))},ignoreInit=TRUE)
+    observeEvent(input$toggle_turn_menu,{shinyjs::toggle(id=session$ns("combat_turn_panel"))},ignoreInit=TRUE)
     
     is_players_turn <- reactive({
       cid <- as.character(core$state$char_id %||% "")

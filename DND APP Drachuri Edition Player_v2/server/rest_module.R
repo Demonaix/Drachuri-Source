@@ -437,10 +437,10 @@ restTabServer <- function(
     })
     output$active_status_cards<-renderUI({
       invalidateLater(1000,session)
-      p<-active_phase();if(is.null(p)||p$phase_kind[[1L]]!="rest")return(NULL)
+      p<-active_phase();if(is.null(p))return(NULL)
       x<-validate_character(state$char);sid<-online_session_id();fire<-if(is.na(sid))isTRUE(x$status$has_fire)else get_session_fire(sid)
       cid<-as.character(state$char_id%||%"");actions<-character()
-      if(nzchar(cid)){rows<-get_session_phase_actions(p$id[[1L]],cid);if(nrow(rows))actions<-as.character(rows$action_type)}
+      if(p$phase_kind[[1L]]=="rest"&&nzchar(cid)){rows<-get_session_phase_actions(p$id[[1L]],cid);if(nrow(rows))actions<-as.character(rows$action_type)}
       env<-shared_environment()%||%list(climate=x$environment$temperature%||%"Temperate",weather="")
       cards<-character_rest_status_cards(x,fire,actions,env)
       div(class="rest-status-wrap",

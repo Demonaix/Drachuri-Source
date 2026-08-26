@@ -457,10 +457,6 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
       rows$actor_type <- "player"
       if (!"max_hp" %in% names(rows)) rows$max_hp <- NA_integer_
       
-      if (!in_combat && "character_id" %in% names(rows)) {
-        rows <- rows[as.character(rows$character_id) != my_cid, , drop = FALSE]
-      }
-      
       if ("is_active" %in% names(rows)) {
         rows <- rows[rows$is_active %in% TRUE, , drop = FALSE]
       }
@@ -605,7 +601,7 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
         return(
           tagList(
             tags$div(class = "partyhud-label", "Party"),
-            tags$div(class = "partyhud-empty", "No other active players.")
+            tags$div(class = "partyhud-empty", "No active players.")
           )
         )
       }

@@ -13,7 +13,9 @@ controlGeographyClimateUI <- function(id) {
     fluidRow(column(8,textInput(ns("weather"),"Weather","Clear")),column(4,br(),actionButton(ns("save_environment"),"Save Environment",class="btn btn-primary"))),
     tags$hr(),
     h4("Phase control"),uiOutput(ns("phase_summary")),
-    div(style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end",selectInput(ns("phase_duration"),"Rest phase length",c("6 hours (one phase)"="6","12 hours (two phases)"="12"),selected="6",width="210px"),actionButton(ns("open_standard"),"Begin Standard Phase",class="btn btn-default"),actionButton(ns("open_rest"),"Begin Rest Phase",class="btn btn-primary"),actionButton(ns("resolve_phase"),"Resolve Open Phase",class="btn btn-warning")),
+    div(style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end",selectInput(ns("phase_duration"),"Rest phase length",c("6 hours (one phase)"="6","12 hours (two phases)"="12"),selected="6",width="210px"),actionButton(ns("open_standard"),"Begin Standard Phase",class="btn btn-default"),actionButton(ns("open_rest"),"Begin Rest Phase",class="btn btn-primary")),
+    div(class="control-mini",style="margin-top:10px;","When resolving, choose what begins immediately afterwards. Players will never be left between phases."),
+    div(style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end",selectInput(ns("next_phase_kind"),"Next phase",c("Standard phase"="standard","Rest phase"="rest"),selected="standard",width="190px"),selectInput(ns("next_phase_duration"),"Next rest length",c("6 hours"="6","12 hours"="12"),selected="6",width="160px"),actionButton(ns("resolve_phase"),"Resolve & Begin Next Phase",class="btn btn-warning")),
     uiOutput(ns("party_allocations"))
   )
 }
@@ -32,6 +34,6 @@ controlGeographyClimateServer <- function(id,ctrl,bump_refresh=NULL) {
     observeEvent(input$save_environment,{req(sid());x<-set_session_environment(sid(),input$day_number,input$time_of_day,input$geography,input$climate,input$weather);if(is.null(x))return(showNotification("Environment could not be saved.",type="error"));changed("Party environment updated.")},ignoreInit=TRUE)
     begin<-function(kind){req(sid());if(!is.null(get_open_session_phase(sid())))return(showNotification("Resolve the current phase first.",type="warning"));hours<-if(kind=="rest")as.numeric(input$phase_duration%||%6)else 6;x<-open_session_phase(sid(),kind,hours);if(is.null(x))return(showNotification("The phase could not be opened.",type="error"));changed(if(kind=="rest")paste0("Rest Mode opened for ",hours," hours for all players.")else"Standard phase opened. Players continue normally until you resolve it.")}
     observeEvent(input$open_standard,{begin("standard")},ignoreInit=TRUE);observeEvent(input$open_rest,{begin("rest")},ignoreInit=TRUE)
-    observeEvent(input$resolve_phase,{x<-phase();req(x);result<-resolve_session_phase(x$id[[1L]]);if(is.null(result))return(showNotification("The phase could not be resolved.",type="error"));changed(paste("Phase resolved. It is now",time_of_day_label(result$environment$time_of_day[[1L]]),"on day",result$environment$day_number[[1L]]))},ignoreInit=TRUE)
+    observeEvent(input$resolve_phase,{x<-phase();req(x);next_kind<-as.character(input$next_phase_kind%||%"standard");result<-resolve_session_phase(x$id[[1L]],next_kind,as.numeric(input$next_phase_duration%||%6));if(is.null(result)||is.null(result$next_phase))return(showNotification("The phase resolved, but the next phase could not be opened. Please begin one immediately.",type="error",duration=10));changed(paste("Phase resolved. It is now",time_of_day_label(result$environment$time_of_day[[1L]]),"on day",result$environment$day_number[[1L]],"and the next",next_kind,"phase is open."))},ignoreInit=TRUE)
   })
 }

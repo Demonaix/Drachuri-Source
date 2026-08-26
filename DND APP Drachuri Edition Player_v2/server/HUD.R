@@ -6,7 +6,7 @@ hudUI <- function(id) {
 #%s .status-card-fan{display:flex;align-items:flex-end;justify-content:center;padding:0 30px;pointer-events:auto}
 #%s .status-fan-card{position:relative;bottom:-92px;width:112px;height:140px;margin:0 -23px;padding:0;border:0;background:transparent;transition:bottom .18s ease,transform .18s ease,filter .18s ease;filter:drop-shadow(0 4px 5px rgba(0,0,0,.42));cursor:pointer}
 #%s .status-fan-card:nth-child(odd){transform:rotate(-4deg)} #%s .status-fan-card:nth-child(even){transform:rotate(4deg)}
-#%s .status-fan-card:hover,#%s .status-fan-card:focus{bottom:-8px;transform:rotate(0) scale(1.08);z-index:20;filter:drop-shadow(0 9px 9px rgba(0,0,0,.52));outline:none}
+#%s .status-fan-card:hover,#%s .status-fan-card:focus{bottom:14px;transform:rotate(0) scale(1.12);z-index:20;filter:drop-shadow(0 12px 11px rgba(0,0,0,.56));outline:none}
 #%s .status-fan-card img{width:112px;height:140px;object-fit:cover;border-radius:9px;display:block}
 .status-card-modal{text-align:center}.status-card-modal img{width:min(340px,80vw);aspect-ratio:4/5;object-fit:cover;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.4)}.status-card-modal p{max-width:520px;margin:14px auto 0;font-size:15px;line-height:1.45}
 ",ns("status_card_dock"),ns("status_card_dock"),ns("status_card_dock"),ns("status_card_dock"),ns("status_card_dock"),ns("status_card_dock"),ns("status_card_dock"),ns("status_card_dock")))),
@@ -57,13 +57,16 @@ hudUI <- function(id) {
 hudServer <- function(id, state, live_snapshot = NULL) {
   moduleServer(id, function(input, output, session) {
 
-    active_status_cards<-reactive({
+    status_card_state<-reactiveVal(list())
+    status_card_signature<-reactiveVal("")
+    observe({
       invalidateLater(1500,session);x<-validate_character(state$char);sid<-suppressWarnings(as.integer(state$active_session_id%||%NA));env<-list(climate=x$environment$temperature%||%"Temperate",weather="");fire<-isTRUE(x$status$has_fire);actions<-character()
       if(!isTRUE(state$offline_mode)&&!is.na(sid)&&sid>0L){fresh_env<-get_session_environment(sid);if(!is.null(fresh_env))env<-fresh_env;fire<-get_session_fire(sid);phase<-get_open_session_phase(sid);cid<-as.character(state$char_id%||%"");if(!is.null(phase)&&phase$phase_kind[[1L]]=="rest"&&nzchar(cid)){rows<-get_session_phase_actions(phase$id[[1L]],cid);if(nrow(rows))actions<-as.character(rows$action_type)}}
-      c(character_rest_status_cards(x,fire,actions,env),character_condition_status_cards(x))
+      cards<-c(character_rest_status_cards(x,fire,actions,env),character_condition_status_cards(x));signature<-paste(vapply(cards,function(card)paste(card$key,card$label,card$image,card$reason,card$tone,sep="|"),character(1)),collapse="||")
+      if(!identical(signature,isolate(status_card_signature()))){status_card_signature(signature);status_card_state(cards)}
     })
-    output$status_card_fan<-renderUI({cards<-active_status_cards();if(!length(cards))return(NULL);div(id=session$ns("status_card_dock"),div(class="status-card-fan",lapply(cards,function(card)tags$button(type="button",class=paste("status-fan-card",card$tone),`data-card-key`=card$key,title=paste(card$label,"— click for details"),tags$img(src=card$image,alt=card$label)))))})
-    observeEvent(input$status_card_click,{key<-as.character(input$status_card_click%||%"");cards<-active_status_cards();idx<-which(vapply(cards,function(card)identical(card$key,key),logical(1)));if(!length(idx))return();card<-cards[[idx[[1L]]]];showModal(modalDialog(title=card$label,div(class="status-card-modal",tags$img(src=card$image,alt=card$label),p(card$reason)),footer=modalButton("Close"),easyClose=TRUE,size="m"))},ignoreInit=TRUE)
+    output$status_card_fan<-renderUI({cards<-status_card_state();if(!length(cards))return(NULL);div(id=session$ns("status_card_dock"),div(class="status-card-fan",lapply(cards,function(card)tags$button(type="button",class=paste("status-fan-card",card$tone),`data-card-key`=card$key,title=paste(card$label,"— click for details"),tags$img(src=card$image,alt=card$label)))))})
+    observeEvent(input$status_card_click,{key<-as.character(input$status_card_click%||%"");cards<-status_card_state();idx<-which(vapply(cards,function(card)identical(card$key,key),logical(1)));if(!length(idx))return();card<-cards[[idx[[1L]]]];showModal(modalDialog(title=card$label,div(class="status-card-modal",tags$img(src=card$image,alt=card$label),p(card$reason)),footer=modalButton("Close"),easyClose=TRUE,size="m"))},ignoreInit=TRUE)
 
     session_hp_poll <- reactive({
       if (!is.function(live_snapshot)) return(data.frame())

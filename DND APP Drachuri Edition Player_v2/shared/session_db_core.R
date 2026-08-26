@@ -1858,7 +1858,7 @@ phase_hour_label <- function(time_of_day,offset) {
   format(as.POSIXct("2000-01-01",tz="UTC")+hour*3600,"%l:%M %p",tz="UTC") |> trimws()
 }
 
-resolve_session_phase <- function(phase_id) {
+resolve_session_phase <- function(phase_id,next_phase_kind=NULL,next_duration_hours=6) {
   con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE)
   phase<-tryCatch(DBI::dbGetQuery(con,"UPDATE session_time_phases SET status='resolving' WHERE id=$1 AND status='open' RETURNING *",params=list(as.integer(phase_id))),error=function(e)data.frame());if(!nrow(phase))return(NULL)
   sid<-as.integer(phase$session_id[[1L]]);hours<-as.numeric(phase$duration_hours[[1L]]);actions<-get_session_phase_actions(phase_id);players<-get_session_players(sid);env<-get_session_environment(sid);fire<-get_session_fire(sid)
@@ -1892,7 +1892,12 @@ resolve_session_phase <- function(phase_id) {
   }
   set_session_fire(sid,FALSE)
   DBI::dbExecute(con,"UPDATE session_time_phases SET status='resolved',resolved_at=now() WHERE id=$1",params=list(as.integer(phase_id)))
-  list(phase=phase,environment=updated_env,results=results)
+  next_phase<-NULL
+  if(!is.null(next_phase_kind)){
+    next_kind<-match.arg(as.character(next_phase_kind),c("standard","rest"));next_hours<-if(next_kind=="rest")as.numeric(next_duration_hours)else 6
+    next_phase<-tryCatch(DBI::dbGetQuery(con,"INSERT INTO session_time_phases(session_id,phase_kind,duration_hours) VALUES($1,$2,$3) RETURNING *",params=list(sid,next_kind,next_hours))[1,,drop=FALSE],error=function(e){message("next phase could not be opened: ",e$message);NULL})
+  }
+  list(phase=phase,environment=updated_env,results=results,next_phase=next_phase)
 }
 
 set_session_fire <- function(session_id,lit=TRUE,defaults=list()) {
