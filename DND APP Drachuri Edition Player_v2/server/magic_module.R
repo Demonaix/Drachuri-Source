@@ -640,23 +640,10 @@ magicTabServer <- function(
       } else {
         tagList(
           tags$p(style="opacity:.85;",
-                 "Refill will come from Rest options once the Rest module is added."),
-          tags$div(
-            style="display:flex; gap:10px; flex-wrap:wrap;",
-            actionButton(session$ns("short_rest"), "Short Rest (placeholder)", class="btn btn-default"),
-            actionButton(session$ns("long_rest"),  "Long Rest (placeholder)",  class="btn btn-default")
-          )
+                 "Sindre regenerates during Short and Long Rest using the saved Regen/hr rate shown below. Use the Rest module to rest and advance party time.")
         )
       }
     })
-    
-
-    observeEvent(input$short_rest, {
-      log_safe("🛌 Short Rest is not wired yet (Rest module coming soon).", toast = TRUE)
-    }, ignoreInit = TRUE)
-    observeEvent(input$long_rest, {
-      log_safe("🌙 Long Rest is not wired yet (Rest module coming soon).", toast = TRUE)
-    }, ignoreInit = TRUE)
     
     # -------------------------
     # UI: Pool summary

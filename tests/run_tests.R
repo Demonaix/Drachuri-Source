@@ -27,9 +27,11 @@ magic_data_file <- file.path(project_dir,"DND APP Drachuri Edition Player_v2","p
 glyph_core_file <- file.path(project_dir,"DND APP Drachuri Edition Player_v2","shared","glyph_core.R")
 combat_map_file <- file.path(project_dir,"DND APP Drachuri Edition 2 Control","server","combat_map_logic.R")
 map_builder_file <- file.path(project_dir,"DND APP Drachuri Edition 2 Control","control_app","modules","control_map_builder_module.R")
+encounter_generator_file <- file.path(project_dir,"DND APP Drachuri Edition 2 Control","control_app","modules","control_encounter_generator_core.R")
 
 test_env <- new.env(parent = baseenv())
 test_env$`%||%` <- function(a, b) if (!is.null(a)) a else b
+test_env$APP_SAVE_VERSION <- 2L
 test_env$COMBAT_WEAPON_STATS <- c("str", "dex", "con", "int", "bld_str", "cha")
 sys.source(magic_data_file,envir=test_env)
 
@@ -54,6 +56,8 @@ load_functions(global_file, c(
   "merchant_item_stock_weight", "merchant_haggle_terms",
   "food_item_meta", "food_rations_available", "consume_food_ration", "spoil_character_food",
   "camp_foraging_reward", "merchant_stock_category", "merchant_select_stock",
+  "required_intake", "warmth_requirement_hours",
+  "character_skill_modifier", "skill_card_count_for_rank", "character_skill_cards", "resolve_skill_card_roll", "party_skill_support_result",
   "equipped_magical_traits", "new_character", "validate_character", "inventory_empty", "inventory_normalize",
   "weapon_meta_defaults_global", "standard_spear_attack_modes",
   "upgrade_weapon_damage_die", "standard_weapon_attack_modes",
@@ -66,6 +70,7 @@ load_functions(enemy_generator_file, c("enemy_special_attack", "enemy_attack_cat
 load_functions(glyph_core_file,c("GLYPH_PHYSICAL_TYPES","glyph_character_level","glyph_unlocked_ranks","glyph_mastery_level","glyph_material_requirement","glyph_counter_outcome","glyph_default_identity","normalize_weapon_enchantments","validate_ward_resistances","glyph_zone_colour"))
 load_functions(combat_map_file,c("empty_map_tiles","create_square_map_tiles"))
 load_functions(map_builder_file,c("control_map_presets","generate_control_map_tiles"))
+load_functions(encounter_generator_file,c("encounter_damage_average","encounter_template_threat","encounter_party_budget","compose_encounter_draft","encounter_draft_dimensions","encounter_draft_positions"))
 load_functions(
   session_file,
   c(
@@ -128,6 +133,48 @@ test("higher-level character creation calculates class HP", {
   stopifnot(identical(test_env$starting_character_hp("Rogue",5L,10L,classes),28L))
   stopifnot(identical(test_env$starting_character_hp("Barbarian",5L,14L,classes),50L))
   stopifnot(identical(test_env$starting_character_hp("Rogue",3L,6L,classes),12L))
+})
+
+test("skill card requirements follow training rank", {
+  stopifnot(identical(test_env$skill_card_count_for_rank("None"), 0L))
+  stopifnot(identical(test_env$skill_card_count_for_rank("Proficient"), 1L))
+  stopifnot(identical(test_env$skill_card_count_for_rank("Expertise"), 2L))
+})
+
+test("trained character skill cards are persisted and rank-limited", {
+  original_validator <- test_env$validate_character
+  test_env$validate_character <- identity
+  on.exit(test_env$validate_character <- original_validator, add = TRUE)
+  character <- list(prof = list(skills = list(athletics = "Expertise"), skill_cards = list(
+    athletics = c("reliable", "wild_card", "inspired", "unknown")
+  )))
+  stopifnot(identical(test_env$character_skill_cards(character, "Athletics"), c("reliable", "wild_card")))
+  character$prof$skills$athletics <- "Proficient"
+  stopifnot(identical(test_env$character_skill_cards(character, "athletics"), "reliable"))
+})
+
+test("skill card roll effects combine independently", {
+  safe_wild <- test_env$resolve_skill_card_roll(3L, 5L, 3L, c("reliable", "wild_card"), wild_roll = 1L)
+  stopifnot(safe_wild$card_bonus == 0L, safe_wild$total == 8L)
+  inspired_wild <- test_env$resolve_skill_card_roll(18L, 5L, 3L, c("inspired", "wild_card"), wild_roll = 6L)
+  stopifnot(inspired_wild$card_bonus == 6L, inspired_wild$total == 29L)
+  quiet_wild <- test_env$resolve_skill_card_roll(10L, 2L, 3L, "wild_card", wild_roll = 4L)
+  stopifnot(quiet_wild$card_bonus == 0L, quiet_wild$total == 12L)
+})
+
+test("party skill support is useful, risky, and bounded", {
+  mixed<-test_env$party_skill_support_result(16L,c(18L,12L,7L),3L);stopifnot(mixed$total==16L,mixed$support==0L)
+  strong<-test_env$party_skill_support_result(16L,c(18L,19L,20L,17L),3L);stopifnot(strong$total==19L,strong$support==3L)
+  poor<-test_env$party_skill_support_result(16L,c(2L,3L,4L,5L),3L);stopifnot(poor$total==13L,poor$support== -3L)
+})
+
+test("group skill checks persist every response and have a bounded response window", {
+  migration<-paste(readLines(file.path(project_dir,"database","migrations","039_party_skill_check_contributions.sql"),warn=FALSE),collapse="\n")
+  skills<-paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","skills_module.R"),warn=FALSE),collapse="\n")
+  shared<-paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","shared","session_db_core.R"),warn=FALSE),collapse="\n")
+  stopifnot(grepl("party_skill_check_contributions",migration,fixed=TRUE))
+  stopifnot(grepl("respond_party_skill_check",skills,fixed=TRUE),grepl("finalize_party_skill_check",skills,fixed=TRUE))
+  stopifnot(grepl("party_skill_support_result(leader,helpers",shared,fixed=TRUE))
 })
 
 test("camp gathering checks map to bounded supply yields", {
@@ -231,8 +278,9 @@ test("Control map builder exposes Ravine as a movement-blocking sight line", {
   builder <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition 2 Control", "control_app", "modules", "control_map_builder_module.R"), warn=FALSE), collapse="\n")
   colours <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition 2 Control", "www", "js", "mapBuilder2d.js"), warn=FALSE), collapse="\n")
   stopifnot(grepl('"ravine"', builder, fixed=TRUE))
-  stopifnot(grepl('paint_blocks_movement", value = TRUE', builder, fixed=TRUE))
-  stopifnot(grepl('paint_blocks_vision", value = FALSE', builder, fixed=TRUE))
+  stopifnot(grepl('ravine=c(1,1,0)', gsub(" ","",builder), fixed=TRUE))
+  stopifnot(grepl('updateCheckboxInput(session, "paint_blocks_movement"', builder, fixed=TRUE))
+  stopifnot(grepl('updateCheckboxInput(session, "paint_blocks_vision"', builder, fixed=TRUE))
   stopifnot(grepl('ravine: "#111015"', colours, fixed=TRUE))
 })
 
@@ -531,6 +579,14 @@ test("party HUD is the authoritative combat roster", {
   stopifnot(grepl('snapshot$enemies', party_hud_source, fixed = TRUE))
   stopifnot(grepl('active_actor_id', party_hud_source, fixed = TRUE))
   stopifnot(grepl('Initiative ', party_hud_source, fixed = TRUE))
+  stopifnot(grepl('class = paste("party-portrait"', party_hud_source, fixed = TRUE))
+  stopifnot(grepl('portrait_base = "assets/player-posters"', party_hud_source, fixed = TRUE))
+  stopifnot(grepl('paste0(sub("/$", "", portrait_base)', party_hud_source, fixed = TRUE))
+  control_server <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition 2 Control","server.R"),warn=FALSE),collapse="\n")
+  stopifnot(grepl('portrait_base="player-assets/assets/player-posters"',control_server,fixed=TRUE))
+  stopifnot(grepl('dewydd_troell = "dewydd-troell.png"', party_hud_source, fixed = TRUE))
+  stopifnot(grepl('eleri = "eleri.png"', party_hud_source, fixed = TRUE))
+  stopifnot(grepl('party-portrait-initial', party_hud_source, fixed = TRUE))
 })
 
 test("Character and Level camp shortcuts route to different modules", {
@@ -999,6 +1055,12 @@ test("level-two abilities are connected to action and skill interfaces", {
   stopifnot(grepl('input$use_detect_undead', combat_source, fixed = TRUE))
   stopifnot(grepl('input$use_mind_bender', skills_source, fixed = TRUE))
   stopifnot(grepl('has_feature("danger_sense")', skills_source, fixed = TRUE))
+})
+
+test("Continue Adventure reports load and validation failures", {
+  landing_source <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","landing_module.R"),warn=FALSE),collapse="\n")
+  stopifnot(grepl('showNotification("Continue Adventure could not reach any saved characters.',landing_source,fixed=TRUE))
+  stopifnot(grepl('restored<-tryCatch(validate_character(x)',landing_source,fixed=TRUE))
 })
 
 test("level up requires and stores a subclass choice", {
@@ -1487,14 +1549,33 @@ test("manual magic types use the same damage vocabulary as glyphs", {
 })
 
 test("map autogenerator creates deterministic editable terrain presets", {
-  presets<-unname(test_env$control_map_presets());allowed<-c("grass","sand","stone","forest","swamp","water","wall","ravine","road","mandred_convergence")
+  presets<-unname(test_env$control_map_presets());clutter<-c("table","bar","chair","bench","crate","barrel","bed","shelf","rubble","campfire");allowed<-c("grass","sand","stone","forest","swamp","water","wall","ravine","road","mandred_convergence",clutter)
   maps<-setNames(lapply(presets,function(p)test_env$generate_control_map_tiles(42L,16L,12L,p,seed=77L,density=40)),presets)
   stopifnot(all(vapply(maps,nrow,integer(1))==192L),all(vapply(maps,function(x)all(x$terrain%in%allowed),logical(1))))
   stopifnot(identical(maps$forest,test_env$generate_control_map_tiles(42L,16L,12L,"forest",77L,40)))
-  stopifnot(any(maps$tavern$terrain=="wall"),any(maps$prison$terrain=="wall"),any(maps$forest$terrain=="road"))
+  stopifnot(any(maps$tavern$terrain=="wall"),any(maps$tavern$terrain=="bar"),any(maps$tavern$terrain=="table"),any(maps$prison$terrain=="wall"),any(maps$prison$terrain=="bed"),any(maps$forest$terrain=="road"))
   stopifnot(all(maps$tavern$blocks_movement[maps$tavern$terrain=="wall"]),all(maps$forest$move_cost[maps$forest$terrain=="forest"]==2))
   stopifnot(any(maps$ravine$terrain=="ravine"),all(maps$ravine$blocks_movement[maps$ravine$terrain=="ravine"]))
   stopifnot(any(maps$river$terrain=="water"),any(maps$river$terrain=="road"),any(maps$coast$terrain=="sand"),any(maps$coast$terrain=="water"))
+})
+
+test("improvised encounter drafts are deterministic, party-aware and editable", {
+  players<-data.frame(character_id=c("p1","p2","p3"),max_hp=c(24L,30L,18L),is_active=TRUE)
+  templates<-data.frame(npc_id=c("scout","guard","brute"),name=c("Scout","Guard","Brute"),hp_max=c(12L,22L,38L),ac=c(11L,14L,15L),attack_bonus=c(3L,4L,5L),damage_expr=c("1d6+1","1d8+2","2d8+3"),stringsAsFactors=FALSE)
+  standard<-test_env$compose_encounter_draft(players,templates,"standard",seed=44L)
+  repeat_draft<-test_env$compose_encounter_draft(players,templates,"standard",seed=44L)
+  dangerous<-test_env$compose_encounter_draft(players,templates,"dangerous",seed=44L)
+  stopifnot(identical(standard$enemies$npc_id,repeat_draft$enemies$npc_id))
+  stopifnot(standard$party_size==3L,nrow(standard$enemies)>=1L,dangerous$party_budget>standard$party_budget)
+  dims<-test_env$encounter_draft_dimensions(standard$party_size,nrow(standard$enemies));stopifnot(dims[["width"]]>=12L,dims[["height"]]>=10L)
+  tiles<-test_env$generate_control_map_tiles(42L,dims[["width"]],dims[["height"]],"forest",44L,35)
+  enemy_ids<-paste0("e",seq_len(nrow(standard$enemies)));positions<-test_env$encounter_draft_positions(tiles,players$character_id,enemy_ids,44L)
+  stopifnot(nrow(positions)==nrow(players)+length(enemy_ids),length(unique(paste(positions$x,positions$y)))==nrow(positions))
+  stopifnot(max(positions$y[positions$actor_type=="player"])<min(positions$y[positions$actor_type=="enemy"]))
+  setup_source<-paste(readLines(file.path(project_dir,"DND APP Drachuri Edition 2 Control","control_app","modules","control_encounter_setup_module.R"),warn=FALSE),collapse="\n")
+  stopifnot(grepl("Generate Improvised Encounter",setup_source,fixed=TRUE),grepl("create_generated_encounter",setup_source,fixed=TRUE))
+  stopifnot(grepl('create_encounter(sid,encounter_name,map_id,"setup")',setup_source,fixed=TRUE),grepl("set_shared_map_tiles(ctrl,map_id,tiles)",setup_source,fixed=TRUE))
+  stopifnot(grepl("merge_npc_pool_catalogue",setup_source,fixed=TRUE),grepl("Review it before starting combat",setup_source,fixed=TRUE))
 })
 
 test("lean 3D renderer keeps costly features optional", {
@@ -1520,6 +1601,7 @@ test("lean 3D renderer keeps costly features optional", {
   stopifnot(!grepl("GLTFLoader", js, fixed = TRUE))
   stopifnot(grepl("makeMiniature", js, fixed = TRUE), grepl("actorColour", js, fixed = TRUE))
   stopifnot(grepl("PointLight", js, fixed = TRUE), grepl("chandelierLight", js, fixed = TRUE))
+  stopifnot(grepl("SpotLight", js, fixed = TRUE), grepl("buildTerrainTransitions", js, fixed = TRUE))
   stopifnot(!grepl("function animate", js, fixed = TRUE))
 })
 
@@ -1531,6 +1613,15 @@ test("lean 3D renderer pins live combatant posters to the tavern wall", {
   stopifnot(grepl("occupant_sindre_cur", js, fixed = TRUE))
   stopifnot(grepl("canvas.width=640", js, fixed = TRUE))
   stopifnot(grepl("state.roomDepth/2", js, fixed = TRUE))
+  stopifnot(grepl("addCards(players,6.25", js, fixed = TRUE))
+  stopifnot(grepl("addCards(enemies,2.5", js, fixed = TRUE))
+  stopifnot(grepl('eman:"eman.png"', js, fixed = TRUE))
+  stopifnot(grepl('dewydd_troell:"dewydd-troell.png"', js, fixed = TRUE))
+  stopifnot(grepl('eleri:"eleri.png"', js, fixed = TRUE))
+  stopifnot(grepl("playerPosterFile", js, fixed = TRUE))
+  stopifnot(file.exists(file.path("DND APP Drachuri Edition Player_v2","www","assets","player-posters","eman.png")))
+  stopifnot(file.exists(file.path("DND APP Drachuri Edition Player_v2","www","assets","player-posters","dewydd-troell.png")))
+  stopifnot(file.exists(file.path("DND APP Drachuri Edition Player_v2","www","assets","player-posters","eleri.png")))
   player_combat <- paste(readLines(file.path("DND APP Drachuri Edition Player_v2", "server", "debug_combat_module.R"), warn = FALSE), collapse = "\n")
   control_combat <- paste(readLines(file.path("DND APP Drachuri Edition 2 Control", "control_app", "modules", "control_live_combat_module.R"), warn = FALSE), collapse = "\n")
   stopifnot(all(vapply(c(player_combat, control_combat), function(src) grepl("occupant_conditions", src, fixed = TRUE), logical(1))))
@@ -1659,7 +1750,7 @@ test("generated environment textures are shipped and wired into 3D", {
     "water.jpg", "ravine.jpg", "pit.jpg", "bark.jpg", "leaves.jpg",
     "tavern_table_oak.jpg", "tavern_floorboards.jpg",
     "tavern_plaster_timbers.jpg", "tavern_wall_door_complete.png",
-    "wanted_dracnos_text.png", "wanted_lord_blacklyn_text.png", "battlefield_fieldstone.jpg"
+    "wanted_dracnos_text.png", "wanted_lord_blacklyn_text.png", "battlefield_fieldstone.jpg", "clutter_oak.png"
   )
   stopifnot(all(file.exists(file.path(texture_dir, assets))))
   stopifnot(all(file.info(file.path(texture_dir, assets))$size > 100000))
@@ -1715,10 +1806,108 @@ test("Mac player installer builds one DMG with app, R and locked packages", {
   stopifnot(grepl("DND_LAUNCH_PORT", runner, fixed = TRUE))
 })
 
+test("loading and camp screens use the revised illustrated artwork", {
+  ui_source <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition Player_v2", "ui.R"), warn = FALSE), collapse = "\n")
+  camp_source <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition Player_v2", "server", "camp_module.R"), warn = FALSE), collapse = "\n")
+  www_dir <- file.path(project_dir, "DND APP Drachuri Edition Player_v2", "www")
+  stopifnot(file.exists(file.path(www_dir, "loading_screen_parchment.png")))
+  stopifnot(file.exists(file.path(www_dir, "camp_realistic_hud_safe.png")))
+  stopifnot(file.exists(file.path(www_dir, "camp_realistic_dawn_hud_safe.png")))
+  stopifnot(file.exists(file.path(www_dir, "camp_realistic_day_hud_safe.png")))
+  stopifnot(file.exists(file.path(www_dir, "camp_realistic_dusk_hud_safe.png")))
+  stopifnot(grepl("loading_screen_parchment.png", ui_source, fixed = TRUE))
+  stopifnot(grepl("camp_realistic_hud_safe.png", ui_source, fixed = TRUE))
+  stopifnot(grepl("camp_realistic_hud_safe.png", camp_source, fixed = TRUE))
+  stopifnot(grepl('left: 52%; top: 34%; width: 13%; height: 13%;', camp_source, fixed = TRUE))
+  stopifnot(grepl('left: 86%; top: 38%; width: 11%; height: 18%;', camp_source, fixed = TRUE))
+  stopifnot(grepl('left: 69%; top: 75%; width: 21%; height: 21%;', camp_source, fixed = TRUE))
+})
+
+test("party time is shared across camp, rest, runes and DM geography controls", {
+  shared <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","shared","session_db_core.R"),warn=FALSE),collapse="\n")
+  camp <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","camp_module.R"),warn=FALSE),collapse="\n")
+  hud <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","HUD.R"),warn=FALSE),collapse="\n")
+  rest <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","rest_module.R"),warn=FALSE),collapse="\n")
+  runes <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","rune_crafting_module.R"),warn=FALSE),collapse="\n")
+  control <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition 2 Control","control_app","modules","control_geography_climate_module.R"),warn=FALSE),collapse="\n")
+  migration <- paste(readLines(file.path(project_dir,"database","migrations","040_session_environment_clock.sql"),warn=FALSE),collapse="\n")
+  stopifnot(grepl('c("dawn", "day", "dusk", "night")',shared,fixed=TRUE))
+  stopifnot(grepl("FOR UPDATE",shared,fixed=TRUE),grepl("revision=revision+1",shared,fixed=TRUE))
+  stopifnot(grepl("session_environment_state",migration,fixed=TRUE))
+  stopifnot(grepl("camp_realistic_dawn_hud_safe.png",camp,fixed=TRUE),!grepl("shared_clock_badge",camp,fixed=TRUE))
+  stopifnot(grepl("time_of_day_label(env$time_of_day",hud,fixed=TRUE))
+  stopifnot(grepl("phase-clock",rest,fixed=TRUE),grepl("Organise Watches",rest,fixed=TRUE))
+  stopifnot(grepl('allocate_session_phase_time(p$id[[1L]],cid,type,label,hours',rest,fixed=TRUE))
+  stopifnot(grepl("allocate_session_phase_time(phase$id[[1L]],cid(),\"glyph_work\"",runes,fixed=TRUE))
+  stopifnot(file.exists(file.path(project_dir,"database","migrations","041_session_clock_elapsed_hours.sql")))
+  stopifnot(file.exists(file.path(project_dir,"database","migrations","042_dm_rest_phases.sql")))
+  stopifnot(file.exists(file.path(project_dir,"database","migrations","043_repeatable_camp_gathering.sql")))
+  stopifnot(grepl("Begin Standard Phase",control,fixed=TRUE),grepl("Begin Rest Phase",control,fixed=TRUE),grepl("12 hours (two phases)",control,fixed=TRUE),grepl("Resolve Open Phase",control,fixed=TRUE))
+  stopifnot(grepl('budget<-as.numeric(p$duration_hours[[1L]])',rest,fixed=TRUE))
+  stopifnot(grepl('gather_label(resource)),1)',rest,fixed=TRUE),grepl('Help with gathering",1',rest,fixed=TRUE))
+  stopifnot(!grepl("one camp-gathering action",rest,fixed=TRUE))
+  stopifnot(!grepl("add_rations_btn",rest,fixed=TRUE),!grepl("remove_rations_btn",rest,fixed=TRUE),!grepl("add_water_btn",rest,fixed=TRUE),!grepl("remove_water_btn",rest,fixed=TRUE))
+  stopifnot(grepl("restore_sindre(char,hours=hours)",shared,fixed=TRUE),grepl("resolve_session_phase <-",shared,fixed=TRUE))
+})
+
+test("rest status cards present the existing survival and phase rules", {
+  shared_core<-paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","shared","global_core.R"),warn=FALSE),collapse="\n")
+  session_core<-paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","shared","session_db_core.R"),warn=FALSE),collapse="\n")
+  rest<-paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","rest_module.R"),warn=FALSE),collapse="\n")
+  hud<-paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","HUD.R"),warn=FALSE),collapse="\n")
+  blood<-paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","blood_module.R"),warn=FALSE),collapse="\n")
+  card_dir<-file.path(project_dir,"DND APP Drachuri Edition Player_v2","www","assets","status-cards")
+  required<-c("rest/warm.png","rest/cold.png","rest/hungry.png","rest/well_fed.png","rest/parched.png","rest/hydrated.png","rest/insufficient_blood.png","rest/sufficient_blood.png","blood-addiction/blood_addiction_2_craving.png","conditions/exhaustion_1_weary.png","conditions/exhaustion_6_collapsed.png")
+  stopifnot(all(file.exists(file.path(card_dir,required))))
+  stopifnot(grepl("character_rest_status_cards <-",shared_core,fixed=TRUE),grepl("Active Rest Cards",rest,fixed=TRUE))
+  stopifnot(!grepl("Recovery is applied from your phase plan",rest,fixed=TRUE),grepl("status-card-fan",hud,fixed=TRUE),grepl("status_card_click",hud,fixed=TRUE),grepl("status-card-modal",hud,fixed=TRUE))
+  stopifnot(grepl("blood_status_cards",blood,fixed=TRUE),grepl("blood-status-hand",blood,fixed=TRUE),grepl('"sufficient_blood", "insufficient_blood"',blood,fixed=TRUE))
+  stopifnot(grepl("Hungry",session_core,fixed=TRUE),grepl("Parched",session_core,fixed=TRUE),grepl("Cold",session_core,fixed=TRUE),grepl("phase_resolution",session_core,fixed=TRUE))
+  stopifnot(grepl("A fire can only be lit during an official Rest Phase.",rest,fixed=TRUE),grepl('toggleState("light_fire",condition=rest_open)',rest,fixed=TRUE))
+  stopifnot(grepl('sleep="No Long Rest"',session_core,fixed=TRUE),grepl('if("long_rest"%in%types)next_hours[["sleep"]]<-0',session_core,fixed=TRUE))
+  stopifnot(test_env$warmth_requirement_hours(list(climate="Temperate"))==24,test_env$warmth_requirement_hours(list(climate="Cold"))==12,test_env$warmth_requirement_hours(list(climate="Alpine"))==6,is.infinite(test_env$warmth_requirement_hours(list(climate="Tropical"))))
+  stopifnot(test_env$required_intake(list(stage=2,previous_day_intake=0))==1)
+})
+
 test("installed player UI re-anchors late Shiny sessions to the app root", {
   ui_source <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition Player_v2", "ui.R"), warn = FALSE), collapse = "\n")
+  server_source <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition Player_v2", "server.R"), warn = FALSE), collapse = "\n")
   stopifnot(grepl('Sys.getenv("DRACHURI_APP_DIR", "")', ui_source, fixed = TRUE))
   stopifnot(grepl("setwd(normalizePath(drachuri_app_root", ui_source, fixed = TRUE))
+  stopifnot(grepl('Sys.getenv("DRACHURI_APP_DIR", "")', server_source, fixed = TRUE))
+  stopifnot(grepl("setwd(normalizePath(drachuri_app_root", server_source, fixed = TRUE))
+})
+
+test("Mac player waits in a branded launcher before opening the browser", {
+  launch <- paste(readLines(file.path("installer", "mac", "Drachuri Player"), warn = FALSE), collapse = "\n")
+  runner <- paste(readLines(file.path("installer", "player", "installed_run.R"), warn = FALSE), collapse = "\n")
+  stopifnot(grepl('buttons {"Quit", "Settings", "Launch"}', launch, fixed = TRUE))
+  stopifnot(grepl('with icon POSIX file iconPath', launch, fixed = TRUE))
+  stopifnot(grepl('DND_LAUNCH_BROWSER="false"', launch, fixed = TRUE))
+  stopifnot(grepl('curl --silent --fail', launch, fixed = TRUE))
+  stopifnot(grepl('running-build-id', launch, fixed = TRUE))
+  stopifnot(grepl('if [ "$running_build_id" = "$app_build_id" ]', launch, fixed = TRUE))
+  stopifnot(grepl('Sys.getenv("DND_LAUNCH_BROWSER", "false")', runner, fixed = TRUE))
+})
+
+test("installed launchers check one cross-platform GitHub release manifest", {
+  updater <- paste(readLines(file.path("installer", "shared", "check_for_update.R"), warn = FALSE), collapse = "\n")
+  mac_player <- paste(readLines(file.path("installer", "mac", "Drachuri Player"), warn = FALSE), collapse = "\n")
+  mac_control <- paste(readLines(file.path("installer", "control", "mac", "Drachuri Control"), warn = FALSE), collapse = "\n")
+  windows_player <- paste(readLines(file.path("installer", "player", "Drachuri Player.cmd"), warn = FALSE), collapse = "\n")
+  windows_installer <- paste(readLines(file.path("installer", "player", "DrachuriPlayer.iss"), warn = FALSE), collapse = "\n")
+  mac_player_build <- paste(readLines(file.path("installer", "mac", "build_mac_installer.sh"), warn = FALSE), collapse = "\n")
+  release_script <- paste(readLines(file.path("scripts", "release_drachuri.sh"), warn = FALSE), collapse = "\n")
+  stopifnot(grepl("releases/latest/download/drachuri-update.json", updater, fixed = TRUE))
+  stopifnot(grepl("manifest$products[[product]][[platform]]", updater, fixed = TRUE))
+  stopifnot(grepl("player mac", mac_player, fixed = TRUE))
+  stopifnot(grepl("control mac", mac_control, fixed = TRUE))
+  stopifnot(grepl("player windows", windows_player, fixed = TRUE))
+  stopifnot(grepl("check_for_update.R", windows_installer, fixed = TRUE))
+  stopifnot(grepl('resources/update/check_for_update.R', mac_player_build, fixed = TRUE))
+  stopifnot(grepl('"windows":$player_windows_json', release_script, fixed = TRUE))
+  stopifnot(grepl('"control":{"mac":$control_mac_json,"windows":null}', release_script, fixed = TRUE))
+  stopifnot(grepl('"$gh_bin" release create', release_script, fixed = TRUE))
 })
 
 test("control dashboard ships its branded lightweight DM desk theme", {

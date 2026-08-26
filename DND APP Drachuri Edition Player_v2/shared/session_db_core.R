@@ -1732,13 +1732,167 @@ begin_session_long_rest <- function(session_id,character_id,current_day) {
 complete_session_long_rest <- function(cycle_id,character_id,outcome="full") {
   con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE)
   outcome<-match.arg(as.character(outcome),c("full","half","skip"))
-  tryCatch({DBI::dbExecute(con,"INSERT INTO session_rest_completions(rest_cycle_id,character_id,rest_outcome) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",params=list(as.integer(cycle_id),as.character(character_id),outcome));DBI::dbGetQuery(con,paste("SELECT count(*)::integer AS completed,(SELECT count(*)::integer FROM session_players sp JOIN session_rest_cycles rc ON rc.session_id=sp.session_id WHERE rc.id=$1 AND sp.is_active=TRUE) AS active FROM session_rest_completions WHERE rest_cycle_id=$1"),params=list(as.integer(cycle_id)))[1,,drop=FALSE]},error=function(e){message("complete_session_long_rest failed: ",e$message);NULL})
+  tryCatch(DBI::dbWithTransaction(con,{
+    cycle<-DBI::dbGetQuery(con,"SELECT * FROM session_rest_cycles WHERE id=$1 FOR UPDATE",params=list(as.integer(cycle_id)));if(!nrow(cycle))stop("Rest cycle not found.")
+    inserted<-DBI::dbExecute(con,"INSERT INTO session_rest_completions(rest_cycle_id,character_id,rest_outcome) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",params=list(as.integer(cycle_id),as.character(character_id),outcome))
+    progress<-DBI::dbGetQuery(con,paste("SELECT count(*)::integer AS completed,(SELECT count(*)::integer FROM session_players sp WHERE sp.session_id=$2 AND sp.is_active=TRUE) AS active FROM session_rest_completions WHERE rest_cycle_id=$1"),params=list(as.integer(cycle_id),as.integer(cycle$session_id[[1L]])))[1,,drop=FALSE]
+    progress$clock_advanced<-FALSE
+    if(inserted>0L&&progress$completed[[1L]]>=max(1L,progress$active[[1L]])){
+      DBI::dbExecute(con,"INSERT INTO session_environment_state(session_id,day_number,time_of_day) VALUES($1,$2,'dawn') ON CONFLICT(session_id) DO UPDATE SET day_number=GREATEST(session_environment_state.day_number,EXCLUDED.day_number),time_of_day='dawn',phase_elapsed_hours=0,revision=session_environment_state.revision+1,updated_at=now()",params=list(as.integer(cycle$session_id[[1L]]),as.integer(cycle$day_number[[1L]])))
+      progress$clock_advanced<-TRUE
+    }
+    progress
+  }),error=function(e){message("complete_session_long_rest failed: ",e$message);NULL})
 }
 
 get_session_fire <- function(session_id,defaults=list()) {
   row<-get_session_supplies(session_id,defaults)
   if(is.null(row)||!"has_fire"%in%names(row))return(FALSE)
   isTRUE(row$has_fire[[1L]])
+}
+
+TIME_OF_DAY_PHASES <- c("dawn", "day", "dusk", "night")
+
+normalise_time_of_day <- function(value, fallback = "dawn") {
+  value <- tolower(trimws(as.character(value %||% fallback)[1L]))
+  if (!value %in% TIME_OF_DAY_PHASES) fallback else value
+}
+
+time_of_day_label <- function(value) {
+  tools::toTitleCase(normalise_time_of_day(value))
+}
+
+get_session_environment <- function(session_id) {
+  con <- get_db_connection(); if (is.null(con)) return(NULL)
+  on.exit(release_db_connection(con), add = TRUE)
+  sid <- suppressWarnings(as.integer(session_id)); if (is.na(sid) || sid < 1L) return(NULL)
+  tryCatch(DBI::dbGetQuery(con, paste(
+    "INSERT INTO session_environment_state(session_id) VALUES($1)",
+    "ON CONFLICT(session_id) DO UPDATE SET session_id=EXCLUDED.session_id RETURNING *"
+  ), params=list(sid))[1,,drop=FALSE], error=function(e){message("get_session_environment failed: ",e$message);NULL})
+}
+
+set_session_environment <- function(session_id, day_number=NULL, time_of_day=NULL,
+                                    geography=NULL, climate=NULL, weather=NULL) {
+  current <- get_session_environment(session_id); if (is.null(current)) return(NULL)
+  con <- get_db_connection(); if (is.null(con)) return(NULL)
+  on.exit(release_db_connection(con), add = TRUE)
+  day <- suppressWarnings(as.integer(day_number %||% current$day_number[[1L]])); if(is.na(day)||day<1L)day<-1L
+  phase <- normalise_time_of_day(time_of_day %||% current$time_of_day[[1L]])
+  clean <- function(value, old) { value<-trimws(as.character(value%||%old)[1L]); if(nzchar(value))value else old }
+  tryCatch(DBI::dbGetQuery(con, paste(
+    "UPDATE session_environment_state SET day_number=$2,time_of_day=$3,geography=$4,climate=$5,weather=$6,",
+    "revision=revision+1,updated_at=now() WHERE session_id=$1 RETURNING *"
+  ),params=list(as.integer(session_id),day,phase,clean(geography,current$geography[[1L]]),clean(climate,current$climate[[1L]]),clean(weather,current$weather[[1L]])))[1,,drop=FALSE],
+  error=function(e){message("set_session_environment failed: ",e$message);NULL})
+}
+
+advance_session_time <- function(session_id, phases=1L, expected_revision=NULL) {
+  con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE)
+  sid<-suppressWarnings(as.integer(session_id));steps<-suppressWarnings(as.integer(phases));if(is.na(sid)||sid<1L||is.na(steps)||steps<0L)return(NULL)
+  tryCatch(DBI::dbWithTransaction(con,{
+    DBI::dbExecute(con,"INSERT INTO session_environment_state(session_id) VALUES($1) ON CONFLICT DO NOTHING",params=list(sid))
+    row<-DBI::dbGetQuery(con,"SELECT * FROM session_environment_state WHERE session_id=$1 FOR UPDATE",params=list(sid))[1,,drop=FALSE]
+    if(!is.null(expected_revision)&&as.numeric(row$revision[[1L]])!=as.numeric(expected_revision))return(structure(NULL,clock_conflict=TRUE))
+    index<-match(normalise_time_of_day(row$time_of_day[[1L]]),TIME_OF_DAY_PHASES)-1L
+    total<-index+steps;day<-as.integer(row$day_number[[1L]])+(total%/%length(TIME_OF_DAY_PHASES));phase<-TIME_OF_DAY_PHASES[(total%%length(TIME_OF_DAY_PHASES))+1L]
+    DBI::dbGetQuery(con,"UPDATE session_environment_state SET day_number=$2,time_of_day=$3,phase_elapsed_hours=0,revision=revision+1,updated_at=now() WHERE session_id=$1 RETURNING *",params=list(sid,day,phase))[1,,drop=FALSE]
+  }),error=function(e){message("advance_session_time failed: ",e$message);NULL})
+}
+
+advance_session_hours <- function(session_id, hours) {
+  con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE)
+  sid<-suppressWarnings(as.integer(session_id));hours<-suppressWarnings(as.numeric(hours));if(is.na(sid)||sid<1L||is.na(hours)||hours<0)return(NULL)
+  tryCatch(DBI::dbWithTransaction(con,{
+    DBI::dbExecute(con,"INSERT INTO session_environment_state(session_id) VALUES($1) ON CONFLICT DO NOTHING",params=list(sid))
+    row<-DBI::dbGetQuery(con,"SELECT * FROM session_environment_state WHERE session_id=$1 FOR UPDATE",params=list(sid))[1,,drop=FALSE]
+    elapsed<-as.numeric(row$phase_elapsed_hours[[1L]]%||%0)+hours;steps<-floor(elapsed/6);remainder<-elapsed-(steps*6)
+    index<-match(normalise_time_of_day(row$time_of_day[[1L]]),TIME_OF_DAY_PHASES)-1L;total<-index+steps
+    day<-as.integer(row$day_number[[1L]])+(total%/%length(TIME_OF_DAY_PHASES));phase<-TIME_OF_DAY_PHASES[(total%%length(TIME_OF_DAY_PHASES))+1L]
+    DBI::dbGetQuery(con,"UPDATE session_environment_state SET day_number=$2,time_of_day=$3,phase_elapsed_hours=$4,revision=revision+1,updated_at=now() WHERE session_id=$1 RETURNING *",params=list(sid,day,phase,remainder))[1,,drop=FALSE]
+  }),error=function(e){message("advance_session_hours failed: ",e$message);NULL})
+}
+
+time_phases_for_hours <- function(hours) {
+  hours<-suppressWarnings(as.numeric(hours));if(is.na(hours)||hours<=0)return(0L);as.integer(ceiling(hours/6))
+}
+
+get_open_session_phase <- function(session_id) {
+  con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE)
+  tryCatch({x<-DBI::dbGetQuery(con,"SELECT * FROM session_time_phases WHERE session_id=$1 AND status='open' ORDER BY id DESC LIMIT 1",params=list(as.integer(session_id)));if(nrow(x))x[1,,drop=FALSE]else NULL},error=function(e)NULL)
+}
+
+open_session_phase <- function(session_id,phase_kind="rest",duration_hours=6) {
+  con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE);kind<-match.arg(as.character(phase_kind),c("standard","rest"))
+  tryCatch(DBI::dbGetQuery(con,"INSERT INTO session_time_phases(session_id,phase_kind,duration_hours) VALUES($1,$2,$3) RETURNING *",params=list(as.integer(session_id),kind,as.numeric(duration_hours)))[1,,drop=FALSE],error=function(e){message("open_session_phase failed: ",e$message);NULL})
+}
+
+get_session_phase_actions <- function(phase_id,character_id=NULL) {
+  con<-get_db_connection();if(is.null(con))return(data.frame());on.exit(release_db_connection(con),add=TRUE)
+  tryCatch(if(is.null(character_id))DBI::dbGetQuery(con,"SELECT * FROM session_phase_actions WHERE phase_id=$1 ORDER BY created_at,id",params=list(as.integer(phase_id)))else DBI::dbGetQuery(con,"SELECT * FROM session_phase_actions WHERE phase_id=$1 AND character_id=$2 ORDER BY created_at,id",params=list(as.integer(phase_id),as.character(character_id))),error=function(e)data.frame())
+}
+
+session_phase_time_remaining <- function(phase_id,character_id) {
+  con<-get_db_connection();if(is.null(con))return(0);on.exit(release_db_connection(con),add=TRUE)
+  tryCatch({x<-DBI::dbGetQuery(con,"SELECT p.duration_hours-COALESCE(sum(a.hours),0) AS remaining FROM session_time_phases p LEFT JOIN session_phase_actions a ON a.phase_id=p.id AND a.character_id=$2 WHERE p.id=$1 GROUP BY p.id",params=list(as.integer(phase_id),as.character(character_id)));if(nrow(x))max(0,as.numeric(x$remaining[[1L]]))else 0},error=function(e)0)
+}
+
+allocate_session_phase_time <- function(phase_id,character_id,action_type,label,hours,start_offset=NULL,end_offset=NULL,metadata=list()) {
+  con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE);hours<-as.numeric(hours)
+  tryCatch(DBI::dbWithTransaction(con,{
+    phase<-DBI::dbGetQuery(con,"SELECT * FROM session_time_phases WHERE id=$1 AND status='open' FOR UPDATE",params=list(as.integer(phase_id)));if(!nrow(phase)||phase$phase_kind[[1L]]!="rest")stop("Rest Mode is not open.")
+    used<-DBI::dbGetQuery(con,"SELECT COALESCE(sum(hours),0) AS used FROM session_phase_actions WHERE phase_id=$1 AND character_id=$2",params=list(as.integer(phase_id),as.character(character_id)))$used[[1L]]
+    if(hours<0||as.numeric(used)+hours>as.numeric(phase$duration_hours[[1L]])+1e-8)stop("Not enough phase time remains.")
+    if(action_type=="watch")DBI::dbExecute(con,"DELETE FROM session_phase_actions WHERE phase_id=$1 AND character_id=$2 AND action_type='watch'",params=list(as.integer(phase_id),as.character(character_id)))
+    DBI::dbGetQuery(con,"INSERT INTO session_phase_actions(phase_id,character_id,action_type,label,hours,start_offset,end_offset,metadata) VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb) RETURNING *",params=list(as.integer(phase_id),as.character(character_id),as.character(action_type),as.character(label),hours,if(is.null(start_offset))NA_real_ else as.numeric(start_offset),if(is.null(end_offset))NA_real_ else as.numeric(end_offset),jsonlite::toJSON(metadata,auto_unbox=TRUE)))[1,,drop=FALSE]
+  }),error=function(e)structure(list(),error=e$message))
+}
+
+set_phase_watches_open <- function(phase_id,open=TRUE) {
+  con<-get_db_connection();if(is.null(con))return(FALSE);on.exit(release_db_connection(con),add=TRUE)
+  tryCatch(DBI::dbExecute(con,"UPDATE session_time_phases SET watches_open=$2 WHERE id=$1 AND status='open'",params=list(as.integer(phase_id),isTRUE(open)))>0L,error=function(e)FALSE)
+}
+
+phase_hour_label <- function(time_of_day,offset) {
+  starts<-c(dawn=6,day=12,dusk=18,night=0);hour<-(starts[[normalise_time_of_day(time_of_day)]]+as.numeric(offset))%%24
+  format(as.POSIXct("2000-01-01",tz="UTC")+hour*3600,"%l:%M %p",tz="UTC") |> trimws()
+}
+
+resolve_session_phase <- function(phase_id) {
+  con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE)
+  phase<-tryCatch(DBI::dbGetQuery(con,"UPDATE session_time_phases SET status='resolving' WHERE id=$1 AND status='open' RETURNING *",params=list(as.integer(phase_id))),error=function(e)data.frame());if(!nrow(phase))return(NULL)
+  sid<-as.integer(phase$session_id[[1L]]);hours<-as.numeric(phase$duration_hours[[1L]]);actions<-get_session_phase_actions(phase_id);players<-get_session_players(sid);env<-get_session_environment(sid);fire<-get_session_fire(sid)
+  updated_env<-advance_session_hours(sid,hours);results<-list()
+  active<-if(nrow(players)&&"is_active"%in%names(players))is.na(players$is_active)|players$is_active else rep(TRUE,nrow(players));players<-players[active,,drop=FALSE]
+  for(i in seq_len(nrow(players))){
+    cid<-as.character(players$character_id[[i]]);char<-tryCatch(load_character_from_db(cid),error=function(e)NULL);if(is.null(char))next
+    char<-validate_character(char);mine<-actions[as.character(actions$character_id)==cid,,drop=FALSE];types<-as.character(mine$action_type%||%character());starting_exhaustion<-as.integer(char$status$exhaustion%||%0L);card_effects<-character()
+    char<-restore_sindre(char,hours=hours)
+    if("long_rest"%in%types){char$resources$hp$cur<-get_effective_max_hp(char);char$resources$hp$temp<-0L;char<-reset_class_uses_for_rest(char,"long_rest");char$status$exhaustion<-max(0L,as.integer(char$status$exhaustion%||%0L)-1L);card_effects<-c(card_effects,"Long Rest removed up to 1 exhaustion")}
+    else if("short_rest"%in%types){char$resources$hp$cur<-min(get_effective_max_hp(char),as.integer(char$resources$hp$cur%||%0L)+sample.int(8L,1L));char<-reset_class_uses_for_rest(char,"short_rest")}
+    char$status$needs_hours<-char$status$needs_hours%||%list(food=0,water=0,warmth=0,blood=0,sleep=0)
+    need_names<-c("food","water","warmth","blood","sleep");old<-vapply(need_names,function(k)as.numeric(char$status$needs_hours[[k]]%||%0),numeric(1));next_hours<-old+hours
+    if(isTRUE(char$status$ate_today))next_hours[["food"]]<-0
+    if(isTRUE(char$status$drank_today))next_hours[["water"]]<-0
+    warmth_limit<-warmth_requirement_hours(env%||%list());if(isTRUE(fire)||is.infinite(warmth_limit))next_hours[["warmth"]]<-0
+    if("long_rest"%in%types)next_hours[["sleep"]]<-0
+    thresholds<-c(food=24,water=24,warmth=warmth_limit,blood=24,sleep=24)
+    penalties<-vapply(need_names,function(k)if(is.infinite(thresholds[[k]]))0 else floor(next_hours[[k]]/thresholds[[k]])-floor(old[[k]]/thresholds[[k]]),numeric(1))
+    ordinary<-sum(pmax(0,penalties[c("food","water","warmth","sleep")]))
+    ordinary_cards<-c(food="Hungry",water="Parched",warmth="Cold",sleep="No Long Rest");crossed<-names(penalties[c("food","water","warmth","sleep")])[penalties[c("food","water","warmth","sleep")]>0]
+    if(ordinary>0){char$status$exhaustion<-min(6L,as.integer(char$status$exhaustion%||%0L)+as.integer(ordinary));card_effects<-c(card_effects,paste(paste(unname(ordinary_cards[crossed]),collapse=" + "),"crossed 24h and added",ordinary,"exhaustion"))}
+    race<-tolower(trimws(as.character(char$meta$race%||%"")));if(race=="tylwyth teg"&&penalties[["blood"]]>0){card_effects<-c(card_effects,"Insufficient Blood triggered the blood-addiction check");for(j in seq_len(penalties[["blood"]]))char<-advance_blood_day(char)}
+    day_changed<-!is.null(updated_env)&&as.integer(updated_env$day_number[[1L]]%||%char$meta$day%||%1L)>as.integer(env$day_number[[1L]]%||%char$meta$day%||%1L)
+    char$status$needs_hours<-as.list(next_hours);if(day_changed){char$status$ate_today<-FALSE;char$status$drank_today<-FALSE};char$status$has_fire<-FALSE;char$meta$day<-as.integer(updated_env$day_number[[1L]]%||%char$meta$day%||%1L);char<-sync_exhaustion_effects(char)
+    final_exhaustion<-as.integer(char$status$exhaustion%||%0L);if(!length(card_effects))card_effects<-"No status card crossed a penalty threshold"
+    try(save_character_to_db(char,char_id=cid),silent=TRUE)
+    phase_message<-paste0("Rest phase resolved: ",paste(card_effects,collapse="; "),". Exhaustion ",starting_exhaustion," → ",final_exhaustion,".")
+    try(queue_character_refresh(cid,"phase_resolution",phase_message),silent=TRUE)
+    results[[cid]]<-list(actions=types,sindre_hours=hours,exhaustion=final_exhaustion,starting_exhaustion=starting_exhaustion,card_effects=card_effects,message=phase_message)
+  }
+  set_session_fire(sid,FALSE)
+  DBI::dbExecute(con,"UPDATE session_time_phases SET status='resolved',resolved_at=now() WHERE id=$1",params=list(as.integer(phase_id)))
+  list(phase=phase,environment=updated_env,results=results)
 }
 
 set_session_fire <- function(session_id,lit=TRUE,defaults=list()) {
@@ -1761,7 +1915,7 @@ adjust_session_supply <- function(session_id,resource,amount=0L,fill=FALSE,defau
 
 create_camp_gather_request <- function(session_id,day_number,requester_id,resource,requester_bonus,helper_id=NULL) {
   con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE);helper_id<-as.character(helper_id%||%"");if(!nzchar(helper_id))helper_id<-NA_character_
-  tryCatch({row<-DBI::dbGetQuery(con,paste("INSERT INTO camp_gather_requests(session_id,day_number,resource,requester_character_id,helper_character_id,requester_bonus)","SELECT $1,$2,$3,$4,$5,$6 WHERE NOT EXISTS(SELECT 1 FROM camp_gather_actions WHERE session_id=$1 AND day_number=$2 AND character_id=$4) RETURNING *"),params=list(as.integer(session_id),as.integer(day_number),as.character(resource),as.character(requester_id),helper_id,as.integer(requester_bonus)));if(!nrow(row))NULL else row[1,,drop=FALSE]},error=function(e){message("create_camp_gather_request failed: ",e$message);NULL})
+  tryCatch({row<-DBI::dbGetQuery(con,"INSERT INTO camp_gather_requests(session_id,day_number,resource,requester_character_id,helper_character_id,requester_bonus) VALUES($1,$2,$3,$4,$5,$6) RETURNING *",params=list(as.integer(session_id),as.integer(day_number),as.character(resource),as.character(requester_id),helper_id,as.integer(requester_bonus)));if(!nrow(row))NULL else row[1,,drop=FALSE]},error=function(e){message("create_camp_gather_request failed: ",e$message);NULL})
 }
 
 get_pending_camp_gather_requests <- function(helper_id) {
@@ -1779,20 +1933,18 @@ resolve_camp_gather_request <- function(request_id,responder_id,accept=TRUE,help
   result<-tryCatch(DBI::dbWithTransaction(con,{
     r<-DBI::dbGetQuery(con,"SELECT * FROM camp_gather_requests WHERE id=$1 FOR UPDATE",params=list(as.integer(request_id)))
     if(!nrow(r)||r$status[[1L]]!="pending")stop("Gathering request is no longer pending.")
-    responder_id<-as.character(responder_id);helper<-as.character(r$helper_character_id[[1L]]%||%"")
+    responder_id<-as.character(responder_id);helper<-as.character(r$helper_character_id[[1L]]%||%"");if(length(helper)!=1L||is.na(helper))helper<-""
     if(nzchar(helper)&&helper!=responder_id)stop("This gathering request belongs to another helper.")
     if(!isTRUE(accept)){
       DBI::dbExecute(con,"UPDATE camp_gather_requests SET status='declined',resolved_at=now() WHERE id=$1",params=list(as.integer(request_id)))
-      list(status="declined")
+      list(status="declined",request_id=as.integer(r$id[[1L]]))
     }else{
       actors<-unique(c(as.character(r$requester_character_id[[1L]]),if(nzchar(helper))helper))
-      used<-DBI::dbGetQuery(con,"SELECT character_id FROM camp_gather_actions WHERE session_id=$1 AND day_number=$2 AND character_id=ANY($3::text[])",params=list(r$session_id[[1L]],r$day_number[[1L]],paste0("{",paste(actors,collapse=","),"}")))
-      if(nrow(used))stop("A participant has already used today's camp gathering action.")
       requester_roll<-sample.int(20L,1L)+as.integer(r$requester_bonus[[1L]]);helper_roll<-if(nzchar(helper))sample.int(20L,1L)+as.integer(helper_bonus)else NA_integer_;total<-max(c(requester_roll,helper_roll),na.rm=TRUE);amount<-camp_gathering_yield(total);resource<-as.character(r$resource[[1L]]);reward<-if(resource=="rations")camp_foraging_reward(total)else NULL
       for(actor in actors)DBI::dbExecute(con,"INSERT INTO camp_gather_actions(session_id,day_number,character_id,resource,request_id) VALUES($1,$2,$3,$4,$5)",params=list(r$session_id[[1L]],r$day_number[[1L]],actor,r$resource[[1L]],r$id[[1L]]))
       if(resource!="rations"){DBI::dbExecute(con,"INSERT INTO session_supplies(session_id) VALUES($1) ON CONFLICT DO NOTHING",params=list(r$session_id[[1L]]));sql<-paste0("UPDATE session_supplies SET ",resource,"=LEAST(",resource,"_max,",resource,"+$2),updated_at=now() WHERE session_id=$1");DBI::dbExecute(con,sql,params=list(r$session_id[[1L]],amount))}
       DBI::dbExecute(con,"UPDATE camp_gather_requests SET status='resolved',helper_bonus=$2,requester_roll=$3,helper_roll=$4,result_total=$5,yield_amount=$6,reward_json=$7::jsonb,resolved_at=now() WHERE id=$1",params=list(r$id[[1L]],if(nzchar(helper))as.integer(helper_bonus)else NA_integer_,requester_roll,helper_roll,total,amount,enemy_json(reward%||%list())))
-      list(status="resolved",resource=resource,amount=amount,total=total,requester_roll=requester_roll,helper_roll=helper_roll,assisted=nzchar(helper),requester_id=as.character(r$requester_character_id[[1L]]),day_number=as.integer(r$day_number[[1L]]),reward=reward)
+      list(status="resolved",request_id=as.integer(r$id[[1L]]),resource=resource,amount=amount,total=total,requester_roll=requester_roll,helper_roll=helper_roll,assisted=nzchar(helper),requester_id=as.character(r$requester_character_id[[1L]]),day_number=as.integer(r$day_number[[1L]]),reward=reward)
     }
   }),error=function(e){message("resolve_camp_gather_request failed: ",e$message);NULL})
   if(!is.null(result)&&identical(result$status,"resolved")&&identical(result$resource,"rations")&&result$amount>0L){
@@ -1802,14 +1954,50 @@ resolve_camp_gather_request <- function(request_id,responder_id,accept=TRUE,help
   result
 }
 
-create_party_skill_check <- function(session_id,skill,ability,context,requester_id,requester_modifier,scope="party") {
+create_party_skill_check <- function(session_id,skill,ability,context,requester_id,requester_modifier,scope="party",requester_name="Party member",roll_result=NULL) {
   con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE);scope<-match.arg(scope,c("solo","party"))
-  tryCatch(DBI::dbGetQuery(con,"INSERT INTO party_skill_checks(session_id,skill,ability,context,requester_character_id,requester_modifier,scope) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *",params=list(as.integer(session_id),as.character(skill),as.character(ability),trimws(as.character(context%||%"")),as.character(requester_id),as.integer(requester_modifier),scope))[1,,drop=FALSE],error=function(e){message("create_party_skill_check failed: ",e$message);NULL})
+  tryCatch(DBI::dbWithTransaction(con,{
+    expected<-if(scope=="party")DBI::dbGetQuery(con,"SELECT count(*) AS n FROM session_players WHERE session_id=$1 AND character_id::text<>$2 AND COALESCE(is_active,TRUE)",params=list(as.integer(session_id),as.character(requester_id)))$n[[1L]]else 0L
+    support_cap<-max(0L,as.integer((roll_result%||%list())$proficiency_bonus%||%2L));check<-DBI::dbGetQuery(con,"INSERT INTO party_skill_checks(session_id,skill,ability,context,requester_character_id,requester_modifier,scope,expected_responses,support_cap) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *",params=list(as.integer(session_id),as.character(skill),as.character(ability),trimws(as.character(context%||%"")),as.character(requester_id),as.integer(requester_modifier),scope,as.integer(expected),support_cap))[1,,drop=FALSE]
+    result<-roll_result%||%resolve_skill_card_roll(sample.int(20L,1L),requester_modifier,0L,character())
+    DBI::dbExecute(con,"INSERT INTO party_skill_check_contributions(check_id,character_id,character_name,response,natural_roll,modifier,card_bonus,total,wild_roll,cards_json,effects_json) VALUES($1,$2,$3,'contributed',$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb)",params=list(check$id[[1L]],as.character(requester_id),as.character(requester_name%||%"Party member"),result$natural_roll,result$modifier,result$card_bonus,result$total,result$wild_roll%||%NA_integer_,jsonlite::toJSON(result$cards%||%character(),auto_unbox=FALSE),jsonlite::toJSON(result$effects%||%character(),auto_unbox=FALSE)))
+    if(scope=="solo"||expected<1L)DBI::dbExecute(con,"UPDATE party_skill_checks SET requester_roll=$2,final_total=$3,status='resolved',resolved_at=now() WHERE id=$1",params=list(check$id[[1L]],result$total,result$total))
+    check
+  }),error=function(e){message("create_party_skill_check failed: ",e$message);NULL})
 }
 
 get_pending_party_skill_checks <- function(session_id,character_id) {
   con<-get_db_connection();if(is.null(con))return(data.frame());on.exit(release_db_connection(con),add=TRUE)
-  tryCatch(DBI::dbGetQuery(con,paste("SELECT c.*,COALESCE(sp.display_name,cb.char_name,c.requester_character_id) AS requester_name FROM party_skill_checks c","LEFT JOIN session_players sp ON sp.session_id=c.session_id AND sp.character_id::text=c.requester_character_id LEFT JOIN character_blobs cb ON cb.id::text=c.requester_character_id","WHERE c.session_id=$1 AND c.scope='party' AND c.status='pending' AND c.requester_character_id<>$2 ORDER BY c.created_at"),params=list(as.integer(session_id),as.character(character_id))),error=function(e)data.frame())
+  tryCatch(DBI::dbGetQuery(con,paste("SELECT c.*,COALESCE(sp.display_name,cb.char_name,c.requester_character_id) AS requester_name FROM party_skill_checks c","LEFT JOIN session_players sp ON sp.session_id=c.session_id AND sp.character_id::text=c.requester_character_id LEFT JOIN character_blobs cb ON cb.id::text=c.requester_character_id","WHERE c.session_id=$1 AND c.scope='party' AND c.status='pending' AND c.requester_character_id<>$2","AND NOT EXISTS(SELECT 1 FROM party_skill_check_contributions pc WHERE pc.check_id=c.id AND pc.character_id=$2)","ORDER BY c.created_at"),params=list(as.integer(session_id),as.character(character_id))),error=function(e)data.frame())
+}
+
+respond_party_skill_check <- function(check_id,character_id,character_name="Party member",participate=TRUE,modifier=0L,proficiency_bonus=0L,cards=character()) {
+  con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE)
+  tryCatch(DBI::dbWithTransaction(con,{
+    check<-DBI::dbGetQuery(con,"SELECT * FROM party_skill_checks WHERE id=$1 FOR UPDATE",params=list(as.integer(check_id)));if(!nrow(check)||check$status[[1L]]!="pending")stop("This group check has already resolved.")
+    result<-if(isTRUE(participate))resolve_skill_card_roll(sample.int(20L,1L),modifier,proficiency_bonus,cards)else NULL
+    DBI::dbExecute(con,"INSERT INTO party_skill_check_contributions(check_id,character_id,character_name,response,natural_roll,modifier,card_bonus,total,wild_roll,cards_json,effects_json) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb) ON CONFLICT(check_id,character_id) DO NOTHING",params=list(as.integer(check_id),as.character(character_id),as.character(character_name%||%"Party member"),if(isTRUE(participate))"contributed"else"declined",if(is.null(result))NA_integer_ else result$natural_roll,as.integer(modifier),if(is.null(result))0L else result$card_bonus,if(is.null(result))NA_integer_ else result$total,if(is.null(result))NA_integer_ else result$wild_roll%||%NA_integer_,jsonlite::toJSON(if(is.null(result))character()else result$cards,auto_unbox=FALSE),jsonlite::toJSON(if(is.null(result))character()else result$effects,auto_unbox=FALSE)))
+    responses<-DBI::dbGetQuery(con,"SELECT count(*) AS n FROM party_skill_check_contributions WHERE check_id=$1 AND character_id<>$2",params=list(as.integer(check_id),as.character(check$requester_character_id[[1L]])))$n[[1L]]
+    resolved<-responses>=as.integer(check$expected_responses[[1L]])
+    if(resolved){parts<-DBI::dbGetQuery(con,"SELECT character_id,total FROM party_skill_check_contributions WHERE check_id=$1 AND response='contributed' AND total IS NOT NULL",params=list(as.integer(check_id)));leader<-parts$total[parts$character_id==as.character(check$requester_character_id[[1L]])][1L];helpers<-parts$total[parts$character_id!=as.character(check$requester_character_id[[1L]])];final<-party_skill_support_result(leader,helpers,check$support_cap[[1L]])$total;DBI::dbExecute(con,"UPDATE party_skill_checks SET final_total=$2,status='resolved',resolved_at=now() WHERE id=$1",params=list(as.integer(check_id),final))}
+    list(id=as.integer(check_id),status=if(resolved)"resolved"else"pending",final_total=if(resolved)final else NA_integer_)
+  }),error=function(e){message("respond_party_skill_check failed: ",e$message);NULL})
+}
+
+get_party_skill_check_contributions <- function(check_id) {
+  con<-get_db_connection();if(is.null(con))return(data.frame());on.exit(release_db_connection(con),add=TRUE)
+  tryCatch(DBI::dbGetQuery(con,"SELECT * FROM party_skill_check_contributions WHERE check_id=$1 ORDER BY id",params=list(as.integer(check_id))),error=function(e)data.frame())
+}
+
+finalize_party_skill_check <- function(check_id,requester_id=NULL) {
+  con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE)
+  tryCatch(DBI::dbWithTransaction(con,{
+    check<-DBI::dbGetQuery(con,"SELECT * FROM party_skill_checks WHERE id=$1 FOR UPDATE",params=list(as.integer(check_id)));if(!nrow(check))stop("Group check not found.")
+    if(!is.null(requester_id)&&!identical(as.character(check$requester_character_id[[1L]]),as.character(requester_id)))stop("Only the requester can finalize this check.")
+    if(check$status[[1L]]=="resolved")return(list(id=as.integer(check_id),status="resolved",final_total=as.integer(check$final_total[[1L]])))
+    parts<-DBI::dbGetQuery(con,"SELECT character_id,total FROM party_skill_check_contributions WHERE check_id=$1 AND response='contributed' AND total IS NOT NULL",params=list(as.integer(check_id)));leader<-parts$total[parts$character_id==as.character(check$requester_character_id[[1L]])][1L];helpers<-parts$total[parts$character_id!=as.character(check$requester_character_id[[1L]])];final<-party_skill_support_result(leader,helpers,check$support_cap[[1L]])$total
+    DBI::dbExecute(con,"UPDATE party_skill_checks SET final_total=$2,status='resolved',resolved_at=now() WHERE id=$1",params=list(as.integer(check_id),final));list(id=as.integer(check_id),status="resolved",final_total=final)
+  }),error=function(e){message("finalize_party_skill_check failed: ",e$message);NULL})
 }
 
 resolve_party_skill_check <- function(check_id,responder_id,helper_modifier=NULL) {

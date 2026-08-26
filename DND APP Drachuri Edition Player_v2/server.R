@@ -1,6 +1,13 @@
 library(shiny)
 cat("SOURCED server.R\n")
 server_player <- function(input, output, session) {
+  # runApp() restores its caller's working directory after the initial app
+  # load. Every browser connection invokes this function afterwards, so an
+  # installed build must re-anchor relative module paths for each session.
+  drachuri_app_root <- Sys.getenv("DRACHURI_APP_DIR", "")
+  if (nzchar(drachuri_app_root) && dir.exists(drachuri_app_root)) {
+    setwd(normalizePath(drachuri_app_root, mustWork = TRUE))
+  }
   
   # ------------------------------------------------------------
   # Shared control state

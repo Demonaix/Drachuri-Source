@@ -21,7 +21,9 @@ function terrainColor(terrain) {
     water: "#6da7d9",
     wall: "#555555",
     ravine: "#111015",
-    road: "#c8b58a"
+    road: "#c8b58a", table: "#765032", bar: "#5e3b23", chair: "#805a3a",
+    bench: "#765032", crate: "#8b6035", barrel: "#6f4529", bed: "#927d68",
+    shelf: "#51301d", rubble: "#77746c", campfire: "#a45125"
   }[terrain] || "#d9d4c7";
 }
 
@@ -30,7 +32,10 @@ function terrainTexture(terrain) {
   const file = {
     grass: "grass.jpg", forest: "forest.jpg", stone: "stone.jpg",
     wall: "stone.jpg", water: "water.jpg", swamp: "swamp.jpg",
-    ravine: "ravine.jpg", road: "dirt.jpg", sand: "dirt.jpg"
+    ravine: "ravine.jpg", road: "dirt.jpg", sand: "dirt.jpg",
+    table: "clutter_oak.png", bar: "clutter_oak.png", chair: "clutter_oak.png",
+    bench: "clutter_oak.png", crate: "clutter_oak.png", barrel: "clutter_oak.png",
+    bed: "clutter_oak.png", shelf: "clutter_oak.png", rubble: "stone.jpg", campfire: "dirt.jpg"
   }[terrain];
   return file ? `url("assets/textures/${file}")` : "none";
 }

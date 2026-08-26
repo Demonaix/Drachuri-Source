@@ -35,6 +35,9 @@ Source: "installed_run.R"; DestDir: "{app}"; Flags: ignoreversion
 Source: "Drachuri Player.cmd"; DestDir: "{app}"; Flags: ignoreversion
 Source: "Drachuri Player.vbs"; DestDir: "{app}"; Flags: ignoreversion
 Source: "DrachuriPlayer.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\shared\check_for_update.R"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\distribution\GITHUB_REPOSITORY"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\VERSION"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\Drachuri Player"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\Drachuri Player.vbs"""; WorkingDir: "{app}"; IconFilename: "{app}\DrachuriPlayer.ico"

@@ -1,0 +1,37 @@
+controlGeographyClimateUI <- function(id) {
+  ns<-NS(id)
+  div(class="control-card",
+    div(class="control-section-title","Geography & Climate"),
+    p(class="control-mini","This is the party's shared clock. Changes appear for every connected player."),
+    uiOutput(ns("clock_summary")),
+    fluidRow(
+      column(3,numericInput(ns("day_number"),"Campaign day",1,min=1,step=1)),
+      column(3,selectInput(ns("time_of_day"),"Time of day",c("Dawn"="dawn","Day"="day","Dusk"="dusk","Night"="night"))),
+      column(3,textInput(ns("geography"),"Geography","Temperate wilderness")),
+      column(3,selectInput(ns("climate"),"Climate",c("Temperate","Cold","Hot","Arid","Tropical","Alpine")))
+    ),
+    fluidRow(column(8,textInput(ns("weather"),"Weather","Clear")),column(4,br(),actionButton(ns("save_environment"),"Save Environment",class="btn btn-primary"))),
+    tags$hr(),
+    h4("Phase control"),uiOutput(ns("phase_summary")),
+    div(style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end",selectInput(ns("phase_duration"),"Rest phase length",c("6 hours (one phase)"="6","12 hours (two phases)"="12"),selected="6",width="210px"),actionButton(ns("open_standard"),"Begin Standard Phase",class="btn btn-default"),actionButton(ns("open_rest"),"Begin Rest Phase",class="btn btn-primary"),actionButton(ns("resolve_phase"),"Resolve Open Phase",class="btn btn-warning")),
+    uiOutput(ns("party_allocations"))
+  )
+}
+
+controlGeographyClimateServer <- function(id,ctrl,bump_refresh=NULL) {
+  moduleServer(id,function(input,output,session){
+    `%||%`<-get("%||%",inherits=TRUE);clock<-reactiveVal(NULL);phase<-reactiveVal(NULL)
+    sid<-reactive({x<-suppressWarnings(as.integer(ctrl$session_id%||%NA));if(is.na(x)||x<1L)NULL else x})
+    refresh<-function(){if(is.null(sid())){clock(NULL);phase(NULL)}else{clock(get_session_environment(sid()));phase(get_open_session_phase(sid()))}}
+    observe({invalidateLater(2500,session);sid();refresh()})
+    observeEvent(clock(),{x<-clock();if(is.null(x))return();updateNumericInput(session,"day_number",value=x$day_number[[1L]]);updateSelectInput(session,"time_of_day",selected=x$time_of_day[[1L]]);updateTextInput(session,"geography",value=x$geography[[1L]]);updateSelectInput(session,"climate",selected=x$climate[[1L]]);updateTextInput(session,"weather",value=x$weather[[1L]])},ignoreInit=FALSE)
+    output$clock_summary<-renderUI({x<-clock();if(is.null(x))return(div(class="alert alert-warning","Select an active session first."));div(class="control-kpi-row",span(class="control-kpi",paste("Day",x$day_number[[1L]])),span(class="control-kpi",time_of_day_label(x$time_of_day[[1L]])),span(class="control-kpi",x$weather[[1L]]),span(class="control-kpi",x$climate[[1L]]))})
+    output$phase_summary<-renderUI({x<-phase();if(is.null(x))return(div(class="alert alert-info","No phase is open. Choose whether the next block of time is a standard or rest phase."));div(class="alert alert-success",strong(if(x$phase_kind[[1L]]=="rest")"Rest Mode is open"else"Standard phase is open"),paste0(" — ",x$duration_hours[[1L]]," hours. The shared clock has not moved yet."))})
+    output$party_allocations<-renderUI({x<-phase();if(is.null(x)||x$phase_kind[[1L]]!="rest")return(NULL);a<-get_session_phase_actions(x$id[[1L]]);if(!nrow(a))return(tags$small("No player time has been allocated yet."));players<-get_session_players(sid());names<-setNames(as.character(players$display_name%||%players$character_id),as.character(players$character_id));rows<-split(a,as.character(a$character_id));tagList(h4("Player plans"),lapply(names(rows),function(cid){r<-rows[[cid]];div(class="control-mini",strong(names[[cid]]%||%cid),": ",paste0(r$label," (",r$hours,"h)",collapse=", "))}))})
+    changed<-function(message){refresh();if(is.function(bump_refresh))bump_refresh();showNotification(message,type="message")}
+    observeEvent(input$save_environment,{req(sid());x<-set_session_environment(sid(),input$day_number,input$time_of_day,input$geography,input$climate,input$weather);if(is.null(x))return(showNotification("Environment could not be saved.",type="error"));changed("Party environment updated.")},ignoreInit=TRUE)
+    begin<-function(kind){req(sid());if(!is.null(get_open_session_phase(sid())))return(showNotification("Resolve the current phase first.",type="warning"));hours<-if(kind=="rest")as.numeric(input$phase_duration%||%6)else 6;x<-open_session_phase(sid(),kind,hours);if(is.null(x))return(showNotification("The phase could not be opened.",type="error"));changed(if(kind=="rest")paste0("Rest Mode opened for ",hours," hours for all players.")else"Standard phase opened. Players continue normally until you resolve it.")}
+    observeEvent(input$open_standard,{begin("standard")},ignoreInit=TRUE);observeEvent(input$open_rest,{begin("rest")},ignoreInit=TRUE)
+    observeEvent(input$resolve_phase,{x<-phase();req(x);result<-resolve_session_phase(x$id[[1L]]);if(is.null(result))return(showNotification("The phase could not be resolved.",type="error"));changed(paste("Phase resolved. It is now",time_of_day_label(result$environment$time_of_day[[1L]]),"on day",result$environment$day_number[[1L]]))},ignoreInit=TRUE)
+  })
+}

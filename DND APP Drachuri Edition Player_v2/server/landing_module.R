@@ -223,6 +223,7 @@ landingTabServer <- function(
       if (is.null(chars) || !is.data.frame(chars) || nrow(chars) == 0) {
         updateSelectInput(session, "db_character", choices = character(0))
         log_safe("⚠️ Server unavailable or no saved characters found.")
+        showNotification("Continue Adventure could not reach any saved characters. Check the database connection and try again.",type="error",duration=10)
       } else {
         ids <- as.character(chars$character_id %||% "")
         labels <- as.character(chars$name %||% "")
@@ -232,24 +233,30 @@ landingTabServer <- function(
         choices <- stats::setNames(ids[keep], labels[keep])
         updateSelectInput(session, "db_character", choices = choices)
       }
-    })
+    }, ignoreInit = TRUE)
     
     observeEvent(input$db_load, {
       req(input$db_character)
       
       char_id <- input$db_character
       
-      x <- tryCatch(
-        load_character_from_db(char_id),
-        error = function(e) NULL
-      )
+      load_error <- NULL
+      x <- tryCatch(load_character_from_db(char_id),error=function(e){load_error<<-conditionMessage(e);NULL})
       
       if (is.null(x)) {
-        log_safe("⚠️ Failed to load character from server.")
+        detail<-if(nzchar(load_error%||%""))paste0(": ",load_error)else". The saved character may be unavailable or damaged."
+        log_safe(paste0("⚠️ Failed to load character from server",detail))
+        showNotification(paste0("Continue Adventure failed",detail),type="error",duration=12)
         return()
       }
-      
-      state$char <- validate_character(x)
+
+      restored<-tryCatch(validate_character(x),error=function(e){load_error<<-conditionMessage(e);NULL})
+      if(is.null(restored)){
+        log_safe(paste0("⚠️ Saved character could not be upgraded: ",load_error%||%"unknown validation error"))
+        showNotification("This saved character could not be upgraded. The error has been written to the adventure log.",type="error",duration=12)
+        return()
+      }
+      state$char <- restored
       state$char_id <- char_id
       state$sync_enabled <- TRUE
 

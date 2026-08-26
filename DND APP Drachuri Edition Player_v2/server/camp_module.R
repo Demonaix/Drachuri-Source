@@ -46,7 +46,7 @@ campUI <- function(id) {
       #", root, " .camp-bg{
         position: absolute;
         inset: 0;
-        background-image: url('camp.png');
+        background-image: var(--drachuri-camp-background, url('camp_realistic_hud_safe.png'));
         background-size: cover;
         background-position: center;
         background-repeat: no-repeat;
@@ -278,69 +278,69 @@ campUI <- function(id) {
       
       # Armoury
       hotspot("go_armoury", "Armoury",
-              "left: 10%; top: 20%; width: 16%; height: 18%;",
-              "left: 10%; top: 20%;"),
+              "left: 27%; top: 23%; width: 15%; height: 29%;",
+              "left: 27%; top: 23%;"),
       
 
       # Runes / Glyphcrafting
       hotspot("go_runes", "Glyphs",
-              "left: 42%; top: 72%; width: 12%; height: 14%;",
-              "left: 42%; top: 72%;"),
+              "left: 52%; top: 34%; width: 13%; height: 13%;",
+              "left: 52%; top: 34%;"),
       
       # 3D Character Builder
       hotspot("go_character_3d", "3D Character",
-              "left: 58%; top: 36%; width: 14%; height: 12%;",
-              "left: 58%; top: 36%;"),
+              "left: 68%; top: 24%; width: 9%; height: 24%;",
+              "left: 68%; top: 24%;"),
       
-      # Combat (armour + tent)
+      # Combat training circle
       hotspot("go_debug_combat", "Combat",
-              "left: 24%; top: 50%; width: 12%; height: 12%;",
-              "left: 24%; top: 50%;"),
+              "left: 39%; top: 35%; width: 10%; height: 21%;",
+              "left: 39%; top: 35%;"),
       
-      # Inventory (campfire center)
+      # Inventory chest and travelling supplies
       hotspot("go_inventory", "Inventory",
-              "left: 80%; top: 18%; width: 14%; height: 16%;",
-              "left: 80%; top: 18%;"),
+              "left: 86%; top: 38%; width: 11%; height: 18%;",
+              "left: 86%; top: 38%;"),
       
       # Skills (weapon rack left)
       hotspot("go_skills", "Skills",
-              "left: 30%; top: 25%; width: 15%; height: 15%;",
-              "left: 30%; top: 25%;"),
+              "left: 27%; top: 48%; width: 13%; height: 17%;",
+              "left: 27%; top: 48%;"),
       
-      # Diary (open book bottom-right table)
+      # Diary writing desk
       hotspot("go_diary", "Diary",
-              "left: 22%; top: 72%; width: 14%; height: 18%;",
-              "left: 22%; top: 72%;"),
+              "left: 34%; top: 63%; width: 16%; height: 23%;",
+              "left: 34%; top: 63%;"),
       
-      # Character (top-right near tent)
+      # Settings command tent
       hotspot("go_character", "Settings",
-              "left: 58%; top: 18%; width: 14%; height: 16%;",
-              "left: 58%; top: 18%;"),
+              "left: 76%; top: 20%; width: 17%; height: 27%;",
+              "left: 76%; top: 20%;"),
       
-      # Dice (bottom-right table edge)
+      # Dice blanket
       hotspot("go_dice", "Dice",
-              "left: 62%; top: 82%; width: 12%; height: 14%;",
-              "left: 62%; top: 82%;"),
+              "left: 49%; top: 65%; width: 12%; height: 14%;",
+              "left: 49%; top: 65%;"),
       
-      # Magic (glowing candles right table)
+      # Magic study table
       hotspot("go_magic", "Magic",
-              "left: 72%; top: 52%; width: 14%; height: 18%;",
-              "left: 72%; top: 52%;"),
+              "left: 79%; top: 53%; width: 19%; height: 20%;",
+              "left: 79%; top: 53%;"),
       
-      # Blood (red potions bottom-left)
+      # Blood alchemy table
       hotspot("go_blood", "Blood",
-      "left: 80%; top: 80%; width: 12%; height: 12%;",
-      "left: 80%; top: 80%;"),
+              "left: 69%; top: 75%; width: 21%; height: 21%;",
+              "left: 69%; top: 75%;"),
       
       # Rest (campfire core)
       hotspot("go_rest", "Rest",
-              "left: 46%; top: 46%; width: 10%; height: 14%;",
-              "left: 46%; top: 46%;"),
+              "left: 53%; top: 45%; width: 15%; height: 18%;",
+              "left: 53%; top: 45%;"),
       
-      # Level (far bottom-left corner)
+      # Character and level station
       hotspot("go_level", "Character",
-              "left: 10%; top: 50%; width: 12%; height: 14%;",
-              "left: 10%; top: 50%;")
+              "left: 68%; top: 49%; width: 9%; height: 23%;",
+              "left: 68%; top: 49%;")
     )
   )
 }
@@ -369,6 +369,16 @@ campServer <- function(
     
     cat("Camp MODULE SERVER STARTED\n")
     cat("Camp ns prefix:", session$ns("test"), "\n")
+    camp_art<-c(dawn="camp_realistic_dawn_hud_safe.png",day="camp_realistic_day_hud_safe.png",dusk="camp_realistic_dusk_hud_safe.png",night="camp_realistic_hud_safe.png")
+    shared_clock<-reactiveVal(NULL)
+    observe({
+      invalidateLater(2500,session)
+      sid<-suppressWarnings(as.integer(state$active_session_id%||%NA))
+      if(isTRUE(state$offline_mode)||is.na(sid)||sid<1L)return()
+      value<-get_session_environment(sid);if(is.null(value))return();shared_clock(value)
+      phase<-normalise_time_of_day(value$time_of_day[[1L]],"night")
+      shinyjs::runjs(sprintf("document.documentElement.style.setProperty('--drachuri-camp-background', \"url('%s')\");",camp_art[[phase]]))
+    })
     
     go_tab <- function(value_or_title) {
       v <- gsub('"', '\\"', as.character(value_or_title))

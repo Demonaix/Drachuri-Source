@@ -17,7 +17,7 @@ r_url="https://cran.r-project.org/bin/macosx/base/R-$r_version.pkg"
 app="$build/root/Applications/Drachuri Player.app"
 resources="$app/Contents/Resources"
 
-mkdir -p "$resources/app" "$resources/library" "$app/Contents/MacOS" "$cache" "$release_dir"
+mkdir -p "$resources/app" "$resources/library" "$resources/update" "$app/Contents/MacOS" "$cache" "$release_dir"
 
 echo "Copying the player application..."
 rsync -a \
@@ -26,11 +26,15 @@ rsync -a \
   --exclude 'launcher/bootstrap-library' --exclude 'launcher/logs' --exclude 'rsconnect' \
   --exclude 'www/models' \
   "$player_source/" "$resources/app/"
+cp "$root/VERSION" "$resources/app/VERSION"
+date -u '+%Y%m%dT%H%M%SZ' > "$resources/app/BUILD_ID"
 
 cp "$installer_dir/Info.plist" "$app/Contents/Info.plist"
 cp "$installer_dir/DrachuriPlayer.icns" "$resources/DrachuriPlayer.icns"
 cp "$installer_dir/Drachuri Player" "$app/Contents/MacOS/Drachuri Player"
 cp "$root/installer/player/installed_run.R" "$resources/installed_run.R"
+cp "$root/installer/shared/check_for_update.R" "$resources/update/check_for_update.R"
+cp "$root/distribution/GITHUB_REPOSITORY" "$resources/update/GITHUB_REPOSITORY"
 chmod 755 "$app/Contents/MacOS/Drachuri Player"
 
 echo "Collecting the tested Intel Mac package library..."
@@ -40,6 +44,7 @@ R_LIBS_USER="$player_source/launcher/bootstrap-library" \
 
 echo "Creating Drachuri Player.app..."
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $numeric_version" "$app/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $numeric_version" "$app/Contents/Info.plist"
 find "$app" -name '._*' -delete
 chmod -R a+rX "$app"
 xattr -cr "$app"
@@ -67,6 +72,13 @@ productbuild --distribution "$build/Distribution.xml" \
   --package-path "$cache" \
   --package-path "$build" \
   "$build/Drachuri-Player-$version.pkg"
+
+echo "Verifying packaged Player version..."
+pkgutil --expand-full "$build/Drachuri-Player-$version.pkg" "$build/verify"
+packaged_version_file=$(find "$build/verify" -path '*/Drachuri Player.app/Contents/Resources/app/VERSION' -print -quit)
+[ -n "$packaged_version_file" ] || { echo "Packaged Player VERSION marker is missing." >&2; exit 1; }
+packaged_version=$(tr -d '\r\n' < "$packaged_version_file")
+[ "$packaged_version" = "$version" ] || { echo "Packaged Player version is $packaged_version, expected $version." >&2; exit 1; }
 
 dmg_root="$build/dmg"
 mkdir -p "$dmg_root"

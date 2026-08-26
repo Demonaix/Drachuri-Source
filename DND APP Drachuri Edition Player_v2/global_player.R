@@ -2231,7 +2231,8 @@ new_character <- function() {
     
     prof = list(
       saves  = list(),
-      skills = list()
+      skills = list(),
+      skill_cards = list()
     ),
     
     resources = list(
@@ -2421,8 +2422,10 @@ validate_character <- function(x) {
   if (!is.list(x$prof)) x$prof <- list()
   x$prof$saves  <- x$prof$saves  %||% list()
   x$prof$skills <- x$prof$skills %||% list()
+  x$prof$skill_cards <- x$prof$skill_cards %||% list()
   if (!is.list(x$prof$saves))  x$prof$saves  <- list()
   if (!is.list(x$prof$skills)) x$prof$skills <- list()
+  if (!is.list(x$prof$skill_cards)) x$prof$skill_cards <- list()
   
   # resources
   x$resources <- x$resources %||% list()

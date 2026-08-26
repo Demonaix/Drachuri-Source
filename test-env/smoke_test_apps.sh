@@ -7,12 +7,20 @@ control_dir="$project_dir/DND APP Drachuri Edition 2 Control"
 r_library="$player_dir/renv/library/R-4.2/x86_64-apple-darwin17.0"
 log_dir="$project_dir/test-env/logs"
 
+restore_campaign=false
+if [ -f "$project_dir/test-env/.campaign-snapshot-loaded" ]; then
+  restore_campaign=true
+fi
+
 mkdir -p "$log_dir"
 "$project_dir/test-env/reset_db.sh"
 
 set -a
 . "$project_dir/test-env/test.env"
 set +a
+export LANG=en_GB.UTF-8
+export LC_ALL=en_GB.UTF-8
+export LC_CTYPE=en_GB.UTF-8
 
 start_app() {
   app_dir=$1
@@ -40,6 +48,7 @@ player_four_pid=$last_pid
 cleanup() {
   kill "$control_pid" "$player_one_pid" "$player_two_pid" "$player_three_pid" "$player_four_pid" 2>/dev/null || true
   wait "$control_pid" "$player_one_pid" "$player_two_pid" "$player_three_pid" "$player_four_pid" 2>/dev/null || true
+  if $restore_campaign; then "$project_dir/test-env/restore_campaign_snapshot.sh"; fi
 }
 trap cleanup EXIT INT TERM
 

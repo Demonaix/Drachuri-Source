@@ -1,0 +1,499 @@
+# server/skills_module.R
+library(shiny)
+
+skillsTabUI <- function(id) {
+  ns <- NS(id)
+  
+  tabPanel(
+    "Skills",
+    uiOutput(ns("skill_magic_actions_ui")),
+    h4("Abilities & Saving Throws"),
+    uiOutput(ns("stats_table")),
+    tags$hr(),
+    h4("🧭 Skill Identity"),
+    uiOutput(ns("skill_identity_ui")),
+    tags$hr(),
+    h4("Granted Proficiencies & Defences"),
+    uiOutput(ns("derived_traits_ui"))
+  )
+}
+
+skillsTabServer <- function(id, state, restoring, add_log, char_rev) {
+  moduleServer(id, function(input, output, session) {
+    ns <- session$ns
+    
+    # =============================
+    # Constants
+    # =============================
+    ABILITIES <- c("str","dex","con","int","bld_str","cha")
+    
+    LABELS <- c(
+      str="Strength",
+      dex="Dexterity",
+      con="Constitution",
+      int="Intelligence",
+      bld_str="Blood Strength",
+      cha="Charisma"
+    )
+    
+    ability_mod <- function(score) mod_calc(score %||% 10)
+    
+    skill_key <- function(skill_name) {
+      gsub(" ", "_", tolower(skill_name))
+    }
+    
+    # =============================
+    # Core Reactives
+    # =============================
+    prof_bonus <- reactive({
+      lvl <- state$char$build$level %||% 1
+      ceiling(lvl / 4) + 1
+    })
+    
+    ability_mods <- reactive({
+      ab <- state$char$abilities %||% list()
+      list(
+        str = mod_calc(ab$str %||% 10),
+        dex = mod_calc(ab$dex %||% 10),
+        con = mod_calc(ab$con %||% 10),
+        int = mod_calc(ab$int %||% 10),
+        bld_str = mod_calc(ab$bld_str %||% 10),
+        cha = mod_calc(ab$cha %||% 10)
+      )
+    })
+
+    has_feature <- function(feature_id) {
+      any(vapply(get_unlocked_class_features(state$char), function(feature) {
+        identical(as.character(feature$id %||% ""), feature_id)
+      }, logical(1)))
+    }
+
+    output$skill_magic_actions_ui <- renderUI({
+      if (!has_feature("mind_bender")) return(NULL)
+      active <- isTRUE(state$char$status$mind_bender_active %||% FALSE)
+      div(
+        class = "magic-card",
+        tags$strong("Mind Bender"),
+        p(if (active) "Active: your next Persuasion check has advantage."
+          else "Spend 10 Sindre to gain advantage on your next Persuasion check."),
+        actionButton(ns("use_mind_bender"), if (active) "Mind Bender Active" else "Use Mind Bender",
+                     class = "btn btn-primary", disabled = if (active) "disabled" else NULL)
+      )
+    })
+
+    observeEvent(input$use_mind_bender, {
+      x <- validate_character(state$char)
+      current <- suppressWarnings(as.integer(x$resources$sindre$cur %||% 0L))
+      if (is.na(current)) current <- 0L
+      if (current < 10L) {
+        showNotification("Not enough Sindre for Mind Bender.", type = "error")
+        return()
+      }
+      x$resources$sindre$cur <- current - 10L
+      x$status$mind_bender_active <- TRUE
+      state$char <- x
+      add_log("🧠 Mind Bender activated: the next Persuasion check has advantage.")
+    }, ignoreInit = TRUE)
+    
+    # =============================
+    # UI
+    # =============================
+    output$stats_table <- renderUI({
+      pb <- prof_bonus()
+      mods <- ability_mods()
+      
+      ability_blocks <- lapply(ABILITIES, function(ab) {
+        
+        score <- state$char$abilities[[ab]] %||% 10
+        mod <- ability_mod(score)
+        
+        save_prof <- isTRUE(state$char$prof$saves[[ab]] %||% FALSE)
+        save_bonus <- mod + if (save_prof) pb else 0
+        
+        # ---- Skills under ability ----
+        skill_rows <- lapply(seq_len(nrow(SKILLS_LIST)), function(i) {
+          if (SKILLS_LIST$Ability[i] != ab) return(NULL)
+          
+          skill <- SKILLS_LIST$Skill[i]
+          key <- skill_key(skill)
+          
+          prof_level <- state$char$prof$skills[[key]] %||% "None"
+          mult <- switch(prof_level,
+                         "None" = 0,
+                         "Proficient" = 1,
+                         "Expertise" = 2,
+                         0)
+          
+          total_mod <- (mods[[ab]] %||% 0) + (pb * mult)
+          
+          prof_icon <- if (prof_level == "Expertise") "⬤⬤"
+          else if (prof_level == "Proficient") "⬤"
+          else "○"
+          
+          fluidRow(
+            column(4, skill_with_tooltip(skill)),
+            column(2, strong(ifelse(total_mod >= 0, paste0("+", total_mod), total_mod))),
+            column(2,
+                   actionButton(ns(paste0("prof_toggle_", key)),
+                                prof_icon,
+                                class = "btn btn-xs")
+            ),
+            column(4,
+                   div(style="display:flex; gap:4px;",
+                       actionButton(ns(paste0("roll_dis_", key)), "⬇", class="btn btn-xs btn-danger"),
+                       actionButton(ns(paste0("roll_", key)), "🎲", class="btn btn-xs"),
+                       actionButton(ns(paste0("roll_adv_", key)), "⬆", class="btn btn-xs btn-success")
+                   )
+            )
+          )
+        })
+        
+        skill_rows <- Filter(Negate(is.null), skill_rows)
+        
+        # ---- Ability block ----
+        div(
+          class = "magic-card",
+          style="margin-bottom:12px;",
+          
+          h4(LABELS[[ab]]),
+          
+          # ✅ NEW HEADER ROW
+          fluidRow(
+            column(2, strong("Score")),
+            column(2, strong("Mod")),
+            column(2, strong("Save")),
+            column(2, strong("Prof")),
+            column(4, strong("Roll"))
+          ),
+          
+          fluidRow(
+            column(2, numericInput(ns(ab), NULL, score, min=1, max=30)),
+            column(2, strong(ifelse(mod>=0,paste0("+",mod),mod))),
+            column(2, strong(ifelse(save_bonus>=0,paste0("+",save_bonus),save_bonus))),
+            column(2, checkboxInput(ns(paste0("save_prof_", ab)), NULL, value=save_prof)),
+            column(4,
+                   div(style="display:flex; gap:4px;",
+                       actionButton(ns(paste0("save_dis_", ab)), "⬇", class="btn btn-xs btn-danger"),
+                       actionButton(ns(paste0("save_", ab)), "🎲", class="btn btn-xs"),
+                       actionButton(ns(paste0("save_adv_", ab)), "⬆", class="btn btn-xs btn-success")
+                   )
+            )
+          ),
+          
+          tags$hr(),
+          
+          # ✅ SKILL HEADER
+          fluidRow(
+            column(4, strong("Skill")),
+            column(2, strong("Mod")),
+            column(2, strong("Prof")),
+            column(4, strong("Roll"))
+          ),
+          
+          tagList(skill_rows)
+        )
+      })
+      
+      tagList(ability_blocks)
+    })
+
+    output$derived_traits_ui <- renderUI({
+      char <- validate_character(state$char)
+      tools <- names(Filter(isTRUE, char$prof$tools %||% list()))
+      profile <- char$combat_profile %||% list()
+      conditional <- char$derived_effects$conditional %||% list()
+
+      trait_line <- function(label, values) {
+        values <- unique(as.character(values %||% character()))
+        div(
+          style = "margin-bottom:6px;",
+          tags$strong(paste0(label, ": ")),
+          if (length(values)) paste(gsub("_", " ", values), collapse = ", ") else "None"
+        )
+      }
+
+      conditional_text <- unlist(lapply(conditional, function(groups) {
+        vapply(groups, function(effect) {
+          details <- c(
+            if (length(effect$resistances %||% character())) {
+              paste("resistant to", paste(effect$resistances, collapse = ", "))
+            },
+            if (length(effect$condition_immunities %||% character())) {
+              paste("immune to", paste(effect$condition_immunities, collapse = ", "))
+            }
+          )
+          paste0("While ", effect$when %||% "condition active", ": ", paste(details, collapse = "; "))
+        }, character(1))
+      }), use.names = FALSE)
+
+      div(
+        class = "magic-card",
+        trait_line("Tools", tools),
+        trait_line("Damage resistances", profile$resistances),
+        trait_line("Damage immunities", profile$immunities),
+        trait_line("Damage vulnerabilities", profile$vulnerabilities),
+        if (length(conditional_text)) tagList(
+          tags$strong("Conditional effects:"),
+          tags$ul(lapply(conditional_text, tags$li))
+        )
+      )
+    })
+    
+    # =============================
+    # Dice
+    # =============================
+    roll_d20 <- function(mode) {
+      r1 <- sample(1:20,1)
+      r2 <- sample(1:20,1)
+      
+      if (mode=="Normal") return(list(val=r1, txt=paste0("d20(",r1,")")))
+      if (mode=="Adv") return(list(val=max(r1,r2), txt=paste0("Adv(",r1,",",r2,") → ",max(r1,r2))))
+      if (mode=="Disadv") return(list(val=min(r1,r2), txt=paste0("Disadv(",r1,",",r2,") → ",min(r1,r2))))
+    }
+    
+    # =============================
+    # Rolls
+    # =============================
+    roll_save <- function(ab, mode) {
+      pb <- prof_bonus()
+      score <- state$char$abilities[[ab]] %||% 10
+      mod <- ability_mod(score)
+      
+      prof <- isTRUE(state$char$prof$saves[[ab]] %||% FALSE)
+      total_mod <- mod + if (prof) pb else 0
+      
+      if (identical(ab, "dex") && identical(mode, "Normal") && has_feature("danger_sense")) {
+        mode <- "Adv"
+      }
+      rr <- roll_d20(mode)
+      total <- rr$val + total_mod
+      
+      add_log(paste0("🛡 Save - ", LABELS[[ab]], ": ", rr$txt, " + ", total_mod, " = ", total))
+    }
+    
+    # =============================
+    # Skill Identity
+    # =============================
+    skill_identity <- reactive({
+      pb <- prof_bonus()
+      mods <- ability_mods()
+      
+      scores <- list()
+      
+      for (i in seq_len(nrow(SKILLS_LIST))) {
+        skill <- SKILLS_LIST$Skill[i]
+        ability <- SKILLS_LIST$Ability[i]
+        key <- skill_key(skill)
+        
+        prof_level <- state$char$prof$skills[[key]] %||% "None"
+        mult <- switch(prof_level, "None"=0,"Proficient"=1,"Expertise"=2,0)
+        
+        scores[[skill]] <- (mods[[ability]] %||% 0) + (pb * mult)
+      }
+      
+      sorted <- sort(unlist(scores), decreasing = TRUE)
+      top <- names(sorted)[1:3]
+      
+      s1 <- tolower(top[1] %||% "")
+      s2 <- tolower(top[2] %||% "")
+      
+      desc <- c()
+      
+      # =====================
+      # CORE
+      # =====================
+      identity <- skill_identity_labels(top, sorted)
+      core <- identity$core
+      
+      # =====================
+      # ASPECT
+      # =====================
+      aspect <- identity$aspect
+      
+      # =====================
+      # MODIFIER
+      # =====================
+      modifier <- identity$modifier
+      
+      # =====================
+      # TITLE
+      # =====================
+      title <- paste(core, aspect)
+      if (!is.null(modifier)) title <- paste(modifier, title)
+      
+      # =====================
+      # DESCRIPTIONS
+      # =====================
+      
+      if (grepl("stealth", s1)) {
+        desc <- c(desc, "You operate best unseen, striking from obscurity.")
+      }
+      if (grepl("perception", s1) || grepl("perception", s2)) {
+        desc <- c(desc, "Your awareness borders on instinct.")
+      }
+      if (grepl("survival", s1)) {
+        desc <- c(desc, "The wilderness is your ally.")
+      }
+      if (grepl("arcana", s1)) {
+        desc <- c(desc, "You read the threads of magic with practiced insight.")
+      }
+      if (grepl("deception", s1) || grepl("deception", s2)) {
+        desc <- c(desc, "Truth is a tool, not a rule.")
+      }
+      
+      if (length(desc) == 0) desc <- "Your talents are still taking shape."
+      
+      list(
+        title = title,
+        desc = unique(desc),
+        top_skills = top
+      )
+    })
+    
+    output$skill_identity_ui <- renderUI({
+      id <- skill_identity()
+      
+      tagList(
+        tags$div(style="font-weight:900; font-size:18px;",
+                 paste0("✨ ", id$title)),
+        
+        tags$div(style="opacity:.7; font-size:12px;",
+                 paste("Top Skills:", paste(id$top_skills, collapse=", "))),
+        tags$div(style="opacity:.82;font-size:12px;margin-top:5px;",paste(id$desc,collapse=" "))
+      )
+    })
+    
+    # =============================
+    # Observers
+    # =============================
+    
+    # Ability write-back
+    lapply(ABILITIES, function(ab) {
+      observeEvent(input[[ab]], {
+        if (isTRUE(restoring())) return()
+        state$char$abilities[[ab]] <- input[[ab]]
+      }, ignoreInit = TRUE)
+    })
+    
+    # Save proficiency write-back
+    lapply(ABILITIES, function(ab) {
+      observeEvent(input[[paste0("save_prof_", ab)]], {
+        if (isTRUE(restoring())) return()
+        state$char$prof$saves[[ab]] <- isTRUE(input[[paste0("save_prof_", ab)]])
+      }, ignoreInit = TRUE)
+    })
+    
+    # Save rolls
+    lapply(ABILITIES, function(ab) {
+      observeEvent(input[[paste0("save_", ab)]], {
+        if (isTRUE(restoring())) return()
+        roll_save(ab, "Normal")
+      }, ignoreInit = TRUE)
+      
+      observeEvent(input[[paste0("save_adv_", ab)]], {
+        if (isTRUE(restoring())) return()
+        roll_save(ab, "Adv")
+      }, ignoreInit = TRUE)
+      
+      observeEvent(input[[paste0("save_dis_", ab)]], {
+        if (isTRUE(restoring())) return()
+        roll_save(ab, "Disadv")
+      }, ignoreInit = TRUE)
+    })
+    
+    # Skill proficiency toggle
+    lapply(seq_len(nrow(SKILLS_LIST)), function(i) {
+      key <- skill_key(SKILLS_LIST$Skill[i])
+      
+      observeEvent(input[[paste0("prof_toggle_", key)]], {
+        if (isTRUE(restoring())) return()
+        
+        current <- state$char$prof$skills[[key]] %||% "None"
+        
+        next_val <- switch(current,
+                           "None"="Proficient",
+                           "Proficient"="Expertise",
+                           "Expertise"="None")
+        
+        state$char$prof$skills[[key]] <- next_val
+      }, ignoreInit = TRUE)
+    })
+    
+    #Tooltip helper
+    skill_with_tooltip <- function(skill) {
+      desc <- SKILL_DESC[[skill]] %||% ""
+      
+      tags$span(
+        title = desc,   # 👈 native browser tooltip
+        style = "cursor: help; border-bottom:1px dotted rgba(255,255,255,0.3);",
+        skill
+      )
+    }
+    active_skill_check<-reactiveVal(NULL);pending_party_check_id<-reactiveVal(NULL);shown_party_check_ids<-reactiveVal(integer());last_skill_result_id<-reactiveVal(NA_integer_)
+    online_skill_session<-function(){sid<-suppressWarnings(as.integer(state$active_session_id%||%NA));if(isTRUE(state$offline_mode)||is.na(sid)||sid<1L)NA_integer_ else sid}
+    open_skill_check<-function(skill,ability){active_skill_check(list(skill=skill,ability=ability));showModal(modalDialog(title=paste(skill,"check"),textInput(session$ns("skill_check_context"),"What is the check about?",placeholder="What do I know about this city?"),radioButtons(session$ns("skill_check_scope"),"Attempt",choices=c("Complete alone"="solo","Ask the party for assistance"="party"),selected="solo"),p("A party check produces one shared result. The first helper to accept rolls too, and the better modified total is used."),footer=tagList(modalButton("Cancel"),actionButton(session$ns("confirm_skill_check"),"Make Check",class="btn btn-primary"))))}
+    observeEvent(input$confirm_skill_check,{info<-active_skill_check();if(is.null(info))return();modifier<-character_skill_modifier(state$char,info$skill,SKILLS_LIST);scope<-as.character(input$skill_check_scope%||%"solo");context<-trimws(as.character(input$skill_check_context%||%""));sid<-online_skill_session();cid<-as.character(state$char_id%||%"");if(is.na(sid)||!nzchar(cid)){roll<-sample.int(20L,1L)+modifier;removeModal();add_log(paste0("🎲 ",info$skill," check",if(nzchar(context))paste0(" — ",context)else"",": ",roll));return()};check<-create_party_skill_check(sid,info$skill,info$ability,context,cid,modifier,scope);if(is.null(check))return(showNotification("Could not create skill check.",type="error"));removeModal();if(scope=="solo"){result<-resolve_party_skill_check(check$id[[1L]],cid,NULL);if(is.null(result))showNotification("Could not resolve skill check.",type="error")}else showNotification("The party has been asked for assistance.",type="message")},ignoreInit=TRUE)
+    observe({invalidateLater(2500,session);sid<-online_skill_session();cid<-as.character(state$char_id%||%"");if(is.na(sid)||!nzchar(cid)||!is.null(pending_party_check_id())||!is.null(session$userData$pending_merchant_id)||!is.null(session$userData$pending_trade_id)||!is.null(session$userData$pending_note_id)||!is.null(session$userData$pending_opportunity))return();rows<-get_pending_party_skill_checks(sid,cid);fresh<-rows[!rows$id%in%shown_party_check_ids(),,drop=FALSE];if(!nrow(fresh))return();r<-fresh[1,,drop=FALSE];shown_party_check_ids(unique(c(shown_party_check_ids(),r$id)));pending_party_check_id(as.integer(r$id[[1L]]));showModal(modalDialog(title=paste(r$requester_name[[1L]],"asks for help"),p("Skill: ",strong(r$skill[[1L]])),if(nzchar(r$context[[1L]]))p(r$context[[1L]]),p("Add your own ",r$skill[[1L]]," modifier and help produce one party result?"),footer=tagList(actionButton(session$ns("pass_party_skill_check"),"Not this time"),actionButton(session$ns("assist_party_skill_check"),"Assist",class="btn btn-success"))))})
+    observeEvent(input$pass_party_skill_check,{pending_party_check_id(NULL);removeModal()},ignoreInit=TRUE)
+    observeEvent(input$assist_party_skill_check,{id<-pending_party_check_id();if(is.null(id))return();rows<-get_pending_party_skill_checks(online_skill_session(),state$char_id);r<-rows[rows$id==id,,drop=FALSE];if(!nrow(r)){pending_party_check_id(NULL);removeModal();return(showNotification("Another helper already resolved this check.",type="warning"))};modifier<-character_skill_modifier(state$char,r$skill[[1L]],SKILLS_LIST);result<-resolve_party_skill_check(id,state$char_id,modifier);pending_party_check_id(NULL);removeModal();if(is.null(result))showNotification("Another helper may already have resolved this check.",type="warning")},ignoreInit=TRUE)
+    observe({invalidateLater(2500,session);sid<-online_skill_session();if(is.na(sid))return();rows<-get_recent_party_skill_results(sid);ids<-suppressWarnings(as.integer(rows$id%||%integer()));if(is.na(last_skill_result_id())){last_skill_result_id(if(length(ids))max(ids,na.rm=TRUE)else 0L);return()};fresh<-rows[ids>last_skill_result_id(),,drop=FALSE];if(!nrow(fresh))return();fresh<-fresh[order(as.integer(fresh$id)),,drop=FALSE];last_skill_result_id(max(as.integer(fresh$id),last_skill_result_id(),na.rm=TRUE));for(i in seq_len(nrow(fresh))){r<-fresh[i,,drop=FALSE];detail<-paste0(r$requester_name[[1L]]," rolled ",r$requester_roll[[1L]],if(!is.na(r$helper_roll[[1L]]))paste0("; ",r$helper_name[[1L]]," rolled ",r$helper_roll[[1L]])else"", ". Final result: ",r$final_total[[1L]]);add_log(paste0("🎲 Party ",r$skill[[1L]]," check",if(nzchar(r$context[[1L]]))paste0(" — ",r$context[[1L]])else"",": ",detail))}})
+    
+    # Skill rolls
+    lapply(seq_len(nrow(SKILLS_LIST)), function(i) {
+      skill <- SKILLS_LIST$Skill[i]
+      ability <- SKILLS_LIST$Ability[i]
+      key <- skill_key(skill)
+      
+      make_roll <- function(mode) {
+        pb <- prof_bonus()
+        mods <- ability_mods()
+        
+        prof_level <- state$char$prof$skills[[key]] %||% "None"
+        mult <- switch(prof_level, "None"=0,"Proficient"=1,"Expertise"=2,0)
+        
+        total_mod <- (mods[[ability]] %||% 0) + (pb * mult)
+        
+        mind_bender <- identical(key, "persuasion") &&
+          isTRUE(state$char$status$mind_bender_active %||% FALSE)
+        if (mind_bender) {
+          mode <- if (identical(mode, "Disadv")) "Normal" else "Adv"
+          state$char$status$mind_bender_active <- FALSE
+        }
+        rr <- roll_d20(mode)
+        total <- rr$val + total_mod
+        
+        add_log(paste0("🎲 Skill - ", skill, ": ", rr$txt, " + ", total_mod, " = ", total))
+      }
+      
+      observeEvent(input[[paste0("roll_", key)]], {
+        if (isTRUE(restoring())) return()
+        open_skill_check(skill,ability)
+      }, ignoreInit = TRUE)
+      
+      observeEvent(input[[paste0("roll_adv_", key)]], {
+        if (isTRUE(restoring())) return()
+        make_roll("Adv")
+      }, ignoreInit = TRUE)
+      
+      observeEvent(input[[paste0("roll_dis_", key)]], {
+        if (isTRUE(restoring())) return()
+        make_roll("Disadv")
+      }, ignoreInit = TRUE)
+    })
+    
+    # Rehydrate
+    observeEvent(char_rev(), {
+      restoring(TRUE)
+      on.exit(restoring(FALSE), add = TRUE)
+      
+      x <- validate_character(state$char)
+      
+      for (ab in ABILITIES) {
+        updateNumericInput(session, ab, value = x$abilities[[ab]] %||% 10)
+        updateCheckboxInput(session, paste0("save_prof_", ab),
+                            value = isTRUE(x$prof$saves[[ab]] %||% FALSE))
+      }
+    }, ignoreInit = TRUE)
+    
+  })
+}

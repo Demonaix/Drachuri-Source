@@ -106,7 +106,8 @@ function terrainClass2D(terrain) {
   if (t === "woodland") return "forest";
   if (t === "grass" || t === "sand" || t === "forest" || t === "water" || t === "stone" ||
       t === "wall" || t === "road" || t === "swamp" || t === "pit" ||
-      t === "ravine") {
+      t === "ravine" || t === "table" || t === "bar" || t === "chair" || t === "bench" ||
+      t === "crate" || t === "barrel" || t === "bed" || t === "shelf" || t === "rubble" || t === "campfire") {
     return t;
   }
 
@@ -126,6 +127,16 @@ function terrainEmoji2D(terrain) {
   if (t === "swamp") return "∴";
   if (t === "pit") return "◉";
   if (t === "ravine") return "▾";
+  if (t === "table") return "▰";
+  if (t === "bar") return "▤";
+  if (t === "chair") return "♧";
+  if (t === "bench") return "▬";
+  if (t === "crate") return "▣";
+  if (t === "barrel") return "●";
+  if (t === "bed") return "▥";
+  if (t === "shelf") return "▦";
+  if (t === "rubble") return "∵";
+  if (t === "campfire") return "♨";
 
   return "";
 }
@@ -423,6 +434,15 @@ function injectCombat2DCSS() {
       background-color:#111;background-image:url("assets/textures/ravine.jpg");background-size:72px 72px;
       box-shadow:inset 0 0 18px rgba(0,0,0,0.85);
     }
+
+    .combat-2d-tile.terrain-table,.combat-2d-tile.terrain-bar,.combat-2d-tile.terrain-chair,
+    .combat-2d-tile.terrain-bench,.combat-2d-tile.terrain-crate,.combat-2d-tile.terrain-barrel,
+    .combat-2d-tile.terrain-bed,.combat-2d-tile.terrain-shelf{
+      background-color:#6d472b;background-image:url("assets/textures/clutter_oak.png");background-size:72px 72px;
+      color:#f5dfb4;text-shadow:0 1px 2px #24170e;
+    }
+    .combat-2d-tile.terrain-rubble{background-color:#77746c;background-image:url("assets/textures/stone.jpg");background-size:72px 72px;}
+    .combat-2d-tile.terrain-campfire{background-color:#714427;background-image:url("assets/textures/dirt.jpg");background-size:72px 72px;color:#ffbd52;text-shadow:0 0 5px #d94b20;}
 
     .combat-2d-tile.terrain-default{
       background:#746e5e;

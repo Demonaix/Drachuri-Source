@@ -10,7 +10,7 @@ partyHudUI <- function(id) {
   position: fixed;
   top: 110px;
   left: 0px;
-  width: 156px;
+  width: 194px;
   z-index: 10000;
   pointer-events: none;
   max-height: calc(100vh - 125px);
@@ -25,7 +25,7 @@ partyHudUI <- function(id) {
       display: flex;
       flex-direction: column;
       align-items: flex-end;
-      gap: 6px;
+      gap: 8px;
       width: 100%;
     }
 
@@ -46,11 +46,11 @@ partyHudUI <- function(id) {
     }
 
     #", root_id, " .partyhud-empty{
-      width: 144px;
+      width: 182px;
       padding: 7px 9px;
-      border-radius: 10px;
-      border: 1px solid rgba(191,167,111,0.82);
-      background: rgba(255,255,245,0.90);
+      border-radius: 3px;
+      border: 1px solid rgba(91,56,30,0.88);
+      background: linear-gradient(135deg, rgba(255,244,200,0.94), rgba(196,153,88,0.94));
       color: #3e2f1c;
       font-size: 10px;
       box-shadow: 0 8px 20px rgba(0,0,0,0.18);
@@ -58,31 +58,65 @@ partyHudUI <- function(id) {
     }
 
     #", root_id, " .party-row{
-      width: 144px;
+      width: 182px;
       pointer-events: none;
     }
 
     #", root_id, " .party-strip{
       width: 100%;
-     padding: 5px 6px;
-      border-radius: 10px;
-      border: 1px solid rgba(191,167,111,0.82);
-      background: rgba(255,255,245,0.90);
+      box-sizing: border-box;
+      position: relative;
+      min-height: 92px;
+      padding: 7px 7px 7px 72px;
+      border-radius: 3px 6px 4px 2px;
+      border: 1px solid rgba(91,56,30,0.9);
+      background:
+        radial-gradient(circle at 18% 12%, rgba(255,248,207,0.7), transparent 32%),
+        linear-gradient(135deg, rgba(225,199,139,0.96), rgba(184,139,77,0.96));
       color: #3e2f1c;
       overflow: hidden;
-      box-shadow: 0 8px 20px rgba(0,0,0,0.18);
+      box-shadow: 0 3px 0 rgba(67,38,18,0.30), 0 9px 22px rgba(0,0,0,0.26);
       pointer-events: auto;
     }
 
+    #", root_id, " .party-strip::after{
+      content:'';
+      position:absolute;
+      inset:3px;
+      border:1px solid rgba(91,56,30,0.24);
+      pointer-events:none;
+    }
+
+    #", root_id, " .party-portrait{
+      position:absolute;
+      left:4px;
+      top:4px;
+      width:62px;
+      height:82px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      overflow:hidden;
+      border:1px solid #5c3a20;
+      background:linear-gradient(145deg,#d9bd82,#9f7440);
+      box-shadow:0 2px 6px rgba(47,27,13,.42);
+      transform:none;
+      z-index:1;
+    }
+
+    #", root_id, " .party-portrait img{width:100%;height:100%;object-fit:cover;object-position:center 20%;transform:none;}
+    #", root_id, " .party-portrait-initial{font:900 27px Georgia,serif;color:#51331e;text-shadow:0 1px rgba(255,239,190,.7);}
+    #", root_id, " .party-portrait.enemy{filter:saturate(.65);}
+
     #", root_id, " .party-strip.active-turn{
       border-color: rgba(125,28,28,0.98);
-      background: rgba(244,215,208,0.98);
+      background: linear-gradient(135deg, rgba(231,194,154,0.98), rgba(181,105,78,0.98));
       box-shadow: 0 0 0 2px rgba(125,28,28,0.32), 0 8px 20px rgba(0,0,0,0.22);
     }
 
     #", root_id, " .party-strip.self-player{
       border-color: rgba(36,130,190,0.98);
-      background: rgba(232,247,255,0.98);
+      background: linear-gradient(135deg, rgba(224,205,158,0.98), rgba(139,177,174,0.98));
       box-shadow: 0 0 0 2px rgba(36,130,190,0.22), 0 8px 20px rgba(0,0,0,0.18);
     }
 
@@ -234,10 +268,30 @@ grid-template-columns: 10px 1fr;
 }
 
 partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
-                           char_rev = NULL, live_snapshot = NULL) {
+                           char_rev = NULL, live_snapshot = NULL,
+                           portrait_base = "assets/player-posters") {
   moduleServer(id, function(input, output, session) {
     
     `%||%` <- get("%||%", inherits = TRUE)
+
+    party_portrait_file <- function(name) {
+      raw_name <- as.character(name %||% "")
+      ascii_name <- iconv(raw_name, to = "ASCII//TRANSLIT")
+      if (is.na(ascii_name)) ascii_name <- raw_name
+      key <- tolower(trimws(ascii_name))
+      key <- gsub("[^a-z0-9]+", "_", key)
+      key <- gsub("^_+|_+$", "", key)
+      portraits <- c(
+        eman = "eman.png",
+        dewydd_troell = "dewydd-troell.png",
+        dewydd = "dewydd-troell.png",
+        dewyd_troell = "dewydd-troell.png",
+        dafydd_troell = "dewydd-troell.png",
+        eleri = "eleri.png"
+      )
+      result <- unname(portraits[key])
+      if (length(result) && !is.na(result)) result else ""
+    }
     
     log_safe <- function(msg, toast = FALSE, flash = "none") {
       if (is.function(add_log)) {
@@ -601,11 +655,22 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
         status_icons <- extra$status_icons %||% character(0)
         conditions <- strsplit(as.character(row$conditions[1] %||% ""), ",", fixed = TRUE)[[1L]]
         conditions <- conditions[nzchar(conditions)]
+        portrait_file <- if (identical(actor_type, "player")) party_portrait_file(nm) else ""
+        portrait_initial <- toupper(substr(trimws(nm), 1L, 1L))
+        if (!nzchar(portrait_initial)) portrait_initial <- "?"
         
         tags$div(
           class = "party-row",
           tags$div(
             class = paste("party-strip", if (is_active_turn) "active-turn" else "", if (is_self) "self-player" else ""),
+            tags$div(
+              class = paste("party-portrait", if (identical(actor_type, "enemy")) "enemy" else ""),
+              if (nzchar(portrait_file)) {
+                tags$img(src = paste0(sub("/$", "", portrait_base), "/", portrait_file), alt = paste(nm, "portrait"))
+              } else {
+                tags$span(class = "party-portrait-initial", portrait_initial)
+              }
+            ),
             tags$div(
               class = "party-name-row",
               tags$div(class = "party-name", paste0(nm, if (is_self) " (You)" else "")),

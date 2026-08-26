@@ -18,6 +18,10 @@ fi
 set -a
 . "$project_dir/test-env/test.env"
 set +a
+Rscript --vanilla "$project_dir/scripts/migrate_database.R"
+export LANG=en_GB.UTF-8
+export LC_ALL=en_GB.UTF-8
+export LC_CTYPE=en_GB.UTF-8
 
 R_LIBS="$r_library" Rscript --no-init-file --no-environ "$project_dir/test-env/configure_visual_test_map.R"
 

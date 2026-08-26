@@ -12,26 +12,30 @@ generate_control_map_tiles <- function(map_id,width,height,preset="forest",seed=
   set.seed(as.integer(seed%||%1L));indoor<-preset%in%c("tavern","prison","dungeon")
   tiles<-create_square_map_tiles(map_id,width,height,default_terrain=if(indoor)"stone"else if(preset=="cave")"stone"else"grass",default_light=if(preset%in%c("dungeon","cave"))"dark"else if(indoor)"dim"else"full")
   at<-function(x=NULL,y=NULL){keep<-rep(TRUE,nrow(tiles));if(!is.null(x))keep<-keep&tiles$x%in%x;if(!is.null(y))keep<-keep&tiles$y%in%y;keep}
-  paint<-function(idx,terrain,light=NULL){tiles$terrain[idx]<<-terrain;props<-switch(terrain,wall=list(1,TRUE,TRUE),ravine=list(1,TRUE,FALSE),water=list(3,TRUE,FALSE),forest=list(2,FALSE,TRUE),swamp=list(2,FALSE,FALSE),sand=list(1.5,FALSE,FALSE),list(1,FALSE,FALSE));tiles$move_cost[idx]<<-props[[1]];tiles$blocks_movement[idx]<<-props[[2]];tiles$blocks_vision[idx]<<-props[[3]];if(!is.null(light))tiles$light[idx]<<-light}
+  paint<-function(idx,terrain,light=NULL){tiles$terrain[idx]<<-terrain;props<-switch(terrain,
+    wall=list(1,TRUE,TRUE),ravine=list(1,TRUE,FALSE),water=list(3,TRUE,FALSE),forest=list(2,FALSE,TRUE),swamp=list(2,FALSE,FALSE),sand=list(1.5,FALSE,FALSE),
+    table=list(1,TRUE,FALSE),bar=list(1,TRUE,FALSE),crate=list(1,TRUE,FALSE),barrel=list(1,TRUE,FALSE),shelf=list(1,TRUE,TRUE),
+    chair=list(2,FALSE,FALSE),bench=list(2,FALSE,FALSE),bed=list(2,FALSE,FALSE),rubble=list(2,FALSE,FALSE),campfire=list(2,FALSE,FALSE),
+    list(1,FALSE,FALSE));tiles$move_cost[idx]<<-props[[1]];tiles$blocks_movement[idx]<<-props[[2]];tiles$blocks_vision[idx]<<-props[[3]];if(!is.null(light))tiles$light[idx]<<-light}
   perimeter<-function(){paint(at(c(1L,width),NULL)|at(NULL,c(1L,height)),"wall")}
   door<-function(x=ceiling(width/2),y=1L){paint(at(x,y),"stone",if(indoor)"dim"else"full")}
-  sample_open<-function(prob){which(stats::runif(nrow(tiles))<prob & tiles$x>1L & tiles$x<width & tiles$y>1L & tiles$y<height)}
+  sample_open<-function(prob){which(stats::runif(nrow(tiles))<prob & tiles$x>1L & tiles$x<width & tiles$y>1L & tiles$y<height & !as.logical(tiles$blocks_movement))}
   if(preset=="tavern"){
-    perimeter();door();if(width>=7L&&height>=6L){bar_y<-height-2L;paint(at(seq(max(3L,ceiling(width*.55)),width-2L),bar_y),"wall");for(x in seq(3L,width-2L,by=3L))for(y in seq(3L,max(3L,height-3L),by=3L))if(stats::runif(1)<density/100)paint(at(x,y),"wall")}
+    perimeter();door();if(width>=7L&&height>=6L){bar_y<-height-2L;paint(at(seq(max(3L,ceiling(width*.55)),width-2L),bar_y),"bar");for(x in seq(3L,width-2L,by=3L))for(y in seq(3L,max(3L,height-3L),by=3L))if(stats::runif(1)<density/100){paint(at(x,y),"table");if(x+1L<width)paint(at(x+1L,y),"chair")}}
   }else if(preset=="prison"){
-    perimeter();door();if(width>=6L){for(x in seq(4L,width-2L,by=4L)){paint(at(x,seq(2L,height-1L)),"wall");for(y in unique(pmax(2L,pmin(height-1L,c(ceiling(height/3),ceiling(2*height/3))))))paint(at(x,y),"stone","dim")}}
+    perimeter();door();if(width>=6L){for(x in seq(4L,width-2L,by=4L)){paint(at(x,seq(2L,height-1L)),"wall");for(y in unique(pmax(2L,pmin(height-1L,c(ceiling(height/3),ceiling(2*height/3))))))paint(at(x,y),"stone","dim");if(x>2L)paint(at(x-1L,height-1L),"bed")}}
   }else if(preset=="forest"){
     paint(sample_open(density/100),"forest");road_x<-pmax(1L,pmin(width,round(width/2+sin(seq_len(height)/2)*pmax(1,width/8))));for(y in seq_len(height))paint(at(unique(pmax(1L,pmin(width,c(road_x[y]-1L,road_x[y])))),y),"road")
   }else if(preset=="dungeon"){
-    perimeter();door();if(width>=7L)for(x in seq(5L,width-2L,by=5L)){paint(at(x,seq(2L,height-1L)),"wall");paint(at(x,max(2L,min(height-1L,sample(2:max(2L,height-1L),1)))),"stone","dim")};if(height>=7L)for(y in seq(5L,height-2L,by=5L)){paint(at(seq(2L,width-1L),y),"wall");paint(at(max(2L,min(width-1L,sample(2:max(2L,width-1L),1))),y),"stone","dim")}
+    perimeter();door();if(width>=7L)for(x in seq(5L,width-2L,by=5L)){paint(at(x,seq(2L,height-1L)),"wall");paint(at(x,max(2L,min(height-1L,sample(2:max(2L,height-1L),1)))),"stone","dim")};if(height>=7L)for(y in seq(5L,height-2L,by=5L)){paint(at(seq(2L,width-1L),y),"wall");paint(at(max(2L,min(width-1L,sample(2:max(2L,width-1L),1))),y),"stone","dim")};paint(sample_open(density/500),"barrel")
   }else if(preset=="cave"){
-    paint(sample_open(density/130),"wall");if(width>=8L&&height>=8L)paint(at(sample(2:(width-1L),max(1L,round(width/8))),sample(2:(height-1L),max(1L,round(height/8)))),"ravine")
+    paint(sample_open(density/130),"wall");paint(sample_open(density/300),"rubble");if(width>=8L&&height>=8L)paint(at(sample(2:(width-1L),max(1L,round(width/8))),sample(2:(height-1L),max(1L,round(height/8)))),"ravine")
   }else if(preset=="swamp"){
     paint(sample_open(density/100),"swamp");paint(sample_open(density/260),"water");path_x<-ceiling(width/2);paint(at(unique(pmax(1L,pmin(width,c(path_x-1L,path_x)))),NULL),"road")
   }else if(preset=="road"){
     cx<-ceiling(width/2);cy<-ceiling(height/2);paint(at(unique(pmax(1L,pmin(width,c(cx-1L,cx)))),NULL),"road");paint(at(NULL,unique(pmax(1L,pmin(height,c(cy-1L,cy))))),"road");paint(sample_open(density/170),"forest")
   }else if(preset=="ruins"){
-    paint(sample_open(density/180),"stone");for(i in seq_len(max(1L,round(density/12)))){x<-sample(seq_len(width),1);y<-sample(seq_len(height),1);len<-sample(2:max(2L,min(6L,max(width,height))),1);if(stats::runif(1)<.5)paint(at(seq(x,min(width,x+len-1L)),y),"wall")else paint(at(x,seq(y,min(height,y+len-1L))),"wall")}
+    paint(sample_open(density/180),"stone");paint(sample_open(density/220),"rubble");for(i in seq_len(max(1L,round(density/12)))){x<-sample(seq_len(width),1);y<-sample(seq_len(height),1);len<-sample(2:max(2L,min(6L,max(width,height))),1);if(stats::runif(1)<.5)paint(at(seq(x,min(width,x+len-1L)),y),"wall")else paint(at(x,seq(y,min(height,y+len-1L))),"wall")}
   }else if(preset=="ravine"){
     paint(sample_open(density/260),"stone");centre<-round(width/2+sin(seq_len(height)/2.4+seed)*pmax(1,width/7));bridge_y<-max(1L,min(height,round(height*.55)));for(y in seq_len(height)){xs<-unique(pmax(1L,pmin(width,c(centre[y]-1L,centre[y]))));paint(at(xs,y),if(y%in%c(bridge_y,bridge_y+1L))"road"else"ravine")}
   }else if(preset=="river"){
@@ -219,7 +223,10 @@ controlMapBuilderUI <- function(id) {
               selectInput(
                 ns("paint_terrain"),
                 "Terrain",
-                choices = c("grass", "sand", "stone", "forest", "swamp", "water", "wall", "ravine", "road", "mandred_convergence"),
+                choices = list(
+                  "Ground"=c("Grass"="grass","Sand"="sand","Stone"="stone","Forest"="forest","Swamp"="swamp","Water"="water","Wall"="wall","Ravine"="ravine","Road"="road","Mandred convergence"="mandred_convergence"),
+                  "Common clutter"=c("Table"="table","Bar counter"="bar","Chair"="chair","Bench"="bench","Crate"="crate","Barrel"="barrel","Bed"="bed","Shelf"="shelf","Rubble"="rubble","Campfire"="campfire")
+                ),
                 selected = "grass",
                 width = "150px"
               ),
@@ -286,10 +293,15 @@ controlMapBuilderUI <- function(id) {
 controlMapBuilderServer <- function(id, ctrl, session_tbl = NULL, players_tbl = NULL, positions_tbl = NULL, bump_refresh) {
   moduleServer(id, function(input, output, session) {
     observeEvent(input$paint_terrain, {
-      if (!identical(input$paint_terrain, "ravine")) return()
-      updateCheckboxInput(session, "paint_blocks_movement", value = TRUE)
-      updateCheckboxInput(session, "paint_blocks_vision", value = FALSE)
-      updateNumericInput(session, "paint_move_cost", value = 1)
+      defaults <- list(
+        ravine=c(1,1,0), table=c(1,1,0), bar=c(1,1,0), crate=c(1,1,0), barrel=c(1,1,0), shelf=c(1,1,1),
+        chair=c(2,0,0), bench=c(2,0,0), bed=c(2,0,0), rubble=c(2,0,0), campfire=c(2,0,0)
+      )
+      d <- defaults[[as.character(input$paint_terrain %||% "")]]
+      if (is.null(d)) return()
+      updateNumericInput(session, "paint_move_cost", value = as.numeric(d[[1L]]))
+      updateCheckboxInput(session, "paint_blocks_movement", value = isTRUE(as.logical(as.numeric(d[[2L]]))))
+      updateCheckboxInput(session, "paint_blocks_vision", value = isTRUE(as.logical(as.numeric(d[[3L]]))))
     }, ignoreInit = TRUE)
     
     `%||%` <- get("%||%", inherits = TRUE)

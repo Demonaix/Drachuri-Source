@@ -53,10 +53,11 @@ for (attempt in seq_len(3L)) {
 log_message("UTF-8 locale: ", Sys.getlocale("LC_CTYPE"), "; database warm-up: ", if (db_ready) "online" else "offline")
 
 tryCatch({
-  options(shiny.launch.browser = TRUE)
+  launch_browser <- identical(tolower(Sys.getenv("DND_LAUNCH_BROWSER", "false")), "true")
+  options(shiny.launch.browser = launch_browser)
   launch_port <- suppressWarnings(as.integer(Sys.getenv("DND_LAUNCH_PORT", "")))
   if (is.na(launch_port) || launch_port < 1L) launch_port <- NULL
-  shiny::runApp(appDir = app_dir, launch.browser = TRUE, port = launch_port)
+  shiny::runApp(appDir = app_dir, launch.browser = launch_browser, port = launch_port)
 }, error = function(e) fail(conditionMessage(e)), finally = {
   pid_file <- Sys.getenv("DRACHURI_PID_FILE", "")
   if (nzchar(pid_file)) try(unlink(pid_file), silent = TRUE)

@@ -17,6 +17,7 @@ if (!"player-assets" %in% names(shiny::resourcePaths())) {
 source("control_app/modules/control_sessions_module.R", local = FALSE)
 source("control_app/modules/control_players_module.R", local = FALSE)
 source("control_app/modules/control_map_builder_module.R", local = FALSE)
+source("control_app/modules/control_encounter_generator_core.R", local = FALSE)
 source("control_app/modules/control_encounter_setup_module.R", local = FALSE)
 source("control_app/modules/control_live_combat_module.R", local = FALSE)
 source("control_app/modules/control_npc_creator_module.R", local = FALSE)
@@ -27,6 +28,7 @@ source("control_app/modules/control_npc_attacks_module.R", local = FALSE)
 source("control_app/modules/control_merchants_module.R", local = FALSE)
 source("control_app/modules/control_story_module.R", local = FALSE)
 source("control_app/modules/control_issue_reports_module.R", local = FALSE)
+source("control_app/modules/control_geography_climate_module.R", local = FALSE)
 source("../DND APP Drachuri Edition Player_v2/server/party_hud_module.R", local = FALSE)
 
 ui_control <- fluidPage(
@@ -194,7 +196,9 @@ ui_control <- fluidPage(
       .control-shell {
         position: relative;
         z-index: 1;
+        width: calc(100vw - 248px);
         max-width: 1500px;
+        box-sizing: border-box;
         margin: 24px 28px 40px 220px;
         padding: 0 18px 30px;
       }
@@ -258,8 +262,9 @@ ui_control <- fluidPage(
       }
       .control-shell > .tabbable > .nav-tabs {
         display: flex;
+        flex-wrap: wrap;
         gap: 5px;
-        overflow-x: auto;
+        overflow: visible;
         margin: 14px 7px 0;
         padding: 7px 9px 0;
         border: 1px solid rgba(205,166,91,.55);
@@ -267,9 +272,7 @@ ui_control <- fluidPage(
         border-radius: 14px 14px 0 0;
         background: rgba(23,13,9,.92);
         box-shadow: 0 7px 22px rgba(0,0,0,.35);
-        scrollbar-width: none;
       }
-      .control-shell > .tabbable > .nav-tabs::-webkit-scrollbar { display: none; }
       .control-shell > .tabbable > .nav-tabs > li { flex: 0 0 auto; }
       .control-shell > .tabbable > .nav-tabs > li > a {
         margin: 0;
@@ -329,7 +332,7 @@ ui_control <- fluidPage(
         box-shadow: 0 12px 30px rgba(0,0,0,.5) !important;
       }
       @media (max-width: 1050px) {
-        .control-shell { margin: 14px; padding: 0 8px 22px; }
+        .control-shell { width:calc(100vw - 28px); margin: 14px; padding: 0 8px 22px; }
         .control-hero { flex-wrap: wrap; }
         .control-toolbar { width: 100%; margin-left: 104px; justify-content: flex-start; }
       }
@@ -380,6 +383,10 @@ ui_control <- fluidPage(
       tabPanel(
         title = "Players",
         controlPlayersUI("players")
+      ),
+      tabPanel(
+        title = "Geography & Climate",
+        controlGeographyClimateUI("geography_climate")
       ),
       tabPanel(
         title = "Player Reports",

@@ -302,7 +302,18 @@ restTabUI <- function(id) {
 #%s .resource-card .btn {
   border-radius: 10px;
 }
-"), as.list(rep(screen_id, 15)))))),
+
+#%s .phase-clock{width:118px;height:118px;border-radius:50%%;display:grid;place-items:center;margin:auto;background:conic-gradient(#8e673b var(--spent),rgba(62,47,28,.14) 0);box-shadow:inset 0 0 0 10px rgba(255,248,230,.94)}
+#%s .phase-clock-inner{text-align:center;font-weight:900;font-size:22px}.phase-clock-inner small{display:block;font-size:11px;font-weight:600}
+#%s .rest-mode-panel{padding:14px;margin:10px 0;border:1px solid rgba(142,103,59,.45);border-radius:14px;background:rgba(255,250,235,.94)}
+#%s .rest-status-wrap{margin:12px 0 18px;padding:14px;border:1px solid rgba(142,103,59,.45);border-radius:14px;background:rgba(255,250,235,.94)}
+#%s .rest-status-head{display:flex;justify-content:space-between;gap:12px;align-items:baseline;margin-bottom:10px} #%s .rest-status-head h4{margin:0;font-family:Cinzel,serif}
+#%s .rest-status-hand{display:flex;gap:12px;align-items:flex-start;overflow-x:auto;padding:5px 3px 12px;scrollbar-color:#9b7747 transparent}
+#%s .rest-status-card{flex:0 0 142px;text-align:center;transition:transform .18s ease} #%s .rest-status-card:hover{transform:translateY(-4px)}
+#%s .rest-status-card img{display:block;width:142px;aspect-ratio:4/5;object-fit:cover;border-radius:10px;box-shadow:0 7px 16px rgba(44,27,12,.32)}
+#%s .rest-status-reason{font-size:10px;line-height:1.25;margin-top:6px;color:#503b24}
+#%s .rest-status-card.risk img{box-shadow:0 0 0 2px #8e3e32,0 7px 16px rgba(44,27,12,.32)} #%s .rest-status-card.positive img{box-shadow:0 0 0 2px #587b4f,0 7px 16px rgba(44,27,12,.32)}
+"), as.list(rep(screen_id, 28)))))),
     
     div(
       id = screen_id,
@@ -312,6 +323,7 @@ restTabUI <- function(id) {
         uiOutput(ns("camp_time")),
         uiOutput(ns("camp_environment"))
       ),
+      uiOutput(ns("rest_mode_panel")),
       
       h4(),
       h4(),
@@ -321,20 +333,7 @@ restTabUI <- function(id) {
       div(
         class = "camp-center",
         uiOutput(ns("fire_visual")),
-        actionButton(ns("short_rest"), "Short Rest", class = "camp-btn btn-top"),
-        actionButton(ns("long_rest"),  "Long Rest",  class = "camp-btn btn-right"),
-        actionButton(ns("advance_day"), "Skip Day",  class = "camp-btn btn-left"),
         actionButton(ns("light_fire"), "Light Fire", class = "camp-btn btn-bottom")
-      ),
-      
-      h4(),
-      
-      div(
-        class = "camp-status",
-        uiOutput(ns("camp_status")),
-        selectInput(ns("rest_outcome"), "Tonight's recovery",
-          choices = c("Full rest"="full", "Half rest"="half", "No rest / skip"="skip"),
-          selected = "full", width = "220px")
       ),
       
       h4(),
@@ -348,16 +347,6 @@ restTabUI <- function(id) {
           uiOutput(ns("rations_display")),
           div(
             style = "display:flex; justify-content:space-around; margin-top:10px;",
-            div(
-              style = "text-align:center;",
-              actionButton(ns("add_rations_btn"), "➕"),
-              tags$div("Add")
-            ),
-            div(
-              style = "text-align:center;",
-              actionButton(ns("remove_rations_btn"), "➖"),
-              tags$div("Remove")
-            ),
             div(
               style = "text-align:center;",
               actionButton(ns("consume_rations_btn"), "🍖"),
@@ -377,16 +366,6 @@ restTabUI <- function(id) {
           uiOutput(ns("water_display")),
           div(
             style = "display:flex; justify-content:space-around; margin-top:10px;",
-            div(
-              style = "text-align:center;",
-              actionButton(ns("add_water_btn"), "➕"),
-              tags$div("Add")
-            ),
-            div(
-              style = "text-align:center;",
-              actionButton(ns("remove_water_btn"), "➖"),
-              tags$div("Remove")
-            ),
             div(
               style = "text-align:center;",
               actionButton(ns("consume_water_btn"), "💧"),
@@ -413,7 +392,8 @@ restTabUI <- function(id) {
             )
           )
         )
-      )
+      ),
+      uiOutput(ns("active_status_cards"))
     )
   )
 }
@@ -439,25 +419,63 @@ restTabServer <- function(
     }
     supply_defaults<-function(x){list(wood=x$resources$wood$cur%||%3L,wood_max=x$resources$wood$max%||%10L,water=x$resources$water$cur%||%3L,water_max=x$resources$water$max%||%5L,rations=x$resources$rations$cur%||%3L,rations_max=x$resources$rations$max%||%5L)}
     online_session_id<-function(){sid<-suppressWarnings(as.integer(state$active_session_id%||%NA));if(isTRUE(state$offline_mode)||is.na(sid)||sid<1L)NA_integer_ else sid}
+    shared_environment<-reactiveVal(NULL)
+    active_phase<-reactiveVal(NULL);watch_prompted_phase<-reactiveVal(NA_integer_)
+    observe({invalidateLater(2500,session);sid<-online_session_id();if(is.na(sid))return();env<-get_session_environment(sid);if(is.null(env))return();shared_environment(env);x<-validate_character(state$char);day<-as.integer(env$day_number[[1L]]);if(!identical(as.integer(x$meta$day%||%1L),day)){x$meta$day<-day;state$char<-x}})
+    observe({invalidateLater(2000,session);sid<-online_session_id();if(is.na(sid)){active_phase(NULL);return()};active_phase(get_open_session_phase(sid))})
+    phase_remaining<-reactive({invalidateLater(750,session);p<-active_phase();cid<-as.character(state$char_id%||%"");if(is.null(p)||!nzchar(cid)||p$phase_kind[[1L]]!="rest")return(0);session_phase_time_remaining(p$id[[1L]],cid)})
+    spend_phase_time<-function(type,label,hours,start=NULL,end=NULL){p<-active_phase();cid<-as.character(state$char_id%||%"");if(is.null(p)||p$phase_kind[[1L]]!="rest")return(structure(list(),error="The DM has not opened Rest Mode."));allocate_session_phase_time(p$id[[1L]],cid,type,label,hours,start,end)}
+    output$rest_mode_panel<-renderUI({
+      p<-active_phase()
+      if(is.null(p))return(div(class="rest-mode-panel",strong("No phase is open.")," The DM controls when party time advances."))
+      if(p$phase_kind[[1L]]!="rest")return(div(class="rest-mode-panel",strong("Standard phase in progress.")," Sindre will regenerate for six hours when the DM resolves it; camp-time activities are unavailable."))
+      budget<-as.numeric(p$duration_hours[[1L]]);remaining<-phase_remaining();spent<-budget-remaining
+      div(class="rest-mode-panel",fluidRow(
+        column(3,div(class="phase-clock",style=paste0("--spent:",round(spent/budget*100),"%"),div(class="phase-clock-inner",paste0(remaining,"h"),tags$small("remaining")))),
+        column(9,h4(paste0("Rest Mode — plan your ",budget," hours")),p("Long rest uses 6h; short rest, gathering, water collection and foraging use 1h; watches use 2h; glyphs use exact crafting time."),div(style="display:flex;gap:8px;flex-wrap:wrap",actionButton(session$ns("plan_short_rest"),"Allocate Short Rest (1h)"),actionButton(session$ns("plan_long_rest"),"Allocate Long Rest (6h)",class="btn btn-primary"),actionButton(session$ns("organise_watches"),"Organise Watches")),uiOutput(session$ns("phase_plan")),uiOutput(session$ns("watch_rota")))
+      ))
+    })
+    output$active_status_cards<-renderUI({
+      invalidateLater(1000,session)
+      p<-active_phase();if(is.null(p)||p$phase_kind[[1L]]!="rest")return(NULL)
+      x<-validate_character(state$char);sid<-online_session_id();fire<-if(is.na(sid))isTRUE(x$status$has_fire)else get_session_fire(sid)
+      cid<-as.character(state$char_id%||%"");actions<-character()
+      if(nzchar(cid)){rows<-get_session_phase_actions(p$id[[1L]],cid);if(nrow(rows))actions<-as.character(rows$action_type)}
+      env<-shared_environment()%||%list(climate=x$environment$temperature%||%"Temperate",weather="")
+      cards<-character_rest_status_cards(x,fire,actions,env)
+      div(class="rest-status-wrap",
+        div(class="rest-status-head",h4("Active Rest Cards"),tags$small("These cards show what is currently protecting or threatening you when the phase resolves.")),
+        div(class="rest-status-hand",lapply(cards,function(card)div(class=paste("rest-status-card",card$tone),title=card$reason,tags$img(src=card$image,alt=card$label),div(class="rest-status-reason",card$reason))))
+      )
+    })
+    output$phase_plan<-renderUI({invalidateLater(750,session);p<-active_phase();cid<-as.character(state$char_id%||%"");if(is.null(p)||!nzchar(cid))return(NULL);a<-get_session_phase_actions(p$id[[1L]],cid);if(!nrow(a))return(tags$small("No time allocated yet."));tags$ul(lapply(seq_len(nrow(a)),function(i)tags$li(paste0(a$label[[i]]," — ",a$hours[[i]],"h"))))})
+    output$watch_rota<-renderUI({invalidateLater(750,session);p<-active_phase();sid<-online_session_id();if(is.null(p)||is.na(sid))return(NULL);a<-get_session_phase_actions(p$id[[1L]]);a<-a[a$action_type=="watch",,drop=FALSE];if(!nrow(a))return(NULL);players<-get_session_players(sid);labels<-setNames(as.character(players$display_name%||%players$character_id),as.character(players$character_id));div(tags$strong("Watch rota: "),paste(vapply(seq_len(nrow(a)),function(i)paste0(labels[[as.character(a$character_id[[i]])]]%||%a$character_id[[i]]," — ",a$label[[i]]),character(1)),collapse="; "))})
+    observeEvent(input$plan_short_rest,{r<-spend_phase_time("short_rest","Short rest",1);if(length(r$error%||%character()))showNotification(r$error,type="warning")else showNotification("One hour allocated to a short rest. Recovery applies when the DM resolves the phase.")},ignoreInit=TRUE)
+    observeEvent(input$plan_long_rest,{r<-spend_phase_time("long_rest","Long rest",6);if(length(r$error%||%character()))showNotification(r$error,type="warning")else showNotification("All six hours allocated to a long rest. Recovery applies when the DM resolves the phase.")},ignoreInit=TRUE)
+    show_watch_modal<-function(p){env<-shared_environment();phase_name<-if(is.null(env))"night"else env$time_of_day[[1L]];starts<-seq(0,max(0,as.numeric(p$duration_hours[[1L]])-2),by=2);choices<-setNames(as.character(starts),vapply(starts,function(s)paste(phase_hour_label(phase_name,s),"–",phase_hour_label(phase_name,s+2)),character(1)));showModal(modalDialog(title="Choose a watch",p("Each watch uses two hours of your phase budget. Choose one slot or take no watch."),selectInput(session$ns("watch_slot"),"Watch",choices=c("No watch"="",choices)),footer=tagList(modalButton("Later"),actionButton(session$ns("save_watch"),"Confirm Watch",class="btn btn-primary"))))}
+    observeEvent(input$organise_watches,{p<-active_phase();if(is.null(p)||p$phase_kind[[1L]]!="rest")return(showNotification("Rest Mode is not open.",type="warning"));set_phase_watches_open(p$id[[1L]],TRUE);show_watch_modal(p)},ignoreInit=TRUE)
+    observe({p<-active_phase();if(is.null(p)||!isTRUE(p$watches_open[[1L]])||identical(as.integer(p$id[[1L]]),watch_prompted_phase()))return();watch_prompted_phase(as.integer(p$id[[1L]]));show_watch_modal(p)})
+    observeEvent(input$save_watch,{p<-active_phase();req(p);slot<-as.character(input$watch_slot%||%"");if(!nzchar(slot)){removeModal();return(showNotification("No watch selected."))};start<-as.numeric(slot);env<-shared_environment();label<-paste("Watch",phase_hour_label(env$time_of_day[[1L]],start),"–",phase_hour_label(env$time_of_day[[1L]],start+2));r<-spend_phase_time("watch",label,2,start,start+2);if(length(r$error%||%character()))showNotification(r$error,type="warning")else{removeModal();showNotification(paste(label,"recorded."))}},ignoreInit=TRUE)
     apply_supply_row<-function(x,row){if(is.null(row)||!is.data.frame(row)||!nrow(row))return(x);for(resource in c("wood","water","rations")){x$resources[[resource]]$cur<-as.integer(row[[resource]][[1L]]);x$resources[[resource]]$max<-as.integer(row[[paste0(resource,"_max")]][[1L]])};x}
     change_supply<-function(x,resource,amount=0L,fill=FALSE){sid<-online_session_id();if(!is.na(sid)){result<-adjust_session_supply(sid,resource,amount,fill,supply_defaults(x));if(is.null(result))return(NULL);result$char<-apply_supply_row(x,result$row);return(result)};before<-as.integer(x$resources[[resource]]$cur%||%0L);maximum<-as.integer(x$resources[[resource]]$max%||%if(resource=="wood")10L else 5L);after<-if(isTRUE(fill))maximum else max(0L,min(maximum,before+as.integer(amount)));x$resources[[resource]]$cur<-after;list(char=x,before=before,after=after,applied=!identical(before,after))}
     observe({invalidateLater(2500,session);if(isTRUE(restoring()))return();sid<-online_session_id();if(is.na(sid))return();x<-validate_character(state$char);row<-get_session_supplies(sid,supply_defaults(x));updated<-apply_supply_row(x,row);old<-vapply(c("wood","water","rations"),function(k)as.integer(x$resources[[k]]$cur%||%0L),integer(1));new<-vapply(c("wood","water","rations"),function(k)as.integer(updated$resources[[k]]$cur%||%0L),integer(1));if(!identical(old,new))state$char<-updated})
     gather_resource<-reactiveVal("");pending_help_id<-reactiveVal(NULL);shown_help_ids<-reactiveVal(integer());shown_gather_results<-reactiveVal(integer());gather_results_initialized<-reactiveVal(FALSE)
     gather_label<-function(resource)c(rations="forage for food",water="gather water",wood="gather firewood")[[resource]]
-    show_gather_modal<-function(resource){x<-validate_character(state$char);day<-as.integer(x$meta$day%||%1L);sid<-online_session_id();cid<-as.character(state$char_id%||%"");gather_resource(resource);helpers<-data.frame();if(!is.na(sid))helpers<-get_session_players(sid);if(nrow(helpers)){active<-if("is_active"%in%names(helpers))as.logical(helpers$is_active)else rep(TRUE,nrow(helpers));helpers<-helpers[as.character(helpers$character_id)!=cid&active,,drop=FALSE]};choices<-if(nrow(helpers))setNames(as.character(helpers$character_id),as.character(helpers$display_name%||%helpers$char_name))else character();showModal(modalDialog(title=tools::toTitleCase(gather_label(resource)),p("This uses your one camp-gathering action for day ",day,". Assistance also uses the helper's action. Both make Survival checks and the better result determines the yield."),selectInput(session$ns("gather_helper"),"Ask for assistance",choices=c("No assistant"="",choices)),footer=tagList(modalButton("Cancel"),actionButton(session$ns("confirm_gather"),"Begin",class="btn btn-success"))))}
-    resolve_gather_result<-function(result){if(is.null(result))return(log_safe("⚠️ Gathering could not be resolved; a participant may already have used today's action.",TRUE,"red"));removeModal();resource<-result$resource%||%gather_resource();if(resource=="rations"){reward<-result$reward%||%list();if(identical(as.character(result$requester_id%||%""),as.character(state$char_id%||%""))){fresh<-load_character_from_db(state$char_id);if(!is.null(fresh))state$char<-fresh};message<-if(length(reward))paste0("found ",reward$name," (",reward$meta$ration_value," ration(s), fresh ",reward$meta$shelf_life_days," day(s))")else"found no safe food"}else message<-paste0("gained ",result$amount," ",resource);log_safe(paste0("🌿 ",tools::toTitleCase(gather_label(resource)),": check ",result$total,", ",message,if(isTRUE(result$assisted))" with assistance."else"."),TRUE,"green")}
-    observeEvent(input$confirm_gather,{resource<-gather_resource();x<-validate_character(state$char);sid<-online_session_id();cid<-as.character(state$char_id%||%"");day<-as.integer(x$meta$day%||%1L);bonus<-camp_gathering_bonus(x);helper<-as.character(input$gather_helper%||%"");if(is.na(sid)){if(identical(as.integer(x$status$camp_gather_day%||%0L),day))return(log_safe("⚠️ You already used today's camp-gathering action.",TRUE,"gold"));roll<-sample.int(20L,1L)+bonus;amount<-camp_gathering_yield(roll);if(resource=="rations"){reward<-camp_foraging_reward(roll);x<-add_foraged_food(x,reward,day);message<-if(length(reward))paste0("found ",reward$name," (",reward$meta$ration_value," ration(s))")else"found no safe food"}else{changed<-change_supply(x,resource,amount);if(is.null(changed))return();x<-changed$char;message<-paste0("gained ",amount," ",resource)};x$status$camp_gather_day<-day;state$char<-x;removeModal();return(log_safe(paste0("🌿 Gathering check ",roll,": ",message,"."),TRUE,"green"))};request<-create_camp_gather_request(sid,day,cid,resource,bonus,if(nzchar(helper))helper else NULL);if(is.null(request))return(log_safe("⚠️ You already used today's camp-gathering action or have a request pending.",TRUE,"gold"));if(nzchar(helper)){removeModal();log_safe("📯 Assistance request sent. Gathering will resolve if they accept.",TRUE,"gold")}else resolve_gather_result(resolve_camp_gather_request(request$id[[1L]],cid,TRUE,0L))},ignoreInit=TRUE)
-    observe({invalidateLater(2500,session);cid<-as.character(state$char_id%||%"");if(!nzchar(cid)||isTRUE(state$offline_mode)||!is.null(pending_help_id())||!is.null(session$userData$pending_merchant_id)||!is.null(session$userData$pending_trade_id)||!is.null(session$userData$pending_note_id))return();requests<-get_pending_camp_gather_requests(cid);fresh<-requests[!requests$id%in%shown_help_ids(),,drop=FALSE];if(!nrow(fresh))return();r<-fresh[1,,drop=FALSE];shown_help_ids(unique(c(shown_help_ids(),r$id)));pending_help_id(as.integer(r$id[[1L]]));showModal(modalDialog(title="Camp assistance requested",p(r$requester_name[[1L]]," asks you to ",gather_label(r$resource[[1L]])," together."),p("Accepting uses your one camp-gathering action for day ",r$day_number[[1L]],"."),footer=tagList(actionButton(session$ns("decline_gather_help"),"Decline"),actionButton(session$ns("accept_gather_help"),"Help",class="btn btn-success"))))})
+    begin_timed_gather<-function(resource,sfx){p<-active_phase();if(is.null(p)||p$phase_kind[[1L]]!="rest")return(showNotification("The DM has not opened Rest Mode.",type="warning"));if(phase_remaining()+1e-8<1)return(showNotification("You do not have an hour remaining for this action.",type="warning"));session$sendCustomMessage(session$ns("play_rest_sfx"),list(name=sfx));show_gather_modal(resource)}
+    show_gather_modal<-function(resource){sid<-online_session_id();cid<-as.character(state$char_id%||%"");gather_resource(resource);helpers<-data.frame();if(!is.na(sid))helpers<-get_session_players(sid);if(nrow(helpers)){active<-if("is_active"%in%names(helpers))as.logical(helpers$is_active)else rep(TRUE,nrow(helpers));helpers<-helpers[as.character(helpers$character_id)!=cid&active,,drop=FALSE]};choices<-if(nrow(helpers))setNames(as.character(helpers$character_id),as.character(helpers$display_name%||%helpers$char_name))else character();showModal(modalDialog(title=tools::toTitleCase(gather_label(resource)),p("This uses 1 hour of your Rest Mode time. Assistance uses 1 hour of the helper's time. Both make Survival checks and the better result determines the yield."),selectInput(session$ns("gather_helper"),"Ask for assistance",choices=c("No assistant"="",choices)),footer=tagList(modalButton("Cancel"),actionButton(session$ns("confirm_gather"),"Begin",class="btn btn-success"))))}
+    resolve_gather_result<-function(result){if(is.null(result))return(log_safe("⚠️ Gathering could not be resolved.",TRUE,"red"));if(!is.null(result$request_id))shown_gather_results(unique(c(shown_gather_results(),as.integer(result$request_id))));removeModal();resource<-result$resource%||%gather_resource();if(resource=="rations"){reward<-result$reward%||%list();if(identical(as.character(result$requester_id%||%""),as.character(state$char_id%||%""))){fresh<-load_character_from_db(state$char_id);if(!is.null(fresh))state$char<-fresh};message<-if(length(reward))paste0("found ",reward$name," (",reward$meta$ration_value," ration(s), fresh ",reward$meta$shelf_life_days," day(s))")else"found no safe food"}else message<-paste0("gained ",result$amount," ",resource);log_safe(paste0("🌿 ",tools::toTitleCase(gather_label(resource)),": check ",result$total,", ",message,if(isTRUE(result$assisted))" with assistance."else"."),TRUE,"green")}
+    observeEvent(input$confirm_gather,{resource<-gather_resource();x<-validate_character(state$char);sid<-online_session_id();cid<-as.character(state$char_id%||%"");day<-as.integer(x$meta$day%||%1L);bonus<-camp_gathering_bonus(x);helper<-as.character(input$gather_helper%||%"");spent<-spend_phase_time(paste0("gather_",resource),tools::toTitleCase(gather_label(resource)),1);if(length(spent$error%||%character()))return(showNotification(spent$error,type="warning"));if(is.na(sid)){roll<-sample.int(20L,1L)+bonus;amount<-camp_gathering_yield(roll);if(resource=="rations"){reward<-camp_foraging_reward(roll);x<-add_foraged_food(x,reward,day);message<-if(length(reward))paste0("found ",reward$name," (",reward$meta$ration_value," ration(s))")else"found no safe food"}else{changed<-change_supply(x,resource,amount);if(is.null(changed))return();x<-changed$char;message<-paste0("gained ",amount," ",resource)};state$char<-x;removeModal();return(log_safe(paste0("🌿 Gathering check ",roll,": ",message,"."),TRUE,"green"))};request<-create_camp_gather_request(sid,day,cid,resource,bonus,if(nzchar(helper))helper else NULL);if(is.null(request))return(log_safe("⚠️ Gathering could not be started.",TRUE,"red"));if(nzchar(helper)){removeModal();log_safe("📯 Assistance request sent. Gathering will resolve if they accept.",TRUE,"gold")}else resolve_gather_result(resolve_camp_gather_request(request$id[[1L]],cid,TRUE,0L))},ignoreInit=TRUE)
+    observe({invalidateLater(2500,session);cid<-as.character(state$char_id%||%"");if(!nzchar(cid)||isTRUE(state$offline_mode)||!is.null(pending_help_id())||!is.null(session$userData$pending_merchant_id)||!is.null(session$userData$pending_trade_id)||!is.null(session$userData$pending_note_id))return();requests<-get_pending_camp_gather_requests(cid);fresh<-requests[!requests$id%in%shown_help_ids(),,drop=FALSE];if(!nrow(fresh))return();r<-fresh[1,,drop=FALSE];shown_help_ids(unique(c(shown_help_ids(),r$id)));pending_help_id(as.integer(r$id[[1L]]));showModal(modalDialog(title="Camp assistance requested",p(r$requester_name[[1L]]," asks you to ",gather_label(r$resource[[1L]])," together."),p("Accepting uses 1 hour of your remaining Rest Mode time."),footer=tagList(actionButton(session$ns("decline_gather_help"),"Decline"),actionButton(session$ns("accept_gather_help"),"Help",class="btn btn-success"))))})
     observeEvent(input$decline_gather_help,{id<-pending_help_id();if(!is.null(id))resolve_camp_gather_request(id,state$char_id,FALSE,0L);pending_help_id(NULL);removeModal()},ignoreInit=TRUE)
-    observeEvent(input$accept_gather_help,{id<-pending_help_id();if(is.null(id))return();result<-resolve_camp_gather_request(id,state$char_id,TRUE,camp_gathering_bonus(state$char));pending_help_id(NULL);resolve_gather_result(result)},ignoreInit=TRUE)
-    observe({invalidateLater(2500,session);cid<-as.character(state$char_id%||%"");if(!nzchar(cid)||isTRUE(state$offline_mode))return();rows<-get_finished_camp_gather_requests(cid);if(!isTRUE(gather_results_initialized())){shown_gather_results(as.integer(rows$id%||%integer()));gather_results_initialized(TRUE);return()};fresh<-rows[!rows$id%in%shown_gather_results(),,drop=FALSE];if(!nrow(fresh))return();r<-fresh[nrow(fresh),,drop=FALSE];shown_gather_results(unique(c(shown_gather_results(),r$id)));if(r$status[[1L]]=="declined")showNotification("Your camp assistance request was declined. You may try solo or ask someone else.",type="warning",duration=8)else if(r$resource[[1L]]=="rations"){reward<-enemy_db_json(r$reward_json[[1L]],list());updated<-load_character_from_db(cid);if(!is.null(updated))state$char<-updated;showNotification(if(length(reward))paste0("Foraging complete: found ",reward$name," worth ",reward$meta$ration_value," ration(s).")else"Foraging complete: no safe food found.",type="message",duration=8)}else showNotification(paste0("Gathering complete: check ",r$result_total[[1L]],", +",r$yield_amount[[1L]]," ",r$resource[[1L]],"."),type="message",duration=8)})
+    observeEvent(input$accept_gather_help,{id<-pending_help_id();if(is.null(id))return();r<-spend_phase_time("gather_help","Help with gathering",1);if(length(r$error%||%character()))return(showNotification(r$error,type="warning"));result<-resolve_camp_gather_request(id,state$char_id,TRUE,camp_gathering_bonus(state$char));pending_help_id(NULL);resolve_gather_result(result)},ignoreInit=TRUE)
+    observe({invalidateLater(2500,session);cid<-as.character(state$char_id%||%"");if(!nzchar(cid)||isTRUE(state$offline_mode))return();rows<-get_finished_camp_gather_requests(cid);if(!isTRUE(gather_results_initialized())){shown_gather_results(as.integer(rows$id%||%integer()));gather_results_initialized(TRUE);return()};fresh<-rows[!rows$id%in%shown_gather_results(),,drop=FALSE];if(!nrow(fresh))return();shown_gather_results(unique(c(shown_gather_results(),as.integer(fresh$id))));r<-fresh[1,,drop=FALSE];if(r$status[[1L]]=="declined")showNotification("Your camp assistance request was declined. You may try solo or ask someone else.",type="warning",duration=8)else if(r$resource[[1L]]=="rations"){reward<-enemy_db_json(r$reward_json[[1L]],list());updated<-load_character_from_db(cid);if(!is.null(updated))state$char<-updated;showNotification(if(length(reward))paste0("Foraging complete: found ",reward$name," worth ",reward$meta$ration_value," ration(s).")else"Foraging complete: no safe food found.",type="message",duration=8)}else showNotification(paste0("Gathering complete: check ",r$result_total[[1L]],", +",r$yield_amount[[1L]]," ",r$resource[[1L]],"."),type="message",duration=8)})
     
     
     observe({
-      x <- validate_character(state$char)
+      x <- validate_character(state$char);sid<-online_session_id();if(!is.na(sid))invalidateLater(2000,session)
       session$sendCustomMessage(
         session$ns("sync_rest_fire"),
-        list(lit = isTRUE(x$status$has_fire))
+        list(lit = if(!is.na(sid))get_session_fire(sid)else isTRUE(x$status$has_fire))
       )
     })
     
@@ -508,90 +526,26 @@ restTabServer <- function(
     })
     
     
-    #Remove rations
-    
-    # Remove rations
-    observeEvent(input$remove_rations_btn, {
-      x <- validate_character(state$char)
-      result<-change_supply(x,"rations",-1L);if(is.null(result))return(log_safe("⚠️ Party supplies unavailable",TRUE,"red"));state$char<-result$char
-      log_safe("➖ Removed 1 ration", TRUE, "gold")
-    })
-    
-    # Remove water
-    observeEvent(input$remove_water_btn, {
-      x <- validate_character(state$char)
-      result<-change_supply(x,"water",-1L);if(is.null(result))return(log_safe("⚠️ Party supplies unavailable",TRUE,"red"));state$char<-result$char
-      log_safe("➖ Removed water", TRUE, "blue")
-    })
-    
     # ----------------------------
     # OUTPUTS
     # ----------------------------
     output$camp_time <- renderUI({
       x <- validate_character(state$char)
-      cal <- get_celtic_date(x$meta$day)
-      tags$div(sprintf("📅 Year %d • %s • Day %d", cal$year, cal$season, cal$day_of_season))
+      env<-shared_environment();day<-if(is.null(env))x$meta$day else env$day_number[[1L]];cal <- get_celtic_date(day)
+      tags$div(sprintf("📅 Year %d • %s • Day %d • %s", cal$year, cal$season, cal$day_of_season,if(is.null(env))"Local time"else time_of_day_label(env$time_of_day[[1L]])))
     })
     
     output$camp_environment <- renderUI({
       x <- validate_character(state$char)
-      tags$div(sprintf("🌡️ %s", x$environment$temperature %||% "Temparate"))
+      env<-shared_environment()
+      if(is.null(env))return(tags$div(sprintf("🌡️ %s",x$environment$temperature%||%"Temperate")))
+      tags$div(sprintf("🧭 %s • %s • %s",env$geography[[1L]],env$climate[[1L]],env$weather[[1L]]))
     })
     
     output$camp_status <- renderUI({
-      x <- validate_character(state$char)
       hp <- get_effective_hp_state(state)
       max_hp <- as.integer((validate_character(state$char)$resources$hp$max) %||% 0)
-      
-      hunger_days <- x$status$hunger_days %||% 0
-      thirst_days <- x$status$dehydration_days %||% 0
-      
-      ate_today   <- isTRUE(x$status$ate_today %||% FALSE)
-      drank_today <- isTRUE(x$status$drank_today %||% FALSE)
-      
-      has_fire <- isTRUE(x$status$has_fire)
-      
-      temp <- x$environment$temperature %||% "Temperate"
-      
-      warmth_text <- if (has_fire) {
-        "🔥 Warm"
-      } else if (temp == "Cold") {
-        "❄️ Freezing"
-      } else {
-        "😐 No Fire"
-      }
-      
-      hunger_text <- if (ate_today) {
-        "Fed Today"
-      } else if (hunger_days == 0) {
-        "Need to Eat"
-      } else {
-        paste0("Very Hungry (", hunger_days, ")")
-      }
-      
-      thirst_text <- if (drank_today) {
-        "Hydrated Today"
-      } else if (thirst_days == 0) {
-        "Need to Hydrate"
-      } else {
-        paste0(" Very Thirsty (", thirst_days, ")")
-      }
-      
-      tags$div(
-        HTML(sprintf("
-  ❤️ <b>%d/%d</b>
-  &nbsp;&nbsp; %s
-  &nbsp;&nbsp; 🍖 %s
-  &nbsp;&nbsp; 💧 %s
-  &nbsp;&nbsp; 😵 <b>%d</b>
-",
-                     hp$cur, max_hp,
-                     warmth_text,
-                     hunger_text,
-                     thirst_text,
-                     x$status$exhaustion %||% 0
-        ))
-      )
+      tags$div(HTML(sprintf("❤️ <b>%d/%d</b>&nbsp;&nbsp; Active survival effects are shown by your Rest Cards.",hp$cur,max_hp)))
     })
     
     output$rations_display <- renderUI({
@@ -608,7 +562,7 @@ restTabServer <- function(
       tags$div(sprintf("Total: %d / %d", w$cur, w$max))
     })
     
-    observeEvent(input$gather_wood_btn,{session$sendCustomMessage(session$ns("play_rest_sfx"),list(name="gather"));show_gather_modal("wood")},ignoreInit=TRUE)
+    observeEvent(input$gather_wood_btn,{begin_timed_gather("wood","gather")},ignoreInit=TRUE)
     
     output$water_display <- renderUI({
       x <- validate_character(state$char)
@@ -690,6 +644,9 @@ restTabServer <- function(
       x <- validate_character(state$char)
       session_id<-suppressWarnings(as.integer(state$active_session_id%||%NA));character_id<-as.character(state$char_id%||%"");cycle<-NULL
       if(!isTRUE(state$offline_mode)&&!is.na(session_id)&&nzchar(character_id)){
+        env<-get_session_environment(session_id)
+        if(is.null(env)||normalise_time_of_day(env$time_of_day[[1L]])!="night"){log_safe("🌙 A party long rest can begin at Night. The DM can advance time from Geography & Climate.",TRUE,"gold");return()}
+        x$meta$day<-as.integer(env$day_number[[1L]])
         cycle<-begin_session_long_rest(session_id,character_id,x$meta$day%||%1L)
         if(is.null(cycle)){log_safe("⚠️ Party Long Rest could not be coordinated with the server. Nothing was changed.",TRUE,"red");return()}
         if(!isTRUE(cycle$can_apply)){log_safe(paste0("🌙 You already completed the party rest for day ",cycle$day_number,". Waiting for the rest of the party (",cycle$completed,"/",cycle$active,")."),TRUE,"gold");return()}
@@ -698,10 +655,10 @@ restTabServer <- function(
       x$status$has_fire <- FALSE   # extinguish on long rest
       if(!is.null(cycle))set_session_fire(session_id,FALSE)
       if(identical(outcome,"full")){
-        x <- restore_sindre(x, hours = 12, add_log = add_log)
+        x <- restore_sindre(x, hours = 6, add_log = add_log)
         x <- reset_class_uses_for_rest(x, "long_rest")
       }else if(identical(outcome,"half")){
-        x <- restore_sindre(x, hours = 6, add_log = add_log)
+        x <- restore_sindre(x, hours = 3, add_log = add_log)
         x <- reset_class_uses_for_rest(x, "short_rest")
       }
 
@@ -763,13 +720,15 @@ restTabServer <- function(
       state$char <- x
       
       gained <- res$hp_after - res$hp_before
-      log_safe(paste0("🛌 Rested +", gained, " HP"), TRUE, "green")
+      log_safe(paste0("🛌 Rested for one phase: +", gained, " HP and Sindre regenerated at ",x$resources$sindre$regen%||%0," per hour."), TRUE, "green")
     })
     
     # ----------------------------
     # FIRE
     # ----------------------------
     observeEvent(input$light_fire, {
+      p<-active_phase()
+      if(is.null(p)||p$phase_kind[[1L]]!="rest")return(showNotification("A fire can only be lit during an official Rest Phase.",type="warning",duration=7))
       session$sendCustomMessage(session$ns("play_rest_sfx"), list(name = "flint"))
       
       x <- validate_character(state$char)
@@ -791,23 +750,18 @@ restTabServer <- function(
     observe({
       x <- validate_character(state$char)
       sid<-suppressWarnings(as.integer(state$active_session_id%||%NA));lit<-if(!isTRUE(state$offline_mode)&&!is.na(sid)){invalidateLater(2500,session);get_session_fire(sid)}else isTRUE(x$status$has_fire)
+      p<-active_phase();rest_open<-!is.null(p)&&identical(as.character(p$phase_kind[[1L]]),"rest")
+      shinyjs::toggleState("light_fire",condition=rest_open)
       
       updateActionButton(
         session, "light_fire",
-        label = if (isTRUE(lit)) "🔥 Stoke Fire" else "🔥 Light Fire"
+        label = if(!rest_open)"🔥 Fire — Rest Phase only"else if (isTRUE(lit)) "🔥 Stoke Fire" else "🔥 Light Fire"
       )
     })
     
     # ----------------------------
     # RATIONS (WITH TOASTS)
     # ----------------------------
-    observeEvent(input$add_rations_btn, {
-      x <- validate_character(state$char)
-      result<-change_supply(x,"rations",1L);if(is.null(result))return(log_safe("⚠️ Party supplies unavailable",TRUE,"red"));state$char<-result$char
-      
-      log_safe("➕ Gained 1 ration", TRUE, "green")
-    })
-    
     observeEvent(input$consume_rations_btn, {
       x <- validate_character(state$char)
       session$sendCustomMessage(session$ns("play_rest_sfx"), list(name = "eat"))
@@ -818,22 +772,16 @@ restTabServer <- function(
         result<-change_supply(x,"rations",-1L);if(is.null(result)||!isTRUE(result$applied))return(log_safe("⚠️ No rations available",TRUE,"gold"));x<-result$char;food_name<-"a preserved party ration"
       }
       x$status$ate_today <- TRUE
+      x$status$needs_hours<-x$status$needs_hours%||%list();x$status$needs_hours$food<-0
       state$char <- x
       log_safe(paste0("🍖 You eat ",food_name,". You feel sustained."),TRUE,"green")
     })
     
-    observeEvent(input$forage_btn,{session$sendCustomMessage(session$ns("play_rest_sfx"),list(name="forage"));show_gather_modal("rations")},ignoreInit=TRUE)
+    observeEvent(input$forage_btn,{begin_timed_gather("rations","forage")},ignoreInit=TRUE)
     
     # ----------------------------
     # WATER (WITH TOASTS)
     # ----------------------------
-    observeEvent(input$add_water_btn, {
-      x <- validate_character(state$char)
-      result<-change_supply(x,"water",1L);if(is.null(result))return(log_safe("⚠️ Party supplies unavailable",TRUE,"red"));state$char<-result$char
-      
-      log_safe("💧 Gained water", TRUE, "blue")
-    })
-    
     observeEvent(input$consume_water_btn, {
       x <- validate_character(state$char)
       session$sendCustomMessage(session$ns("play_rest_sfx"), list(name = "drink"))
@@ -847,13 +795,14 @@ restTabServer <- function(
       
       result<-change_supply(x,"water",-1L);if(is.null(result)||!isTRUE(result$applied))return(log_safe("⚠️ No party water available",TRUE,"gold"));x<-result$char
       x$status$drank_today <- TRUE
+      x$status$needs_hours<-x$status$needs_hours%||%list();x$status$needs_hours$water<-0
       
       state$char <- x
       
       log_safe("💧 You drink water. You feel refreshed.", TRUE, "blue")
     })
     
-    observeEvent(input$refill_btn,{session$sendCustomMessage(session$ns("play_rest_sfx"),list(name="refill"));show_gather_modal("water")},ignoreInit=TRUE)
+    observeEvent(input$refill_btn,{begin_timed_gather("water","refill")},ignoreInit=TRUE)
     
   })
 }

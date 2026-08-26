@@ -200,7 +200,7 @@ sidebarTabServer <- function(id, state, restoring, char_rev, add_log = NULL) {
         category = input$issue_category %||% "error",
         description = description,
         log_text = collect_issue_logs(),
-        app_version = Sys.getenv("DRACHURI_APP_VERSION", unset = "0.4.0-launcher"),
+        app_version = Sys.getenv("DRACHURI_APP_VERSION", unset = "0.4.1-launcher"),
         platform = paste(R.version$platform, Sys.info()[["sysname"]], Sys.info()[["release"]])
       )
       if (is.null(report_id)) {

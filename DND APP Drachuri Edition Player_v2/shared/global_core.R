@@ -1,4 +1,11 @@
 # global.R
+# Emoji and Welsh names must be decoded as UTF-8 even when R is launched from
+# a minimal shell which falls back to the byte-oriented C locale.
+if (identical(Sys.getlocale("LC_CTYPE"), "C")) {
+  try(Sys.setlocale("LC_CTYPE", "en_GB.UTF-8"), silent = TRUE)
+}
+options(encoding = "UTF-8")
+
 library(shiny)
 
 APP_SAVE_VERSION <- 2
@@ -2294,12 +2301,57 @@ required_intake <- function(a) {
   if (stage == 1) {
     return(1)
   } else if (stage == 2) {
-    return(prev)
+    return(max(1, prev))
   } else if (stage == 3) {
     return(prev + 1)
   } else {
     return(max(5, prev))  # tweak later if needed
   }
+}
+
+warmth_requirement_hours <- function(environment = list()) {
+  climate <- tolower(trimws(as.character(environment$climate %||% "temperate")))
+  weather <- tolower(trimws(as.character(environment$weather %||% "")))
+  if (grepl("blizzard|whiteout|extreme cold|deep freeze|freezing",weather)) return(6)
+  if (climate %in% c("alpine")) return(6)
+  if (climate %in% c("cold")) return(12)
+  if (climate %in% c("hot","tropical")) return(Inf)
+  24
+}
+
+character_rest_status_cards <- function(x, has_fire = NULL, planned_actions = character(), environment = list()) {
+  x <- validate_character(x); status <- x$status %||% list(); cards <- list()
+  add <- function(key,label,image,reason,tone="neutral") cards[[length(cards)+1L]] <<- list(key=key,label=label,image=paste0("assets/status-cards/",image),reason=reason,tone=tone)
+  needs<-status$needs_hours%||%list();fire <- if(is.null(has_fire))isTRUE(status$has_fire%||%FALSE)else isTRUE(has_fire);warmth_limit<-warmth_requirement_hours(environment);warmth_hours<-as.numeric(needs$warmth%||%0)
+  warm<-fire||is.infinite(warmth_limit)||warmth_hours<warmth_limit
+  if(warm)add("warm","Warm","rest/warm.png",if(is.infinite(warmth_limit))"This card remains active in this climate; no additional warmth is required."else paste0("This card will last ",round(max(0,warmth_limit-warmth_hours),1)," more hours. Lighting a fire resets it for the whole party."),"positive") else add("cold","Cold","rest/cold.png",paste0("This card remains until the party lights a fire. In ",tolower(as.character(environment$climate%||%"temperate"))," conditions, each ",warmth_limit," hours without warmth can add exhaustion."),"risk")
+  food_hours<-as.numeric(needs$food%||%0);water_hours<-as.numeric(needs$water%||%0)
+  if(food_hours<24)add("well_fed","Well Fed","rest/well_fed.png",paste0("This card will last ",round(max(0,24-food_hours),1)," more hours. Eating resets it to 24 hours."),"positive") else add("hungry","Hungry","rest/hungry.png","This card remains until you eat. Each further 24 hours without food can add exhaustion.","risk")
+  if(water_hours<24)add("hydrated","Hydrated","rest/hydrated.png",paste0("This card will last ",round(max(0,24-water_hours),1)," more hours. Drinking water resets it to 24 hours."),"positive") else add("parched","Parched","rest/parched.png","This card remains until you drink water. Each further 24 hours without water can add exhaustion.","risk")
+  race <- tolower(trimws(as.character(x$meta$race%||%"")))
+  if(identical(race,"tylwyth teg")){
+    addiction <- (x$resources$blood%||%list())$addiction%||%list();stage<-suppressWarnings(as.integer(addiction$stage%||%1L));if(is.na(stage))stage<-1L;stage<-max(1L,min(4L,stage))
+    intake<-suppressWarnings(as.numeric(addiction$current_day_intake%||%0));if(is.na(intake))intake<-0;needed<-suppressWarnings(as.numeric(required_intake(addiction)));if(is.na(needed))needed<-1;enough<-intake>=needed;blood_hours<-as.numeric(needs$blood%||%0);check_in<-max(0,24-(blood_hours%%24));if(check_in==0)check_in<-24
+    add(if(enough)"sufficient_blood"else"insufficient_blood",if(enough)"Sufficient Blood"else"Insufficient Blood",if(enough)"rest/sufficient_blood.png"else"rest/insufficient_blood.png",if(enough)paste0("Requirement met: ",round(intake,2)," of ",round(needed,2)," pints. The next blood check is in ",round(check_in,1)," hours.")else paste0("Drink ",round(max(0,needed-intake),2)," more pints before the blood check in ",round(check_in,1)," hours. If still short, Stage ",stage," withdrawal will apply."),if(enough)"positive"else"risk")
+    files<-c("blood_addiction_1_thirsting.png","blood_addiction_2_craving.png","blood_addiction_3_bloodbound.png","blood_addiction_4_bloodstarved.png");labels<-c("Thirsting","Craving","Bloodbound","Bloodstarved")
+    add(paste0("blood_addiction_",stage),paste("Blood Addiction",stage,"—",labels[[stage]]),paste0("blood-addiction/",files[[stage]]),paste("Persistent blood-addiction stage",stage,"."),"persistent")
+  }
+  exhaustion<-suppressWarnings(as.integer(status$exhaustion%||%0L));if(is.na(exhaustion))exhaustion<-0L
+  if(exhaustion>0L){exhaustion<-max(1L,min(6L,exhaustion));files<-c("exhaustion_1_weary.png","exhaustion_2_fatigued.png","exhaustion_3_spent.png","exhaustion_4_haggard.png","exhaustion_5_wretched.png","exhaustion_6_collapsed.png");labels<-c("Weary","Fatigued","Spent","Haggard","Wretched","Collapsed");add(paste0("exhaustion_",exhaustion),paste("Exhaustion",exhaustion,"—",labels[[exhaustion]]),paste0("conditions/",files[[exhaustion]]),paste("Current exhaustion level:",exhaustion),"persistent")}
+  actions<-unique(as.character(planned_actions%||%character()))
+  sleep_hours<-as.numeric(needs$sleep%||%0);if(sleep_hours>=24&&!"long_rest"%in%actions)add("long_rest_overdue","Long Rest Overdue","rest/long_rest.png",paste0("No Long Rest for ",round(sleep_hours,1)," hours; each 24-hour threshold adds exhaustion."),"risk")
+  if("long_rest"%in%actions)add("long_rest","Long Rest","rest/long_rest.png","Six hours allocated. On resolution: full HP, long-rest recovery, and one exhaustion removed.","planned")
+  if("short_rest"%in%actions)add("short_rest","Short Rest","rest/short_rest.png","One hour allocated. Recovery is applied when the phase resolves.","planned")
+  cards
+}
+
+character_condition_status_cards <- function(x) {
+  x<-validate_character(x);status<-x$status%||%list();values<-unique(tolower(trimws(as.character(c(status$conditions%||%character(),status$effects%||%character())))))
+  booleans<-c("blinded","charmed","deafened","frightened","grappled","incapacitated","invisible","paralysed","petrified","poisoned","prone","restrained","stunned","unconscious")
+  for(key in booleans)if(isTRUE(status[[key]]%||%FALSE))values<-unique(c(values,key))
+  values<-gsub("paralyzed","paralysed",values,fixed=TRUE);values<-intersect(values,booleans)
+  descriptions<-c(blinded="You cannot see and automatically fail checks requiring sight.",charmed="You are under a charm effect.",deafened="You cannot hear and automatically fail checks requiring hearing.",frightened="You are affected by fear.",grappled="Your movement is restricted by a grapple.",incapacitated="You cannot take actions or reactions.",invisible="You cannot be seen without special senses or magic.",paralysed="You are paralysed and unable to move or act.",petrified="You have been transformed into an inert solid substance.",poisoned="You have disadvantage on attacks and ability checks.",prone="You are on the ground until you stand.",restrained="Your movement is restricted and attacks are affected.",stunned="You are incapacitated and unable to move.",unconscious="You are unconscious and unable to act.")
+  lapply(values,function(key)list(key=paste0("condition_",key),label=tools::toTitleCase(key),image=paste0("assets/status-cards/conditions/",key,".png"),reason=unname(descriptions[[key]]),tone="persistent"))
 }
 
 advance_blood_day <- function(x, add_log = NULL, state = NULL) {
@@ -2379,7 +2431,7 @@ advance_blood_day <- function(x, add_log = NULL, state = NULL) {
       }
       
     } else if (stage == 2) {
-      gain <- if (deficit >= 1) 1 else 0
+      gain <- if (deficit > 0) 1 else 0
       x$status$exhaustion <- min(6, x$status$exhaustion + gain)
       log_safe("😵 Blood imbalance causes exhaustion.", flash = "red")
       
@@ -2434,7 +2486,7 @@ advance_blood_day <- function(x, add_log = NULL, state = NULL) {
   x
 }
 
-advance_day_all <- function(x, add_log = NULL, state = NULL) {
+advance_day_all_legacy <- function(x, add_log = NULL, state = NULL) {
   x <- validate_character(x)
   
   `%||%` <- get("%||%", inherits = TRUE)
@@ -2639,6 +2691,23 @@ advance_day_all <- function(x, add_log = NULL, state = NULL) {
   
   x
 }
+
+# Offline/manual day advancement uses the same rolling-hour rules as the shared
+# phase resolver. The former calendar-day implementation is retained above only
+# for save-history reference and is no longer called by the application.
+advance_day_all <- function(x, add_log = NULL, state = NULL) {
+  x<-validate_character(x);x$status<-x$status%||%list();x$status$needs_hours<-x$status$needs_hours%||%list()
+  names<-c("food","water","warmth","blood","sleep");old<-vapply(names,function(k)as.numeric(x$status$needs_hours[[k]]%||%0),numeric(1));next_hours<-old+24
+  if(isTRUE(x$status$ate_today))next_hours[["food"]]<-0;if(isTRUE(x$status$drank_today))next_hours[["water"]]<-0
+  warmth_limit<-warmth_requirement_hours(list(climate=x$environment$temperature%||%"temperate",weather=""));if(isTRUE(x$status$has_fire)||is.infinite(warmth_limit))next_hours[["warmth"]]<-0
+  if(isTRUE(x$status$resting)){next_hours[["sleep"]]<-0;x$status$exhaustion<-max(0L,as.integer(x$status$exhaustion%||%0L)-1L)}
+  thresholds<-c(food=24,water=24,warmth=warmth_limit,blood=24,sleep=24);penalties<-vapply(names,function(k)if(is.infinite(thresholds[[k]]))0 else floor(next_hours[[k]]/thresholds[[k]])-floor(old[[k]]/thresholds[[k]]),numeric(1))
+  x$status$exhaustion<-min(6L,as.integer(x$status$exhaustion%||%0L)+sum(pmax(0,penalties[c("food","water","warmth","sleep")])))
+  if(tolower(trimws(as.character(x$meta$race%||%"")))=="tylwyth teg"&&penalties[["blood"]]>0)for(i in seq_len(penalties[["blood"]]))x<-advance_blood_day(x,add_log,state)
+  x$status$needs_hours<-as.list(next_hours);x$meta$day<-as.integer(x$meta$day%||%1L)+1L;spoilage<-spoil_character_food(x,x$meta$day);x<-spoilage$char
+  x$status$ate_today<-FALSE;x$status$drank_today<-FALSE;x$status$foraged_today<-FALSE;x$status$resting<-FALSE;x$status$has_fire<-FALSE;x$status$gathered_wood_today<-FALSE
+  sync_exhaustion_effects(x)
+}
 sync_exhaustion_effects <- function(x) {
   x$status <- x$status %||% list()
   x$status$effects <- x$status$effects %||% character()
@@ -2797,6 +2866,73 @@ character_skill_modifier <- function(char,skill,skill_defs=NULL) {
   as.integer(floor((score-10L)/2L)+multiplier*proficiency)
 }
 
+skill_card_count_for_rank <- function(rank) {
+  rank <- tolower(as.character(rank %||% "none"))
+  if (identical(rank, "expertise")) 2L else if (identical(rank, "proficient")) 1L else 0L
+}
+
+character_skill_cards <- function(char, skill) {
+  char <- validate_character(char)
+  key <- gsub(" ", "_", tolower(as.character(skill %||% "")))
+  allowed <- c("reliable", "wild_card", "inspired")
+  cards <- unique(as.character(char$prof$skill_cards[[key]] %||% character()))
+  cards <- cards[cards %in% allowed]
+  needed <- skill_card_count_for_rank(char$prof$skills[[key]] %||% "None")
+  if (needed < 1L) character() else cards[seq_len(min(length(cards), needed))]
+}
+
+resolve_skill_card_roll <- function(natural_roll, modifier, proficiency_bonus, cards = character(), wild_roll = NULL) {
+  natural_roll <- suppressWarnings(as.integer(natural_roll))
+  modifier <- suppressWarnings(as.integer(modifier))
+  proficiency_bonus <- suppressWarnings(as.integer(proficiency_bonus))
+  if (is.na(natural_roll) || natural_roll < 1L || natural_roll > 20L) stop("Natural skill roll must be between 1 and 20.")
+  if (is.na(modifier)) modifier <- 0L
+  if (is.na(proficiency_bonus) || proficiency_bonus < 0L) proficiency_bonus <- 0L
+  cards <- unique(as.character(cards %||% character()))
+  card_bonus <- 0L
+  effects <- character()
+  if ("reliable" %in% cards && natural_roll <= 5L) {
+    card_bonus <- card_bonus + proficiency_bonus
+    effects <- c(effects, paste0("Reliable +", proficiency_bonus))
+  }
+  if ("inspired" %in% cards && natural_roll >= 16L) {
+    card_bonus <- card_bonus + proficiency_bonus
+    effects <- c(effects, paste0("Inspired +", proficiency_bonus))
+  }
+  wild_die <- NA_integer_
+  if ("wild_card" %in% cards) {
+    wild_die <- if (is.null(wild_roll)) sample.int(6L, 1L) else suppressWarnings(as.integer(wild_roll))
+    if (is.na(wild_die) || wild_die < 1L || wild_die > 6L) stop("Wild Card roll must be between 1 and 6.")
+    if (wild_die == 1L) {
+      card_bonus <- card_bonus - proficiency_bonus
+      effects <- c(effects, paste0("Wild Card 1: -", proficiency_bonus))
+    } else if (wild_die == 6L) {
+      card_bonus <- card_bonus + proficiency_bonus
+      effects <- c(effects, paste0("Wild Card 6: +", proficiency_bonus))
+    } else {
+      effects <- c(effects, paste0("Wild Card ", wild_die, ": no change"))
+    }
+  }
+  list(
+    natural_roll = natural_roll,
+    modifier = modifier,
+    proficiency_bonus = proficiency_bonus,
+    cards = cards,
+    wild_roll = wild_die,
+    card_bonus = as.integer(card_bonus),
+    total = as.integer(natural_roll + modifier + card_bonus),
+    effects = effects
+  )
+}
+
+party_skill_support_result <- function(leader_total, helper_totals = numeric(), support_cap = 2L) {
+  leader_total <- suppressWarnings(as.integer(leader_total))
+  if (is.na(leader_total)) return(list(total=NA_integer_,support=0L,contributions=integer()))
+  helper_totals <- suppressWarnings(as.numeric(helper_totals));helper_totals<-helper_totals[is.finite(helper_totals)]
+  contributions<-ifelse(helper_totals<10,-1L,ifelse(helper_totals>=15,1L,0L));cap<-max(0L,suppressWarnings(as.integer(support_cap%||%0L)));support<-max(-cap,min(cap,sum(contributions)))
+  list(total=as.integer(leader_total+support),support=as.integer(support),contributions=as.integer(contributions))
+}
+
 merchant_pricing_multiplier <- function(pricing_style=c("standard","cheap","expensive","very_expensive")) {
   pricing_style<-match.arg(pricing_style)
   c(cheap=.75,standard=1,expensive=1.35,very_expensive=1.75)[[pricing_style]]
@@ -2853,7 +2989,8 @@ new_character <- function() {
     
     prof = list(
       saves  = list(),
-      skills = list()
+      skills = list(),
+      skill_cards = list()
     ),
     
     resources = list(
@@ -3043,9 +3180,11 @@ validate_character <- function(x) {
   if (!is.list(x$prof)) x$prof <- list()
   x$prof$saves  <- x$prof$saves  %||% list()
   x$prof$skills <- x$prof$skills %||% list()
+  x$prof$skill_cards <- x$prof$skill_cards %||% list()
   x$prof$tools  <- x$prof$tools  %||% list()
   if (!is.list(x$prof$saves))  x$prof$saves  <- list()
   if (!is.list(x$prof$skills)) x$prof$skills <- list()
+  if (!is.list(x$prof$skill_cards)) x$prof$skill_cards <- list()
   if (!is.list(x$prof$tools))  x$prof$tools  <- list()
 
   # Canonical damage traits. Combat reads these directly; legacy locations are

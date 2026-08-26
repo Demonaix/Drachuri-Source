@@ -69,7 +69,35 @@ bloodTabUI <- function(id) {
           opacity: 0.42;
           filter: blur(12px);
         }
-      "))),
+
+        #%s .blood-status-hand{
+          display:flex;
+          gap:14px;
+          align-items:flex-start;
+          overflow-x:auto;
+          padding:6px 4px 14px;
+        }
+
+        #%s .blood-status-card{
+          flex:0 0 168px;
+          text-align:center;
+          transition:transform .18s ease;
+        }
+
+        #%s .blood-status-card:hover{transform:translateY(-5px)}
+        #%s .blood-status-card img{
+          display:block;
+          width:168px;
+          aspect-ratio:4/5;
+          object-fit:cover;
+          border-radius:11px;
+          box-shadow:0 8px 18px rgba(45,8,8,.38);
+        }
+
+        #%s .blood-status-card.risk img{box-shadow:0 0 0 2px #8e3e32,0 8px 18px rgba(45,8,8,.38)}
+        #%s .blood-status-card.positive img{box-shadow:0 0 0 2px #587b4f,0 8px 18px rgba(45,8,8,.38)}
+        #%s .blood-status-reason{margin-top:7px;font-size:12px;line-height:1.35;color:#503024}
+      ", ns("root"), ns("root"), ns("root"), ns("root"), ns("root"), ns("root"), ns("root")))),
       
       tags$script(HTML(sprintf("
         Shiny.addCustomMessageHandler('%s', function(stage) {
@@ -139,7 +167,9 @@ bloodTabUI <- function(id) {
       div(
         class = "card",
         h4("🧠 Blood Addiction"),
-        
+
+        uiOutput(ns("blood_status_cards")),
+
         uiOutput(ns("blood_stage_card")),
         
         tags$hr(),
@@ -233,6 +263,7 @@ bloodTabServer <- function(
     
     write_inventory <- function(df) {
       x <- ensure_blood_state(state$char)
+      x$status<-x$status%||%list();x$status$needs_hours<-x$status$needs_hours%||%list();x$status$needs_hours$blood<-0
       x$inventory$items <- inventory_normalize(df)
       write_core(x)
       record_blood_consumption(state$char_id, state$active_session_id, x$meta$day,
@@ -772,6 +803,7 @@ bloodTabServer <- function(
             x$resources$blood$addiction <- a
             
             x$inventory$items <- inventory_normalize(df)
+            x$status<-x$status%||%list();x$status$needs_hours<-x$status$needs_hours%||%list();x$status$needs_hours$blood<-0
             write_core(x)
             record_blood_consumption(state$char_id, state$active_session_id, x$meta$day,
                                      "heart", source, 1, sindre)
@@ -838,7 +870,7 @@ bloodTabServer <- function(
       if (stage == 1) {
         return(1)
       } else if (stage == 2) {
-        return(prev)
+        return(max(1, prev))
       } else if (stage == 3) {
         return(prev + 1)
       } else {
@@ -865,6 +897,30 @@ bloodTabServer <- function(
       }
       
       paste0("Required: ", round(req, 2), " pint(s) → ", status)
+    })
+
+    output$blood_status_cards <- renderUI({
+      char_rev()
+      x <- ensure_blood_state(state$char)
+      cards <- character_rest_status_cards(x)
+      cards <- Filter(function(card) card$key %in% c(
+        "sufficient_blood", "insufficient_blood",
+        "blood_addiction_1", "blood_addiction_2",
+        "blood_addiction_3", "blood_addiction_4"
+      ), cards)
+      if (!length(cards)) return(NULL)
+
+      div(
+        class = "blood-status-hand",
+        lapply(cards, function(card) {
+          div(
+            class = paste("blood-status-card", card$tone),
+            title = card$reason,
+            tags$img(src = card$image, alt = card$label),
+            div(class = "blood-status-reason", card$reason)
+          )
+        })
+      )
     })
     
     output$blood_stage_card <- renderUI({

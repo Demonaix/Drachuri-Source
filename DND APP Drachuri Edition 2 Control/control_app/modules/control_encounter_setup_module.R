@@ -60,6 +60,24 @@ controlEncounterSetupUI <- function(id) {
         h4("Session"),
         selectInput(ns("session_id"), "Session", choices = c())
       ),
+
+      div(
+        class = "control-card",
+        h4("Generate Improvised Encounter"),
+        p(class="control-mini","Builds an editable Setup draft from the active party, a terrain preset and saved NPC templates in one pool. Nothing starts combat automatically."),
+        fluidRow(
+          column(3,selectInput(ns("generator_terrain"),"Terrain",choices=control_map_presets(),selected="forest")),
+          column(3,selectInput(ns("generator_pool"),"NPC pool",choices=character())),
+          column(3,selectInput(ns("generator_danger"),"Threat",choices=c("Low"="low","Standard"="standard","Dangerous"="dangerous","Overwhelming"="overwhelming"),selected="standard")),
+          column(3,numericInput(ns("generator_seed"),"Seed",value=1,min=1,step=1))
+        ),
+        fluidRow(
+          column(6,textInput(ns("generator_name"),"Encounter name",placeholder="Generated from terrain and enemy pool")),
+          column(3,br(),actionButton(ns("preview_generated_encounter"),"Generate Draft",class="btn btn-default")),
+          column(3,br(),actionButton(ns("create_generated_encounter"),"Create Encounter",class="btn btn-success"))
+        ),
+        uiOutput(ns("generated_encounter_preview"))
+      ),
       
       div(
         class = "control-card",
@@ -161,6 +179,7 @@ controlEncounterSetupServer <- function(
     
     enemy_obs_ids <- reactiveVal(character())
     npc_templates_rv <- reactiveVal(data.frame())
+    generated_draft <- reactiveVal(NULL)
 
     list_encounter_maps <- function() {
       con <- get_db_connection()
@@ -287,6 +306,26 @@ controlEncounterSetupServer <- function(
         selected = selected_id
       )
     })
+
+    generator_pool_catalogue <- function() {
+      path<-file.path("control_app","data","npc_pools.rds")
+      saved<-if(file.exists(path))tryCatch(readRDS(path),error=function(e)list())else list()
+      if(exists("merge_npc_pool_catalogue",mode="function"))merge_npc_pool_catalogue(saved)else if(exists("npc_default_pool_catalogue",mode="function"))c(npc_default_pool_catalogue(),saved)else saved
+    }
+
+    observe({
+      invalidateLater(1500,session)
+      pools <- generator_pool_catalogue()
+      if (!length(pools)) {
+        updateSelectInput(session,"generator_pool",choices=c("No NPC pools available"=""))
+        return()
+      }
+      ids <- vapply(pools,function(x)as.character(x$id%||%""),character(1))
+      labels <- vapply(pools,function(x)as.character(x$name%||%x$id%||%"NPC pool"),character(1))
+      selected <- as.character(input$generator_pool%||%"")
+      if (!selected%in%ids) selected<-ids[[1L]]
+      updateSelectInput(session,"generator_pool",choices=stats::setNames(ids,labels),selected=selected)
+    })
     
 
     
@@ -367,6 +406,88 @@ controlEncounterSetupServer <- function(
       
       if (!is.data.frame(df)) data.frame() else df
     })
+
+    generator_pool_info <- function(pool_id) {
+      pools <- generator_pool_catalogue()
+      match <- Filter(function(x)identical(as.character(x$id%||%""),as.character(pool_id%||%"")),pools)
+      if(length(match))match[[1L]]else NULL
+    }
+
+    generator_templates <- function(pool_id) {
+      df<-npc_templates_rv();if(!is.data.frame(df)||!nrow(df)||!"enemy_type"%in%names(df))return(data.frame())
+      pool<-generator_pool_info(pool_id);valid<-tolower(trimws(c(as.character(pool_id%||%""),as.character(pool$name%||%""),as.character(pool$base_type%||%""))))
+      df[tolower(trimws(as.character(df$enemy_type)))%in%valid,,drop=FALSE]
+    }
+
+    build_generated_draft <- function() {
+      players<-current_players();if("is_active"%in%names(players))players<-players[is.na(players$is_active)|as.logical(players$is_active),,drop=FALSE]
+      pool_id<-as.character(input$generator_pool%||%"");pool<-generator_pool_info(pool_id)
+      if(!nzchar(pool_id)||is.null(pool))stop("Choose an NPC pool.")
+      templates<-generator_templates(pool_id)
+      if(!nrow(templates))stop(paste0("No saved NPC templates belong to ",pool$name%||%pool_id,". Save at least one template from that pool first."))
+      seed<-suppressWarnings(as.integer(input$generator_seed%||%1L));if(is.na(seed))seed<-1L
+      danger<-as.character(input$generator_danger%||%"standard")
+      draft<-compose_encounter_draft(players,templates,danger,seed)
+      dims<-encounter_draft_dimensions(draft$party_size,nrow(draft$enemies));draft$width<-unname(dims[["width"]]);draft$height<-unname(dims[["height"]]);draft$terrain<-as.character(input$generator_terrain%||%"forest");draft$pool_id<-pool_id;draft$pool_name<-as.character(pool$name%||%pool_id);draft$players<-players;draft$signature<-paste(current_session_id(),pool_id,danger,seed,draft$terrain,sep="|");draft
+    }
+
+    observeEvent(input$preview_generated_encounter,{
+      draft<-tryCatch(build_generated_draft(),error=function(e){showNotification(conditionMessage(e),type="error",duration=10);NULL})
+      generated_draft(draft)
+    },ignoreInit=TRUE)
+
+    output$generated_encounter_preview<-renderUI({
+      d<-generated_draft();if(is.null(d))return(tags$em("Generate a draft to preview its composition."))
+      enemies<-d$enemies;counts<-aggregate(rep(1L,nrow(enemies)),list(name=as.character(enemies$name)),sum);names(counts)[2]<-"count"
+      tagList(tags$hr(),div(class="battlefield-kv",
+        div(class="battlefield-k","Party"),div(paste(d$party_size,"active player(s)")),
+        div(class="battlefield-k","Map"),div(paste0(tools::toTitleCase(gsub("_"," ",d$terrain))," • ",d$width,"×",d$height)),
+        div(class="battlefield-k","Pool"),div(d$pool_name),
+        div(class="battlefield-k","Threat"),div(paste0(tools::toTitleCase(d$danger)," • enemy ",d$enemy_threat," / party budget ",d$party_budget))),
+        tags$strong("Proposed enemies"),tags$ul(lapply(seq_len(nrow(counts)),function(i)tags$li(paste0(counts$name[[i]]," × ",counts$count[[i]]))))
+      )
+    })
+
+    create_generated_map_record <- function(name,width,height) {
+      con<-get_db_connection();if(is.null(con))stop("Database unavailable while creating the map.");on.exit(release_db_connection(con),add=TRUE)
+      out<-DBI::dbGetQuery(con,"INSERT INTO maps(name,width,height,created_at,updated_at) VALUES($1,$2,$3,NOW(),NOW()) RETURNING id",params=list(as.character(name),as.integer(width),as.integer(height)))
+      as.integer(out$id[[1L]])
+    }
+
+    delete_generated_map <- function(map_id) {
+      con<-get_db_connection();if(is.null(con))return(FALSE);on.exit(release_db_connection(con),add=TRUE)
+      tryCatch({DBI::dbExecute(con,"DELETE FROM maps WHERE id=$1",params=list(as.integer(map_id)));TRUE},error=function(e)FALSE)
+    }
+
+    spawn_generated_enemy <- function(eid,npc,name) {
+      field<-function(nm,default=NULL){if(nm%in%names(npc))npc[[nm]][[1L]]%||%default else default}
+      add_encounter_enemy(encounter_id=eid,name=name,hp_max=as.integer(field("hp_max",10L)),ac=as.integer(field("ac",12L)),movement_speed=as.integer(field("movement_speed",30L)),
+        attack_name=as.character(field("attack_name","Attack")),attack_bonus=as.integer(field("attack_bonus",2L)),damage_expr=as.character(field("damage_expr","1d4")),damage_type=as.character(field("damage_type","bludgeoning")),attacks_json=as.character(field("attacks_json","")),
+        template_key=as.character(field("npc_id","")),enemy_type=as.character(field("enemy_type","Custom")),characteristics=enemy_db_json(field("characteristics",list()),list()),abilities=enemy_db_json(field("abilities",list()),list()),attacks=enemy_db_json(field("attacks",list()),list()),loot=enemy_db_json(field("loot",list()),list()),
+        resistances=enemy_db_values(field("resistances",character())),immunities=enemy_db_values(field("immunities",character())),vulnerabilities=enemy_db_values(field("vulnerabilities",character())),condition_immunities=enemy_db_values(field("condition_immunities",character())),gold_min=as.integer(field("gold_min",0L)),gold_max=as.integer(field("gold_max",0L)))
+    }
+
+    observeEvent(input$create_generated_encounter,{
+      sid<-current_session_id();if(is.na(sid))return(showNotification("Choose a session first.",type="error"))
+      d<-generated_draft();expected<-paste(sid,input$generator_pool%||%"",input$generator_danger%||%"standard",as.integer(input$generator_seed%||%1L),input$generator_terrain%||%"forest",sep="|")
+      if(is.null(d)||!identical(d$signature,expected)){d<-tryCatch(build_generated_draft(),error=function(e){showNotification(conditionMessage(e),type="error",duration=10);NULL});generated_draft(d)}
+      if(is.null(d))return()
+      encounter_name<-trimws(as.character(input$generator_name%||%""));if(!nzchar(encounter_name))encounter_name<-paste(tools::toTitleCase(gsub("_"," ",d$terrain)),d$pool_name,"Encounter")
+      map_id<-NA_integer_;eid<-NA_integer_
+      result<-tryCatch({
+        map_id<-create_generated_map_record(paste0(encounter_name," Map"),d$width,d$height)
+        tiles<-generate_control_map_tiles(map_id,d$width,d$height,d$terrain,d$seed,35)
+        if(!isTRUE(set_shared_map_tiles(ctrl,map_id,tiles)))stop("Generated map tiles could not be saved.")
+        eid<-create_encounter(sid,encounter_name,map_id,"setup");if(is.null(eid))stop("The encounter record could not be created.")
+        enemy_ids<-character();name_seen<-list()
+        for(i in seq_len(nrow(d$enemies))){npc<-d$enemies[i,,drop=FALSE];base<-as.character(npc$name[[1L]]%||%"Enemy");name_seen[[base]]<-(name_seen[[base]]%||%0L)+1L;total<-sum(as.character(d$enemies$name)==base);display<-if(total>1L)paste(base,name_seen[[base]])else base;enemy_id<-spawn_generated_enemy(eid,npc,display);if(is.null(enemy_id)||!nzchar(enemy_id))stop(paste("Could not add",display));enemy_ids<-c(enemy_ids,enemy_id)}
+        player_ids<-as.character(d$players$character_id);positions<-encounter_draft_positions(tiles,player_ids,enemy_ids,d$seed)
+        for(i in seq_len(nrow(positions)))if(!isTRUE(upsert_encounter_actor_position(eid,positions$actor_type[[i]],positions$actor_id[[i]],positions$x[[i]],positions$y[[i]])))stop("An actor could not be positioned on the generated map.")
+        TRUE
+      },error=function(e){message("generated encounter failed: ",conditionMessage(e));showNotification(paste("Encounter generation failed:",conditionMessage(e)),type="error",duration=12);FALSE})
+      if(!isTRUE(result)){if(!is.na(eid))try(delete_encounter(eid),silent=TRUE);if(!is.na(map_id))delete_generated_map(map_id);return()}
+      ctrl$session_id<-sid;ctrl$active_session_id<-sid;ctrl$encounter_id<-as.integer(eid);ctrl$map_id<-as.integer(map_id);enemy_obs_ids(character());bump_refresh();updateSelectInput(session,"encounter_id",selected=as.character(eid));updateSelectInput(session,"map_id",selected=as.character(map_id));showNotification(paste0("Generated editable encounter: ",encounter_name,". Review it before starting combat."),type="message",duration=10)
+    },ignoreInit=TRUE)
     
     current_enemies <- reactive({
       ctrl$refresh_key

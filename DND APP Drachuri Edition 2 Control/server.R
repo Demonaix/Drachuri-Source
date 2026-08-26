@@ -110,7 +110,8 @@ server_control <- function(input, output, session) {
   })
   control_hud_state<-reactiveValues(active_session_id=NULL,active_encounter_id=NULL,char_id="__control__",offline_mode=FALSE)
   observe({control_hud_state$active_session_id<-current_session_id();s<-control_live_snapshot()$session%||%data.frame();eid<-if(nrow(s))suppressWarnings(as.integer(s$active_encounter_id[[1L]]%||%NA))else NA_integer_;control_hud_state$active_encounter_id<-if(is.na(eid))NULL else eid})
-  partyHudServer("control_partyhud",control_hud_state,live_snapshot=control_live_snapshot)
+  partyHudServer("control_partyhud",control_hud_state,live_snapshot=control_live_snapshot,
+                 portrait_base="player-assets/assets/player-posters")
   output$ctrl_active_session<-renderUI({
     sid<-current_session_id();span(class="control-kpi",paste0("Active session: ",sid%||%"none"))
   })
@@ -134,6 +135,7 @@ server_control <- function(input, output, session) {
   source("control_app/modules/control_sessions_module.R", local = FALSE)
   source("control_app/modules/control_players_module.R", local = FALSE)
   source("control_app/modules/control_map_builder_module.R", local = FALSE)
+  source("control_app/modules/control_encounter_generator_core.R", local = FALSE)
   source("control_app/modules/control_encounter_setup_module.R", local = FALSE)
   source("control_app/modules/control_live_combat_module.R", local = FALSE)
   source("control_app/modules/control_npc_creator_module.R", local = FALSE)
@@ -144,6 +146,7 @@ server_control <- function(input, output, session) {
   source("control_app/modules/control_merchants_module.R", local = FALSE)
   source("control_app/modules/control_story_module.R", local = FALSE)
   source("control_app/modules/control_issue_reports_module.R", local = FALSE)
+  source("control_app/modules/control_geography_climate_module.R", local = FALSE)
   
  
   # ------------------------------------------------------------
@@ -165,6 +168,7 @@ server_control <- function(input, output, session) {
     positions_tbl = positions_tbl,
     bump_refresh = bump_refresh
   )
+  controlGeographyClimateServer("geography_climate",ctrl,bump_refresh)
   
   controlMapBuilderServer(
     id = "map_builder",

@@ -15,6 +15,7 @@ renv_new/
 *.tmp
 backups/
 releases/
+.local-tools/
 installer/player/build/
 installer/mac/build/
 installer/mac/cache/

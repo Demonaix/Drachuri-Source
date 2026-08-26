@@ -5,7 +5,7 @@
   <dict>
     <key>BundleHasStrictIdentifier</key><true/>
     <key>BundleIsRelocatable</key><false/>
-    <key>BundleIsVersionChecked</key><true/>
+    <key>BundleIsVersionChecked</key><false/>
     <key>BundleOverwriteAction</key><string>upgrade</string>
     <key>RootRelativeBundlePath</key><string>Applications/Drachuri Player.app</string>
   </dict>

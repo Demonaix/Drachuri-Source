@@ -6,7 +6,14 @@ resources_dir=$(CDPATH= cd -- "$macos_dir/../Resources" && pwd)
 support_dir="$HOME/Library/Application Support/Drachuri Player"
 mkdir -p "$support_dir/logs" "$support_dir/R-user"
 pid_file="$support_dir/player.pid"
+running_build_file="$support_dir/running-build-id"
 launch_url="http://127.0.0.1:48627"
+version_file="$resources_dir/app/VERSION"
+build_id_file="$resources_dir/app/BUILD_ID"
+app_version="Unknown version"
+[ -f "$version_file" ] && app_version=$(tr -d '\r\n' < "$version_file")
+app_build_id="$app_version"
+[ -f "$build_id_file" ] && app_build_id=$(tr -d '\r\n' < "$build_id_file")
 
 export DRACHURI_INSTALL_DIR="$resources_dir"
 export DRACHURI_APP_DIR="$resources_dir/app"
@@ -19,6 +26,7 @@ export LANG="en_GB.UTF-8"
 export LC_ALL="en_GB.UTF-8"
 export DRACHURI_PID_FILE="$pid_file"
 export DND_LAUNCH_PORT="48627"
+export DND_LAUNCH_BROWSER="false"
 
 if [ ! -x "$R_HOME/bin/Rscript" ]; then
   osascript -e 'display alert "Drachuri Player could not start" message "The R runtime is missing. Run the Drachuri Player installer again." as critical'
@@ -33,11 +41,58 @@ if [ "$(uname -m)" = "arm64" ] && ! /usr/bin/arch -x86_64 /usr/bin/true 2>/dev/n
   fi
 fi
 
+/usr/bin/arch -x86_64 "$R_HOME/bin/Rscript" --vanilla "$resources_dir/update/check_for_update.R" \
+  player mac "$app_version" "$resources_dir/update/GITHUB_REPOSITORY" >/dev/null 2>&1 || true
+
+show_launcher() {
+  while :; do
+    launcher_action=$(osascript \
+      -e 'on run argv' \
+      -e 'set iconPath to item 1 of argv' \
+      -e 'set versionText to item 2 of argv' \
+      -e 'display dialog "Your gateway to the Twin Worlds" & return & return & "Version " & versionText buttons {"Quit", "Settings", "Launch"} default button "Launch" cancel button "Quit" with title "Drachuri Player" with icon POSIX file iconPath' \
+      -e 'button returned of result' \
+      -e 'end run' \
+      -- "$resources_dir/DrachuriPlayer.icns" "$app_version" 2>/dev/null || printf 'Quit')
+
+    case "$launcher_action" in
+      Launch) return 0 ;;
+      Settings)
+        settings_action=$(osascript \
+          -e 'on run argv' \
+          -e 'display dialog "Drachuri Player opens the game in your default web browser. Diagnostic logs are available here if startup or loading fails:" & return & return & item 1 of argv buttons {"Back", "Open Logs", "Launch"} default button "Launch" with title "Drachuri Player Settings"' \
+          -e 'button returned of result' \
+          -e 'end run' \
+          -- "$support_dir/logs" 2>/dev/null || printf 'Back')
+        case "$settings_action" in
+          Launch) return 0 ;;
+          "Open Logs") open "$support_dir/logs" ;;
+        esac
+        ;;
+      *) return 1 ;;
+    esac
+  done
+}
+
+show_launcher || exit 0
+
 if [ -f "$pid_file" ]; then
   existing_pid=$(cat "$pid_file" 2>/dev/null || true)
   if [ -n "$existing_pid" ] && kill -0 "$existing_pid" 2>/dev/null; then
-    open "$launch_url"
-    exit 0
+    running_build_id=""
+    [ -f "$running_build_file" ] && running_build_id=$(tr -d '\r\n' < "$running_build_file")
+    if [ "$running_build_id" = "$app_build_id" ]; then
+      open "$launch_url"
+      exit 0
+    fi
+    # The installer can replace the app while its previous R process remains
+    # alive. Stop only that recorded Player PID so rebuilt code is loaded.
+    kill "$existing_pid" 2>/dev/null || true
+    wait_count=0
+    while kill -0 "$existing_pid" 2>/dev/null && [ "$wait_count" -lt 20 ]; do
+      wait_count=$((wait_count + 1))
+      sleep 0.1
+    done
   fi
   rm -f "$pid_file"
 fi
@@ -45,4 +100,22 @@ fi
 nohup /usr/bin/arch -x86_64 "$R_HOME/bin/Rscript" --vanilla "$resources_dir/installed_run.R" \
   >> "$support_dir/logs/launcher-console.log" 2>&1 </dev/null &
 echo $! > "$pid_file"
+printf '%s\n' "$app_build_id" > "$running_build_file"
+
+# Wait briefly for Shiny to accept connections before opening the browser.
+attempt=0
+while [ "$attempt" -lt 80 ]; do
+  if curl --silent --fail --max-time 1 "$launch_url" >/dev/null 2>&1; then
+    open "$launch_url"
+    exit 0
+  fi
+  if ! kill -0 "$(cat "$pid_file" 2>/dev/null || true)" 2>/dev/null; then
+    osascript -e 'display alert "Drachuri Player could not start" message "Open Settings in the launcher to view the diagnostic logs." as critical' >/dev/null
+    exit 1
+  fi
+  attempt=$((attempt + 1))
+  sleep 0.25
+done
+
+osascript -e 'display alert "Drachuri Player is taking too long to start" message "Open Settings in the launcher to view the diagnostic logs." as warning' >/dev/null
 exit 0

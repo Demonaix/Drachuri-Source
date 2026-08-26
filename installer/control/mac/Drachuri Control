@@ -27,6 +27,10 @@ if [ "$(uname -m)" = "arm64" ] && ! /usr/bin/arch -x86_64 /usr/bin/true 2>/dev/n
   osascript -e 'display alert "Rosetta is required" message "Install Rosetta, then open Drachuri Control again." as critical'
   exit 1
 fi
+app_version="Unknown version"
+[ -f "$resources_dir/workspace/VERSION" ] && app_version=$(tr -d '\r\n' < "$resources_dir/workspace/VERSION")
+/usr/bin/arch -x86_64 "$R_HOME/bin/Rscript" --vanilla "$resources_dir/update/check_for_update.R" \
+  control mac "$app_version" "$resources_dir/update/GITHUB_REPOSITORY" >/dev/null 2>&1 || true
 if [ -f "$pid_file" ]; then
   existing_pid=$(cat "$pid_file" 2>/dev/null || true)
   if [ -n "$existing_pid" ] && kill -0 "$existing_pid" 2>/dev/null; then open "$launch_url"; exit 0; fi

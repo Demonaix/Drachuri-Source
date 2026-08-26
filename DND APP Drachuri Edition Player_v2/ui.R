@@ -225,11 +225,11 @@ body {
   content: '';
   position: absolute;
   inset: 0;
-  background-image: url('camp.png');
+  background-image: var(--drachuri-camp-background, url('camp_realistic_hud_safe.png'));
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
-  filter: saturate(1.03) contrast(1.03);
+  filter: saturate(0.88) contrast(1.02);
   transform: scale(1.01);
   z-index: 0;
 }
@@ -337,11 +337,11 @@ body.parchment #app-panel .tab-content > .tab-pane.active .container-fluid{
 #landing-stage .landing-bg{
   position: absolute;
   inset: 0;
-  background-image: url('loading_screen.png');
+  background-image: url('loading_screen_parchment.png');
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
-  filter: saturate(1.05) contrast(1.05);
+  filter: saturate(0.88) contrast(1.02);
   transform: scale(1.02);
 }
 #landing-stage .landing-shade{
@@ -349,9 +349,9 @@ body.parchment #app-panel .tab-content > .tab-pane.active .container-fluid{
   inset: 0;
   background: linear-gradient(
     to top,
-    rgba(0,0,0,0.78) 0%,
-    rgba(0,0,0,0.30) 38%,
-    rgba(0,0,0,0.00) 75%
+    rgba(48,28,12,0.72) 0%,
+    rgba(48,28,12,0.24) 38%,
+    rgba(48,28,12,0.00) 75%
   );
 }
 
