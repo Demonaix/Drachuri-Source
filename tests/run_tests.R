@@ -1958,4 +1958,14 @@ test("conditions and exhaustion enact skill and save rules", {
   stopifnot(grepl("hit point maximum halved",test_env$exhaustion_effect_text(4L),fixed=TRUE))
 })
 
+test("combat fullscreen expands only the map beneath persistent HUDs", {
+  fullscreen_js <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","www","js","combat2d_simple.js"),warn=FALSE),collapse="\n")
+  combat_css <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","www","css","combat.css"),warn=FALSE),collapse="\n")
+  stopifnot(grepl("document.body.appendChild(mapCard)",fullscreen_js,fixed=TRUE))
+  stopifnot(!grepl("const fullscreenRoot = document.documentElement",fullscreen_js,fixed=TRUE))
+  stopifnot(grepl("body.combat-document-fullscreen>.combat-map-card",combat_css,fixed=TRUE))
+  stopifnot(grepl("[id$='partyhud_root']",combat_css,fixed=TRUE))
+  stopifnot(grepl("[id$='status_card_dock']",combat_css,fixed=TRUE))
+})
+
 cat("\n", tests_run, " tests passed.\n", sep = "")

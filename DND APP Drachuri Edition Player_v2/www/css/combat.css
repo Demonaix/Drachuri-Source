@@ -442,9 +442,11 @@
 }
 
 body.combat-document-fullscreen{overflow:hidden!important}
-body.combat-document-fullscreen .combat-play-layout .combat-map-card{position:fixed!important;inset:0!important;z-index:999990!important;width:100vw!important;height:100vh!important;margin:0!important;padding:0!important;border:0!important;border-radius:0!important;background:#0f1115!important}
+body.combat-document-fullscreen>.combat-map-card{position:fixed!important;inset:0!important;z-index:999990!important;width:100vw!important;height:100vh!important;min-height:100vh!important;max-height:100vh!important;margin:0!important;padding:0!important;border:0!important;border-radius:0!important;background:#0f1115!important}
 body.combat-document-fullscreen .combat-3d-shell{height:100vh!important;padding:0!important}
 body.combat-document-fullscreen .combat-3d-canvas{height:100vh!important;min-height:100vh!important;border-radius:0!important}
+body.combat-document-fullscreen .combat-2d-shell{height:100vh!important;padding:0!important}
+body.combat-document-fullscreen .combat-2d-canvas{height:100vh!important;min-height:100vh!important;border-radius:0!important}
 body.combat-document-fullscreen .combat-map-toolbar{position:fixed;right:14px;top:12px;z-index:1000004;padding:6px 8px;border-radius:9px;background:rgba(247,231,195,.92);color:#3e2f1c}
 body.combat-document-fullscreen .combat-wrap>.combat-card:first-child{position:fixed!important;left:205px;right:12px;top:12px;z-index:1000003!important;max-height:225px;overflow:auto;margin:0!important;padding:10px 12px!important;background:rgba(247,231,195,.94)!important;box-shadow:0 6px 22px rgba(0,0,0,.35)!important}
 body.combat-document-fullscreen [id$='partyhud_root'],body.combat-document-fullscreen .global-hud,body.combat-document-fullscreen [id$='status_card_dock']{z-index:1000005!important}

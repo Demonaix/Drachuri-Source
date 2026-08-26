@@ -839,7 +839,6 @@ function setupCombat2DResizeHandler() {
   });
 
   document.addEventListener("fullscreenchange", () => {
-    document.body.classList.toggle("combat-document-fullscreen", !!document.fullscreenElement);
     setTimeout(() => scrollActiveTokenIntoView2D(), 120);
   });
 
@@ -849,6 +848,18 @@ function setupCombat2DResizeHandler() {
 function setupFullscreen2DHandler() {
   const state = window.combat2dState;
   if (state.fullscreenHandlerAttached) return;
+
+  function leaveMapFullscreen() {
+    document.body.classList.remove("combat-document-fullscreen");
+    if (state.fullscreenMapCard && state.fullscreenMapParent) {
+      state.fullscreenMapParent.insertBefore(state.fullscreenMapCard, state.fullscreenMapNextSibling || null);
+    }
+    state.fullscreenMapCard = null;
+    state.fullscreenMapParent = null;
+    state.fullscreenMapNextSibling = null;
+    const fullscreenBtn = document.querySelector("[id$='map_3d_fullscreen']");
+    if (fullscreenBtn) fullscreenBtn.textContent = "Fullscreen Map";
+  }
 
   document.addEventListener("click", async function(e) {
     const zoomBtn = e.target.closest("[id$='map_zoom_in'], [id$='map_zoom_out']");
@@ -892,29 +903,32 @@ function setupFullscreen2DHandler() {
     shell.classList.add("combat-2d-shell");
 
     try {
-      if (!document.fullscreenElement) {
+      const entering = !document.body.classList.contains("combat-document-fullscreen");
+      if (entering) {
+        const mapCard = shell.closest(".combat-map-card");
+        if (!mapCard) throw new Error("Map card was not found.");
+        state.fullscreenMapCard = mapCard;
+        state.fullscreenMapParent = mapCard.parentNode;
+        state.fullscreenMapNextSibling = mapCard.nextSibling;
+        document.body.appendChild(mapCard);
         document.body.classList.add("combat-document-fullscreen");
-        const fullscreenRoot = document.documentElement;
-        if (fullscreenRoot.requestFullscreen) {
-          await fullscreenRoot.requestFullscreen();
-        } else if (fullscreenRoot.webkitRequestFullscreen) {
-          fullscreenRoot.webkitRequestFullscreen();
-        }
+        btn.textContent = "Exit Fullscreen Map";
       } else {
-        if (document.exitFullscreen) {
-          await document.exitFullscreen();
-        } else if (document.webkitExitFullscreen) {
-          document.webkitExitFullscreen();
-        }
+        leaveMapFullscreen();
       }
-
       setTimeout(() => scrollActiveTokenIntoView2D(), 120);
       setTimeout(() => scrollActiveTokenIntoView2D(), 400);
     } catch (err) {
-      document.body.classList.remove("combat-document-fullscreen");
+      leaveMapFullscreen();
       console.error("2D fullscreen failed:", err);
       alert("Fullscreen failed. Check browser console.");
     }
+  });
+
+  document.addEventListener("keydown", function(e) {
+    if (e.key !== "Escape" || !document.body.classList.contains("combat-document-fullscreen")) return;
+    leaveMapFullscreen();
+    setTimeout(() => scrollActiveTokenIntoView2D(), 120);
   });
 
   state.fullscreenHandlerAttached = true;
