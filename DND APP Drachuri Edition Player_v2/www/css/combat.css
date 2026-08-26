@@ -143,8 +143,9 @@
 .combat-primary-controls{display:grid;grid-template-columns:repeat(4,minmax(105px,1fr));gap:8px}
 .combat-main-command{padding:9px 14px!important;border:1px solid #8f6c38!important;background:linear-gradient(#f2dfb3,#cfaa6d)!important;color:#402b16!important;font-family:Cinzel,Georgia,serif!important;font-weight:800!important;box-shadow:0 2px 0 #725027,0 5px 12px rgba(48,28,10,.2)!important}
 .combat-main-command:hover,.combat-main-command:focus{background:linear-gradient(#fff0c9,#dbba7c)!important;color:#2f1e0e!important}
-.combat-command-menus{min-width:0}
+.combat-command-menus{min-width:0;grid-column:1/-1;width:100%}
 .combat-action-panel{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:6px;padding:8px 10px;border:1px solid rgba(143,108,56,.55);border-radius:9px;background:rgba(247,231,195,.92);box-shadow:0 4px 12px rgba(48,28,10,.13)}
+.combat-panel-close{margin-left:auto!important;border-color:#8f6c38!important;background:#ead6a8!important;color:#4b3118!important}
 .combat-action-panel .shiny-html-output{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
 
 .combat-command-turn{justify-content:flex-end}
@@ -449,9 +450,11 @@ body.combat-document-fullscreen .combat-2d-shell{height:100vh!important;padding:
 body.combat-document-fullscreen .combat-2d-canvas{height:100vh!important;min-height:100vh!important;border-radius:0!important}
 body.combat-document-fullscreen .combat-map-toolbar{position:fixed;right:14px;top:84px;z-index:1000004;padding:6px 8px;border-radius:9px;background:rgba(247,231,195,.92);color:#3e2f1c}
 body.combat-document-fullscreen .combat-log-card{visibility:hidden!important;pointer-events:none!important}
-body.combat-document-fullscreen>.combat-fullscreen-controls{position:fixed!important;left:205px;right:205px;top:84px;z-index:1000003!important;max-height:155px;overflow:auto;margin:0!important;padding:8px 12px!important;background:rgba(247,231,195,.94)!important;box-shadow:0 6px 22px rgba(0,0,0,.35)!important}
+body.combat-document-fullscreen>.combat-fullscreen-controls{position:fixed!important;left:205px;right:205px;top:84px;z-index:1000003!important;max-height:calc(100vh - 168px);overflow:visible;margin:0!important;padding:8px 12px!important;background:rgba(247,231,195,.96)!important;box-shadow:0 6px 22px rgba(0,0,0,.35)!important}
 body.combat-document-fullscreen [id$='partyhud_root'],body.combat-document-fullscreen .global-hud,body.combat-document-fullscreen [id$='status_card_dock']{z-index:1000005!important}
 body.combat-document-fullscreen [id$='partyhud_root']{top:245px!important;max-height:calc(100vh - 255px)!important}
+body.combat-document-fullscreen .modal-backdrop{z-index:1000010!important}
+body.combat-document-fullscreen .modal{z-index:1000011!important}
 
 /* =========================================================
    BATTLEFIELD SUMMARY

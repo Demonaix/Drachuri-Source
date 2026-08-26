@@ -1961,6 +1961,7 @@ test("conditions and exhaustion enact skill and save rules", {
 test("combat fullscreen expands only the map beneath persistent HUDs", {
   fullscreen_js <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","www","js","combat2d_simple.js"),warn=FALSE),collapse="\n")
   combat_css <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","www","css","combat.css"),warn=FALSE),collapse="\n")
+  combat_server <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","debug_combat_module.R"),warn=FALSE),collapse="\n")
   stopifnot(grepl("document.body.appendChild(mapCard)",fullscreen_js,fixed=TRUE))
   stopifnot(grepl("document.body.appendChild(controls)",fullscreen_js,fixed=TRUE))
   stopifnot(!grepl("const fullscreenRoot = document.documentElement",fullscreen_js,fixed=TRUE))
@@ -1968,7 +1969,9 @@ test("combat fullscreen expands only the map beneath persistent HUDs", {
   stopifnot(grepl("body.combat-document-fullscreen>.combat-fullscreen-controls",combat_css,fixed=TRUE))
   stopifnot(grepl("[id$='partyhud_root']",combat_css,fixed=TRUE))
   stopifnot(grepl("[id$='status_card_dock']",combat_css,fixed=TRUE))
-  combat_server <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","debug_combat_module.R"),warn=FALSE),collapse="\n")
+  stopifnot(grepl("body.combat-document-fullscreen .modal",combat_css,fixed=TRUE))
+  stopifnot(grepl("close_actions_menu",combat_server,fixed=TRUE))
+  stopifnot(grepl("Natural Magic can be cast on your turn",combat_server,fixed=TRUE))
   stopifnot(grepl('combat.css?v=',combat_server,fixed=TRUE))
   stopifnot(grepl('combat2d_simple.js?v=',combat_server,fixed=TRUE))
 })

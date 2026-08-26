@@ -41,10 +41,10 @@ debugCombatUI <- function(id) {
               actionButton(ns("toggle_turn_menu"),"◆ Turn",class="btn combat-main-command")
             ),
             div(class="combat-command-menus",
-              shinyjs::hidden(div(id=ns("combat_movement_panel"),class="combat-action-panel",span(class="combat-action-label","Movement"),uiOutput(ns("dash_button_ui")),uiOutput(ns("phase_move_ui")))),
-              shinyjs::hidden(div(id=ns("combat_actions_panel"),class="combat-action-panel",span(class="combat-action-label","Actions"),actionButton(ns("open_standard_actions"),"Combat Actions",class="btn btn-default"),uiOutput(ns("level_two_actions_ui")),uiOutput(ns("level_three_actions_ui")),uiOutput(ns("class_actions_ui")),uiOutput(ns("rogue_combat_ui")))),
-              shinyjs::hidden(div(id=ns("combat_glyphs_panel"),class="combat-action-panel",span(class="combat-action-label","Glyphs"),uiOutput(ns("combat_runes_ui")),uiOutput(ns("combat_wards_ui")))),
-              shinyjs::hidden(div(id=ns("combat_turn_panel"),class="combat-action-panel",span(class="combat-action-label","Turn"),actionButton(ns("open_loot"),"Loot Defeated",class="btn btn-success"),actionButton(ns("override_action_budget"),"Override",class="btn btn-default"),actionButton(ns("end_turn"),"End Turn",class="btn btn-warning")))
+              shinyjs::hidden(div(id=ns("combat_movement_panel"),class="combat-action-panel",span(class="combat-action-label","Movement"),uiOutput(ns("dash_button_ui")),uiOutput(ns("phase_move_ui")),actionButton(ns("close_movement_menu"),"× Close",class="btn combat-panel-close"))),
+              shinyjs::hidden(div(id=ns("combat_actions_panel"),class="combat-action-panel",span(class="combat-action-label","Actions"),actionButton(ns("open_standard_actions"),"Combat Actions",class="btn btn-default"),uiOutput(ns("level_two_actions_ui")),uiOutput(ns("level_three_actions_ui")),uiOutput(ns("class_actions_ui")),uiOutput(ns("rogue_combat_ui")),actionButton(ns("close_actions_menu"),"× Close",class="btn combat-panel-close"))),
+              shinyjs::hidden(div(id=ns("combat_glyphs_panel"),class="combat-action-panel",span(class="combat-action-label","Glyphs"),uiOutput(ns("combat_runes_ui")),uiOutput(ns("combat_wards_ui")),actionButton(ns("close_glyphs_menu"),"× Close",class="btn combat-panel-close"))),
+              shinyjs::hidden(div(id=ns("combat_turn_panel"),class="combat-action-panel",span(class="combat-action-label","Turn"),actionButton(ns("open_loot"),"Loot Defeated",class="btn btn-success"),actionButton(ns("override_action_budget"),"Override",class="btn btn-default"),actionButton(ns("end_turn"),"End Turn",class="btn btn-warning"),actionButton(ns("close_turn_menu"),"× Close",class="btn combat-panel-close")))
             )
           ),
           div(id=ns("combat_status_group"),class="combat-status-strip",uiOutput(ns("turn_actions_ui")),div(class="combat-turn-box",uiOutput(ns("turn_notice_ui")))
@@ -1075,9 +1075,9 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     })
 
     observeEvent(input$open_natural_magic, {
-      if (!isTRUE(is_players_turn())) return()
+      if (!isTRUE(is_players_turn())) return(showNotification("Natural Magic can be cast on your turn.",type="warning",duration=6))
       spells <- natural_magic_spells()
-      if (!length(spells)) return()
+      if (!length(spells)) return(showNotification("No Natural Magic spell is available for this character's speciality.",type="warning",duration=7))
       choices <- stats::setNames(names(spells), vapply(spells, function(spell) spell$name, character(1)))
       showModal(modalDialog(
         title = "Cast Natural Magic",
@@ -1102,7 +1102,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     })
 
     observeEvent(input$cast_natural_spell, {
-      if (!isTRUE(is_players_turn())) return()
+      if (!isTRUE(is_players_turn())) return(showNotification("Natural Magic can be cast on your turn.",type="warning",duration=6))
       spell_id <- as.character(input$natural_spell_id %||% "")
       spell <- natural_magic_spells()[[spell_id]]
       if (is.null(spell)) return()
@@ -1468,10 +1468,16 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     }
     is_exploration_phase <- reactive({combat<-combat_tbl();is.data.frame(combat)&&nrow(combat)>0L&&identical(tolower(as.character(combat$phase[[1L]]%||%"")),"exploration")})
     observe({exploring<-isTRUE(is_exploration_phase());for(id in c("combat_primary_controls","combat_status_group"))shinyjs::toggle(id=id,condition=!exploring)})
-    observeEvent(input$toggle_movement_menu,{shinyjs::toggle(id="combat_movement_panel")},ignoreInit=TRUE)
-    observeEvent(input$toggle_actions_menu,{shinyjs::toggle(id="combat_actions_panel")},ignoreInit=TRUE)
-    observeEvent(input$toggle_glyphs_menu,{shinyjs::toggle(id="combat_glyphs_panel")},ignoreInit=TRUE)
-    observeEvent(input$toggle_turn_menu,{shinyjs::toggle(id="combat_turn_panel")},ignoreInit=TRUE)
+    combat_panels<-c("combat_movement_panel","combat_actions_panel","combat_glyphs_panel","combat_turn_panel")
+    toggle_combat_panel<-function(target){for(id in setdiff(combat_panels,target))shinyjs::hide(id=id);shinyjs::toggle(id=target)}
+    observeEvent(input$toggle_movement_menu,{toggle_combat_panel("combat_movement_panel")},ignoreInit=TRUE)
+    observeEvent(input$toggle_actions_menu,{toggle_combat_panel("combat_actions_panel")},ignoreInit=TRUE)
+    observeEvent(input$toggle_glyphs_menu,{toggle_combat_panel("combat_glyphs_panel")},ignoreInit=TRUE)
+    observeEvent(input$toggle_turn_menu,{toggle_combat_panel("combat_turn_panel")},ignoreInit=TRUE)
+    observeEvent(input$close_movement_menu,{shinyjs::hide("combat_movement_panel")},ignoreInit=TRUE)
+    observeEvent(input$close_actions_menu,{shinyjs::hide("combat_actions_panel")},ignoreInit=TRUE)
+    observeEvent(input$close_glyphs_menu,{shinyjs::hide("combat_glyphs_panel")},ignoreInit=TRUE)
+    observeEvent(input$close_turn_menu,{shinyjs::hide("combat_turn_panel")},ignoreInit=TRUE)
     
     is_players_turn <- reactive({
       cid <- as.character(core$state$char_id %||% "")
