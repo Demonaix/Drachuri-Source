@@ -851,9 +851,16 @@ function setupFullscreen2DHandler() {
 
   function leaveMapFullscreen() {
     document.body.classList.remove("combat-document-fullscreen");
+    if (state.fullscreenControls && state.fullscreenControlsParent) {
+      state.fullscreenControls.classList.remove("combat-fullscreen-controls");
+      state.fullscreenControlsParent.insertBefore(state.fullscreenControls, state.fullscreenControlsNextSibling || null);
+    }
     if (state.fullscreenMapCard && state.fullscreenMapParent) {
       state.fullscreenMapParent.insertBefore(state.fullscreenMapCard, state.fullscreenMapNextSibling || null);
     }
+    state.fullscreenControls = null;
+    state.fullscreenControlsParent = null;
+    state.fullscreenControlsNextSibling = null;
     state.fullscreenMapCard = null;
     state.fullscreenMapParent = null;
     state.fullscreenMapNextSibling = null;
@@ -910,6 +917,14 @@ function setupFullscreen2DHandler() {
         state.fullscreenMapCard = mapCard;
         state.fullscreenMapParent = mapCard.parentNode;
         state.fullscreenMapNextSibling = mapCard.nextSibling;
+        const controls = document.querySelector(".combat-wrap > .combat-card:first-child");
+        if (controls) {
+          state.fullscreenControls = controls;
+          state.fullscreenControlsParent = controls.parentNode;
+          state.fullscreenControlsNextSibling = controls.nextSibling;
+          controls.classList.add("combat-fullscreen-controls");
+          document.body.appendChild(controls);
+        }
         document.body.appendChild(mapCard);
         document.body.classList.add("combat-document-fullscreen");
         btn.textContent = "Exit Fullscreen Map";

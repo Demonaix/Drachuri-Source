@@ -2,6 +2,11 @@ library(shiny)
 
 debugCombatUI <- function(id) {
   ns <- NS(id)
+  asset_version <- function(path) {
+    stamp <- suppressWarnings(as.numeric(file.info(file.path("www", path))$mtime))
+    if (is.na(stamp)) stamp <- as.numeric(Sys.time())
+    as.integer(stamp)
+  }
   
   tabPanel(
     
@@ -11,10 +16,10 @@ debugCombatUI <- function(id) {
     
     tagList(
       
-      tags$link(rel = "stylesheet", type = "text/css", href = "css/combat.css"),
+      tags$link(rel = "stylesheet", type = "text/css", href = paste0("css/combat.css?v=",asset_version("css/combat.css"))),
       
-      tags$script(src = paste0("js/combat2d_simple.js?v=", as.integer(Sys.time()))),
-      tags$script(type="module",src=paste0("js/combat3d_lean.js?v=",as.integer(Sys.time()))),
+      tags$script(src = paste0("js/combat2d_simple.js?v=",asset_version("js/combat2d_simple.js"))),
+      tags$script(type="module",src=paste0("js/combat3d_lean.js?v=",asset_version("js/combat3d_lean.js"))),
       
       div(
         
