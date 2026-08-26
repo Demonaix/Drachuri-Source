@@ -2335,10 +2335,11 @@ character_rest_status_cards <- function(x, has_fire = NULL, planned_actions = ch
     crosses_phase<-as.numeric(phase_hours%||%0)>=check_in
     add(if(enough)"sufficient_blood"else"insufficient_blood",if(enough)"Sufficient Blood"else"Insufficient Blood",if(enough)"rest/sufficient_blood.png"else"rest/insufficient_blood.png",if(enough)paste0("Requirement met: ",round(intake,2)," of ",round(needed,2)," pints. This card lasts ",round(check_in,1)," more hours.",if(crosses_phase)" The current phase crosses that check; a new blood-intake cycle begins before the phase ends."else"")else paste0("Drink ",round(max(0,needed-intake),2)," more pints before the blood check in ",round(check_in,1)," hours. If still short, Stage ",stage," withdrawal will apply.",if(crosses_phase)" This phase crosses the threshold."else""),if(enough)"positive"else"risk")
     files<-c("blood_addiction_1_thirsting.png","blood_addiction_2_craving.png","blood_addiction_3_bloodbound.png","blood_addiction_4_bloodstarved.png");labels<-c("Thirsting","Craving","Bloodbound","Bloodstarved")
-    add(paste0("blood_addiction_",stage),paste("Blood Addiction",stage,"—",labels[[stage]]),paste0("blood-addiction/",files[[stage]]),paste("Persistent blood-addiction stage",stage,"."),"persistent")
+    withdrawal<-c("If the daily requirement is missed, take 1d6 hit-point damage.","Any blood deficit adds 1 exhaustion.","A blood deficit adds 2 exhaustion and can trigger bloodlust.","A blood deficit adds 2 exhaustion and can trigger severe bloodlust.")
+    add(paste0("blood_addiction_",stage),paste("Blood Addiction",stage,"—",labels[[stage]]),paste0("blood-addiction/",files[[stage]]),paste0("Persistent blood-addiction stage ",stage,". Daily requirement: ",round(needed,2)," pint",if(needed==1)""else"s",". ",withdrawal[[stage]]," Meeting the requirement prevents withdrawal; sustained controlled intake can allow recovery."),"persistent")
   }
   exhaustion<-suppressWarnings(as.integer(status$exhaustion%||%0L));if(is.na(exhaustion))exhaustion<-0L
-  if(exhaustion>0L){exhaustion<-max(1L,min(6L,exhaustion));files<-c("exhaustion_1_weary.png","exhaustion_2_fatigued.png","exhaustion_3_spent.png","exhaustion_4_haggard.png","exhaustion_5_wretched.png","exhaustion_6_collapsed.png");labels<-c("Weary","Fatigued","Spent","Haggard","Wretched","Collapsed");add(paste0("exhaustion_",exhaustion),paste("Exhaustion",exhaustion,"—",labels[[exhaustion]]),paste0("conditions/",files[[exhaustion]]),paste("Current exhaustion level:",exhaustion),"persistent")}
+  if(exhaustion>0L){exhaustion<-max(1L,min(6L,exhaustion));files<-c("exhaustion_1_weary.png","exhaustion_2_fatigued.png","exhaustion_3_spent.png","exhaustion_4_haggard.png","exhaustion_5_wretched.png","exhaustion_6_collapsed.png");labels<-c("Weary","Fatigued","Spent","Haggard","Wretched","Collapsed");add(paste0("exhaustion_",exhaustion),paste("Exhaustion",exhaustion,"—",labels[[exhaustion]]),paste0("conditions/",files[[exhaustion]]),exhaustion_effect_text(exhaustion),"persistent")}
   actions<-unique(as.character(planned_actions%||%character()))
   sleep_hours<-as.numeric(needs$sleep%||%0);if(sleep_hours>=24&&!"long_rest"%in%actions)add("long_rest_overdue","Long Rest Overdue","rest/long_rest.png",paste0("No Long Rest for ",round(sleep_hours,1)," hours; each 24-hour threshold adds exhaustion."),"risk")
   if("long_rest"%in%actions)add("rested","Rest Planned","rest/rested.png","Six hours of sleep are allocated; you will be Rested when the DM resolves the phase.","planned") else if(sleep_hours<24)add("rested","Rested","rest/rested.png",paste0("Your last Long Rest remains valid for ",round(max(0,24-sleep_hours),1)," more hours."),"positive") else add("not_rested","Not Rested","rest/not_rested.png","You have gone 24 hours without a Long Rest. Resolve a planned Long Rest to recover.","risk")
@@ -2346,13 +2347,58 @@ character_rest_status_cards <- function(x, has_fire = NULL, planned_actions = ch
   cards
 }
 
-character_condition_status_cards <- function(x) {
-  x<-validate_character(x);status<-x$status%||%list();values<-unique(tolower(trimws(as.character(c(status$conditions%||%character(),status$effects%||%character())))))
+status_condition_definitions <- function() list(
+  blinded=list(text="You cannot see and automatically fail checks that require sight. Your attacks have disadvantage, and attacks against you have advantage.",abilities=c("str","dex","con","int","bld_str","cha"),checks="sight"),
+  charmed=list(text="You cannot attack the charmer or target them with harmful abilities or magic. The charmer has advantage on social checks against you.",abilities=c("cha")),
+  deafened=list(text="You cannot hear and automatically fail checks that require hearing.",abilities=c("str","dex","con","int","bld_str","cha"),checks="hearing"),
+  frightened=list(text="While the source of fear is in sight, your attacks and ability checks have disadvantage, and you cannot willingly move closer to it.",abilities=c("str","dex","con","int","bld_str","cha"),ability_disadv=TRUE,attack_disadv=TRUE),
+  grappled=list(text="Your speed is 0 and you cannot benefit from speed bonuses. The condition ends if the grappler is incapacitated or you are moved beyond its reach.",speed_zero=TRUE),
+  incapacitated=list(text="You cannot take actions or reactions.",no_actions=TRUE),
+  invisible=list(text="You cannot be seen without magic or a special sense. Your attacks have advantage, and attacks against you have disadvantage.",attack_adv=TRUE,defence_disadv=TRUE),
+  paralysed=list(text="You are incapacitated and cannot move or speak. Strength and Dexterity saves automatically fail; attacks against you have advantage, and hits from within 5 feet are critical hits.",abilities=c("str","dex"),auto_fail_saves=c("str","dex"),no_actions=TRUE,speed_zero=TRUE),
+  petrified=list(text="You are transformed into solid matter, incapacitated, unable to move or speak, and unaware. Strength and Dexterity saves fail; attacks against you have advantage; you resist all damage and are immune to poison and disease.",abilities=c("str","dex"),auto_fail_saves=c("str","dex"),no_actions=TRUE,speed_zero=TRUE),
+  poisoned=list(text="You have disadvantage on attack rolls and ability checks.",abilities=c("str","dex","con","int","bld_str","cha"),ability_disadv=TRUE,attack_disadv=TRUE),
+  prone=list(text="You can only crawl until you stand. Your attacks have disadvantage. Attacks against you have advantage within 5 feet and disadvantage from farther away.",attack_disadv=TRUE),
+  restrained=list(text="Your speed is 0. Your attacks have disadvantage, attacks against you have advantage, and Dexterity saves have disadvantage.",abilities=c("dex"),save_disadv=c("dex"),attack_disadv=TRUE,speed_zero=TRUE),
+  stunned=list(text="You are incapacitated, cannot move, and can speak only falteringly. Strength and Dexterity saves automatically fail, and attacks against you have advantage.",abilities=c("str","dex"),auto_fail_saves=c("str","dex"),no_actions=TRUE,speed_zero=TRUE),
+  unconscious=list(text="You are incapacitated, cannot move or speak, drop held items, and fall prone. Strength and Dexterity saves fail; attacks against you have advantage, and hits from within 5 feet are critical hits.",abilities=c("str","dex"),auto_fail_saves=c("str","dex"),no_actions=TRUE,speed_zero=TRUE)
+)
+
+active_character_conditions <- function(x,extra_conditions=character()) {
+  x<-validate_character(x);status<-x$status%||%list();values<-unique(tolower(trimws(as.character(c(status$conditions%||%character(),status$effects%||%character(),extra_conditions)))))
   booleans<-c("blinded","charmed","deafened","frightened","grappled","incapacitated","invisible","paralysed","petrified","poisoned","prone","restrained","stunned","unconscious")
   for(key in booleans)if(isTRUE(status[[key]]%||%FALSE))values<-unique(c(values,key))
   values<-gsub("paralyzed","paralysed",values,fixed=TRUE);values<-intersect(values,booleans)
-  descriptions<-c(blinded="You cannot see and automatically fail checks requiring sight.",charmed="You are under a charm effect.",deafened="You cannot hear and automatically fail checks requiring hearing.",frightened="You are affected by fear.",grappled="Your movement is restricted by a grapple.",incapacitated="You cannot take actions or reactions.",invisible="You cannot be seen without special senses or magic.",paralysed="You are paralysed and unable to move or act.",petrified="You have been transformed into an inert solid substance.",poisoned="You have disadvantage on attacks and ability checks.",prone="You are on the ground until you stand.",restrained="Your movement is restricted and attacks are affected.",stunned="You are incapacitated and unable to move.",unconscious="You are unconscious and unable to act.")
-  lapply(values,function(key)list(key=paste0("condition_",key),label=tools::toTitleCase(key),image=paste0("assets/status-cards/conditions/",key,".png"),reason=unname(descriptions[[key]]),tone="persistent"))
+  values
+}
+
+character_condition_status_cards <- function(x,extra_conditions=character()) {
+  defs<-status_condition_definitions();values<-active_character_conditions(x,extra_conditions)
+  lapply(values,function(key)list(key=paste0("condition_",key),label=tools::toTitleCase(key),image=paste0("assets/status-cards/conditions/",key,".png"),reason=defs[[key]]$text,tone="persistent",condition=key,abilities=defs[[key]]$abilities%||%character()))
+}
+
+encounter_condition_values <- function(snapshot,character_id) {
+  effects<-snapshot$effects%||%data.frame();character_id<-as.character(character_id%||%"")
+  if(!is.data.frame(effects)||!nrow(effects)||!nzchar(character_id))return(character())
+  rows<-effects[as.character(effects$effect_type%||%"")=="condition"&as.character(effects$target_actor_id%||%"")==character_id,,drop=FALSE]
+  if(!nrow(rows))return(character())
+  decode<-function(value){if(is.list(value)&&!is.data.frame(value))return(value);tryCatch(jsonlite::fromJSON(as.character(value%||%""),simplifyVector=FALSE),error=function(e)list())}
+  unique(tolower(vapply(seq_len(nrow(rows)),function(i)as.character(decode(rows$payload[[i]])$condition%||%""),character(1))))
+}
+
+exhaustion_effect_text <- function(level) {
+  level<-max(0L,min(6L,suppressWarnings(as.integer(level%||%0L))));if(level<1L)return("No exhaustion effects.")
+  effects<-c("disadvantage on ability checks","speed halved","disadvantage on attack rolls and saving throws","hit point maximum halved","speed reduced to 0","death")
+  paste0("Level ",level," is cumulative: ",paste(effects[seq_len(level)],collapse="; "),".")
+}
+
+character_roll_status <- function(x,kind=c("ability","save","attack"),ability=NULL,extra_conditions=character(),context="") {
+  kind<-match.arg(kind);ability<-tolower(as.character(ability%||%""));conditions<-active_character_conditions(x,extra_conditions);defs<-status_condition_definitions();exhaustion<-suppressWarnings(as.integer(validate_character(x)$status$exhaustion%||%0L));if(is.na(exhaustion))exhaustion<-0L
+  reasons<-character();adv<-FALSE;dis<-FALSE;auto_fail<-FALSE
+  for(condition in conditions){def<-defs[[condition]]%||%list();if(kind=="ability"&&isTRUE(def$ability_disadv)){dis<-TRUE;reasons<-c(reasons,paste(tools::toTitleCase(condition),"gives disadvantage on ability checks."))};if(kind=="save"&&ability%in%(def$save_disadv%||%character())){dis<-TRUE;reasons<-c(reasons,paste(tools::toTitleCase(condition),"gives disadvantage on this save."))};if(kind=="save"&&ability%in%(def$auto_fail_saves%||%character())){auto_fail<-TRUE;reasons<-c(reasons,paste(tools::toTitleCase(condition),"automatically fails this save."))};if(kind=="attack"&&isTRUE(def$attack_adv)){adv<-TRUE};if(kind=="attack"&&isTRUE(def$attack_disadv)){dis<-TRUE}}
+  context<-tolower(as.character(context%||%""));if("blinded"%in%conditions&&grepl("see|sight|look|visual|watch|spot|read",context)){auto_fail<-TRUE;reasons<-c(reasons,"Blinded automatically fails a check that requires sight.")};if("deafened"%in%conditions&&grepl("hear|hearing|listen|sound",context)){auto_fail<-TRUE;reasons<-c(reasons,"Deafened automatically fails a check that requires hearing.")}
+  if(kind=="ability"&&exhaustion>=1L){dis<-TRUE;reasons<-c(reasons,paste0("Exhaustion ",exhaustion," gives disadvantage on ability checks."))};if(kind=="save"&&exhaustion>=3L){dis<-TRUE;reasons<-c(reasons,paste0("Exhaustion ",exhaustion," gives disadvantage on saving throws."))}
+  list(mode=if(adv&&dis)"Straight"else if(adv)"Advantage"else if(dis)"Disadvantage"else"Straight",advantage=adv,disadvantage=dis,auto_fail=auto_fail,reasons=unique(reasons),conditions=conditions)
 }
 
 advance_blood_day <- function(x, add_log = NULL, state = NULL) {
@@ -2731,44 +2777,34 @@ sync_exhaustion_effects <- function(x) {
 #Status engine
 get_status_modifiers <- function(x) {
   x <- validate_character(x)
-  
-  effects <- x$status$effects %||% character(0)
+  conditions <- active_character_conditions(x)
   exhaustion <- as.integer(x$status$exhaustion %||% 0)
-  
-  # --- Inject exhaustion into effects ---
-  if (exhaustion > 0) {
-    effects <- c(effects, paste0("Exhaustion (", exhaustion, ")"))
-  }
   
   list(
     ability_disadv =
-      "Poisoned" %in% effects ||
+      any(c("poisoned","frightened") %in% conditions) ||
       exhaustion >= 1,
     
     save_disadv =
       exhaustion >= 3 ||
-      "Restrained" %in% effects,
+      "restrained" %in% conditions,
     
     auto_fail_str_dex =
-      "Stunned" %in% effects ||
-      "Unconscious" %in% effects,
+      any(c("paralysed","petrified","stunned","unconscious") %in% conditions),
     
     hp_max_halved =
       exhaustion >= 4,
     
     speed_zero =
       exhaustion >= 5 ||
-      "Grappled" %in% effects,
+      any(c("grappled","incapacitated","paralysed","petrified","restrained","stunned","unconscious") %in% conditions),
     
     dead =
       exhaustion >= 6,
     
     attack_disadv =
       exhaustion >= 3 ||
-      "Poisoned" %in% effects ||
-      "Blinded" %in% effects ||
-      "Restrained" %in% effects ||
-      "Prone" %in% effects
+      any(c("poisoned","blinded","frightened","restrained","prone") %in% conditions)
   )
 }
 

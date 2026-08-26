@@ -346,6 +346,11 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         log_safe("⚠️ The DM must start combat before combat actions can be used.")
         return(FALSE)
       }
+      blocked<-intersect(actor_conditions(core$state$char_id),c("incapacitated","paralysed","paralyzed","petrified","stunned","unconscious"))
+      if(length(blocked)){
+        log_safe(paste0("⚠️ ",tools::toTitleCase(blocked[[1L]])," prevents actions and reactions."))
+        return(FALSE)
+      }
       updated <- spend_turn_action(turn_budget(), action_type)
       if (is.null(updated)) {
         log_safe(paste0("⚠️ No ", gsub("_", " ", action_type), " remains for ", label, "."))
@@ -1303,7 +1308,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     
     movement_allowance_ft <- function() {
       movement_actor<-if(isTRUE(is_exploration_phase()))as.character(core$state$char_id%||%"")else active_actor_id()
-      if (any(c("restrained", "grappled") %in% actor_conditions(movement_actor))) return(0L)
+      if (any(c("restrained","grappled","incapacitated","paralysed","paralyzed","petrified","stunned","unconscious") %in% actor_conditions(movement_actor))) return(0L)
       
       base <- base_speed_ft()
       
@@ -4277,9 +4282,9 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
 
       attacker_effects <- actor_conditions(attacker_id)
       target_effects <- actor_conditions(target_id)
-      has_advantage <- any(c("restrained", "hidden", "invisible") %in% attacker_effects) ||
-        "helped_against" %in% target_effects
-      has_disadvantage <- any(c("restrained", "poisoned") %in% attacker_effects) ||
+      has_advantage <- any(c("hidden", "invisible") %in% attacker_effects) ||
+        any(c("blinded","restrained","paralysed","paralyzed","petrified","stunned","unconscious","helped_against") %in% target_effects)
+      has_disadvantage <- any(c("blinded","frightened","prone","restrained", "poisoned") %in% attacker_effects) ||
         any(c("dodging", "hidden", "invisible") %in% target_effects)
       if (has_advantage && has_disadvantage) return("Normal")
       if (has_advantage) return("Advantage")

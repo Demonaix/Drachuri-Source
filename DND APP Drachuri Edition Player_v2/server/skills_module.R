@@ -11,12 +11,13 @@ skillsTabUI <- function(id) {
       .sc-ability .sc-card{width:160px;aspect-ratio:4/5}.sc-ability-name{font:700 14px Cinzel,serif;margin-top:8px}.sc-save{font-size:11px;opacity:.8}.sc-corner{position:absolute;top:7px;padding:3px 7px;background:rgba(255,248,226,.94);border:1px solid #9d793f;border-radius:7px;font:700 13px Georgia,serif;color:#392810}.sc-score{left:7px}.sc-mod{right:7px}
       .sc-skills{display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap}.sc-slot{width:148px;text-align:center}.sc-slot.expertise{width:306px}.sc-stack{width:148px;height:185px;margin-bottom:8px}.sc-slot.expertise .sc-stack{width:306px}.sc-skill-button{border:0!important;padding:0!important;background:transparent!important;box-shadow:none!important}.sc-visible-cards{display:flex;gap:10px}.sc-visible-card{width:148px;aspect-ratio:4/5}.sc-visible-card img{width:100%;height:100%;object-fit:cover;display:block}.sc-name{font:700 12px Cinzel,serif;line-height:1.2}.sc-edit{display:inline-flex;margin-left:5px;padding:1px 5px;border:1px solid #9d793f;border-radius:6px!important;background:#e4cc98!important;color:#50381f!important;text-decoration:none!important;box-shadow:0 1px 2px rgba(56,35,16,.25)}.sc-edit:hover{background:#f0dfb8!important;color:#342315!important}.sc-slot.empty .sc-skill-button,.sc-slot.incomplete .sc-skill-button{width:148px;height:185px;border:2px dashed #8b765888!important;border-radius:10px!important;background:#ede0be55!important;position:relative}.sc-slot.empty .sc-skill-button:after,.sc-slot.incomplete .sc-skill-button:after{position:absolute;inset:0;display:grid;place-items:center;font:700 11px Cinzel,serif;color:#806b4b}.sc-slot.empty .sc-skill-button:after{content:'Untrained'}.sc-slot.incomplete .sc-skill-button:after{content:'Choose card'}
       .sc-picker{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}.sc-art{width:145px}.sc-art img{width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:8px}.sc-art.active{outline:4px solid #5a8f54}.sc-fan{display:flex;justify-content:center;align-items:end;min-height:285px;padding:16px}.sc-fan-card{width:180px;aspect-ratio:4/5;margin:0 -22px}.sc-fan-card:first-child{transform:rotate(-8deg) translateY(10px)}.sc-fan-card:nth-child(2){z-index:2}.sc-fan-card:last-child{transform:rotate(8deg) translateY(10px)}.sc-result{text-align:center;font:800 21px Cinzel,serif}.sc-breakdown{max-width:560px;margin:12px auto;padding:12px 16px;border:1px solid #b89b62;border-radius:10px;background:#fff8e8}.sc-breakdown-row{display:flex;justify-content:space-between;gap:20px;padding:4px 0}.sc-breakdown-total{border-top:1px solid #b89b62;margin-top:5px;padding-top:8px;font-weight:800}.sc-party-member{margin:10px 0;padding:10px;border:1px solid #c9ad75;border-radius:10px}.sc-party-cards{display:flex;gap:8px;flex-wrap:wrap}.sc-party-cards img{width:74px;aspect-ratio:4/5;object-fit:cover;border-radius:6px}
+      .sc-ability-status{display:flex;justify-content:center;gap:4px;margin-top:8px;flex-wrap:wrap}.sc-ability-status img{width:42px;height:53px;object-fit:cover;border-radius:4px;box-shadow:0 2px 5px #3c281966}.sc-status-note{margin:8px 0;padding:8px 10px;border:1px solid #9d793f;border-radius:8px;background:#f0dfb8}.sc-status-roll{width:92px!important;margin-left:-14px!important;margin-right:-14px!important}
       @media(max-width:800px){.sc-lane{grid-template-columns:1fr}.sc-rule{height:1px}.sc-skills{justify-content:center}}
     ")),
     div(class="sc-page",div(class="sc-head",div(h3("Ability & Skill Cards"),div(class="sc-hint","Click a card to roll. Reliable supports low rolls, Wild Card adds risk, and Inspired rewards high rolls.")),uiOutput(ns("magic_action"))),uiOutput(ns("lanes")),tags$hr(),h4("Granted Proficiencies & Defences"),uiOutput(ns("traits"))))
 }
 
-skillsTabServer <- function(id,state,restoring,add_log,char_rev) {
+skillsTabServer <- function(id,state,restoring,add_log,char_rev,live_snapshot=NULL) {
   moduleServer(id,function(input,output,session){
     ns<-session$ns; abs<-c("str","dex","con","int","bld_str","cha")
     labs<-c(str="Strength",dex="Dexterity",con="Constitution",int="Intelligence",bld_str="Blood Strength",cha="Charisma")
@@ -35,6 +36,9 @@ skillsTabServer <- function(id,state,restoring,add_log,char_rev) {
     card_art<-c(reliable="core",wild_card="aspect",inspired="descriptor")
     skill_img<-function(k,v){art<-unname(card_art[[v]]%||%"core");map<-switch(art,core=core,aspect=aspect,descriptor=descriptor);folder<-switch(art,core="skill-cores",aspect="skill-aspects",descriptor="skill-descriptors");paste0("assets/skill-cards/",folder,"/",unname(map[[k]]%||%core[[k]]),".jpg")}
     smod<-function(skill)character_skill_modifier(state$char,skill,SKILLS_LIST)
+    live_conditions<-reactive({if(is.function(live_snapshot))encounter_condition_values(live_snapshot(),state$char_id)else character()})
+    exhaustion_cards<-function(){Filter(function(card)grepl("^exhaustion_",card$key),character_rest_status_cards(state$char))}
+    relevant_status_cards<-function(ab){c(Filter(function(card)ab%in%(card$abilities%||%character()),character_condition_status_cards(state$char,live_conditions())),exhaustion_cards())}
     has_feature<-function(fid)any(vapply(get_unlocked_class_features(state$char),function(x)identical(as.character(x$id%||%""),fid),logical(1)))
 
     output$lanes <- renderUI({
@@ -59,16 +63,17 @@ skillsTabServer <- function(id,state,restoring,add_log,char_rev) {
                 span(class="sc-corner sc-mod",signed(amod(ab)))),
               class="sc-card", title=paste("Roll",labs[[ab]],"save")),
             div(class="sc-ability-name",labs[[ab]]),
-            div(class="sc-save",paste("Save", signed(amod(ab)+if(saveprof)pb()else 0L), if(saveprof)"• proficient"else""))),
+            div(class="sc-save",paste("Save", signed(amod(ab)+if(saveprof)pb()else 0L), if(saveprof)"• proficient"else"")),
+            div(class="sc-ability-status",lapply(relevant_status_cards(ab),function(card)tags$img(src=card$image,alt=card$label,title=paste(card$label,"—",card$reason))))),
           div(class="sc-rule"), div(class="sc-skills", tagList(skill_cards)))
       }))
     })
 
     pending<-reactiveVal(NULL)
     choose_roll<-function(kind,label,ab,skill=NULL){
-      pending(list(kind=kind,label=label,ability=ab,skill=skill));char<-validate_character(state$char);base<-amod(ab);modifier<-if(kind=="save")base+if(isTRUE(char$prof$saves[[ab]]%||%FALSE))pb()else 0L else smod(skill);cards<-if(kind=="skill")variants(key(skill))else character()
+      pending(list(kind=kind,label=label,ability=ab,skill=skill));char<-validate_character(state$char);base<-amod(ab);modifier<-if(kind=="save")base+if(isTRUE(char$prof$saves[[ab]]%||%FALSE))pb()else 0L else smod(skill);cards<-if(kind=="skill")variants(key(skill))else character();status<-character_roll_status(char,if(kind=="save")"save"else"ability",ab,live_conditions())
       showModal(modalDialog(title=paste(label,if(kind=="save")"saving throw"else"check"),
-        div(class="sc-breakdown",div(class="sc-breakdown-row",span(paste(labs[[ab]],"modifier")),strong(signed(base))),div(class="sc-breakdown-row",span(if(kind=="skill")paste("Training:",rank(key(skill)))else"Saving throw proficiency"),strong(signed(modifier-base))),div(class="sc-breakdown-row sc-breakdown-total",span("Current modifier"),strong(signed(modifier))),if(length(cards))lapply(cards,function(v)div(class="sc-breakdown-row",span(card_labels[[v]]),span(card_help[[v]])))),
+        div(class="sc-breakdown",div(class="sc-breakdown-row",span(paste(labs[[ab]],"modifier")),strong(signed(base))),div(class="sc-breakdown-row",span(if(kind=="skill")paste("Training:",rank(key(skill)))else"Saving throw proficiency"),strong(signed(modifier-base))),div(class="sc-breakdown-row sc-breakdown-total",span("Current modifier"),strong(signed(modifier))),if(length(cards))lapply(cards,function(v)div(class="sc-breakdown-row",span(card_labels[[v]]),span(card_help[[v]]))),if(length(status$reasons))div(class="sc-status-note",strong("Active status effects"),tags$ul(lapply(status$reasons,tags$li)))),
         if(kind=="skill")textInput(ns("context"),"What is the check about?"),if(kind=="skill")radioButtons(ns("scope"),"Attempt",c("Complete alone"="solo","Invite the active party"="party"),inline=TRUE),
         div(class="sc-picker",actionButton(ns("do_dis"),tags$img(src="assets/ability-cards/roll-mode/disadvantage.jpg",alt="Disadvantage"),class="sc-art",title="Roll with disadvantage"),actionButton(ns("do_normal"),tags$img(src="assets/ability-cards/roll-mode/straight-roll.jpg",alt="Straight roll"),class="sc-art",title="Make a straight roll"),actionButton(ns("do_adv"),tags$img(src="assets/ability-cards/roll-mode/advantage.jpg",alt="Advantage"),class="sc-art",title="Roll with advantage")),footer=modalButton("Cancel"),size="l",easyClose=TRUE))
     }
@@ -107,6 +112,9 @@ skillsTabServer <- function(id,state,restoring,add_log,char_rev) {
       info <- pending(); if (is.null(info)) return()
       char <- validate_character(state$char)
       modifier <- if(info$kind=="save") amod(info$ability)+if(isTRUE(char$prof$saves[[info$ability]]%||%FALSE))pb()else 0L else smod(info$skill)
+      roll_status<-character_roll_status(char,if(info$kind=="save")"save"else"ability",info$ability,live_conditions(),trimws(as.character(input$context%||%"")))
+      if(roll_status$disadvantage)mode<-if(identical(mode,"Advantage"))"Straight"else"Disadvantage"
+      if(roll_status$advantage)mode<-if(identical(mode,"Disadvantage"))"Straight"else"Advantage"
       if(info$kind=="save"&&identical(info$ability,"dex")&&identical(mode,"Straight")&&has_feature("danger_sense")) mode<-"Advantage"
       if(info$kind=="skill"&&key(info$skill)=="persuasion"&&isTRUE(char$status$mind_bender_active%||%FALSE)){mode<-if(mode=="Disadvantage")"Straight"else"Advantage";char$status$mind_bender_active<-FALSE;state$char<-char}
       scope<-as.character(input$scope%||%"solo");context<-trimws(as.character(input$context%||%""));sid<-online_sid();cid<-as.character(state$char_id%||%"")
@@ -121,13 +129,13 @@ skillsTabServer <- function(id,state,restoring,add_log,char_rev) {
         showNotification("The active party has 15 seconds to respond. Helpers contribute -1, 0, or +1; total support is capped by your proficiency bonus.",type="message",duration=10)
         return()
       }
-      card_bonus<-if(is.null(card_result))0L else card_result$card_bonus;total<-if(is.null(card_result))die+modifier else card_result$total
+      card_bonus<-if(is.null(card_result))0L else card_result$card_bonus;total<-if(isTRUE(roll_status$auto_fail))0L else if(is.null(card_result))die+modifier else card_result$total
       skill_cards <- NULL
       if(info$kind=="skill" && rank(key(info$skill)) %in% c("Proficient","Expertise")) {
         skill_cards <- tagList(lapply(variants(key(info$skill)),function(v)div(class="sc-card sc-fan-card",tags$img(src=skill_img(key(info$skill),v)))))
       }
-      effect_text<-if(!is.null(card_result)&&length(card_result$effects))paste(card_result$effects,collapse=" • ")else"";selected_text<-if(mode=="Straight")paste("Natural roll",die)else paste(mode,paste0(dice," → ",die))
-      removeModal();showModal(modalDialog(title=paste(info$label,"result"),div(class="sc-fan",div(class="sc-card sc-fan-card",tags$img(src=ability_img(info$ability))),skill_cards,div(class="sc-card sc-fan-card",tags$img(src=paste0("assets/ability-cards/roll-mode/",switch(mode,Advantage="advantage",Disadvantage="disadvantage","straight-roll"),".jpg")))),div(class="sc-breakdown",div(class="sc-breakdown-row",span(selected_text),strong(die)),div(class="sc-breakdown-row",span(paste(info$label,"modifier")),strong(signed(modifier))),if(card_bonus||nzchar(effect_text))div(class="sc-breakdown-row",span(if(nzchar(effect_text))effect_text else"Skill cards"),strong(signed(card_bonus))),div(class="sc-breakdown-row sc-breakdown-total",span("Total"),strong(total))),footer=modalButton("Done"),size="l",easyClose=TRUE))
+      effect_text<-if(!is.null(card_result)&&length(card_result$effects))paste(card_result$effects,collapse=" • ")else"";selected_text<-if(mode=="Straight")paste("Natural roll",die)else paste(mode,paste0(dice," → ",die));status_cards<-c(Filter(function(card)info$ability%in%(card$abilities%||%character()),character_condition_status_cards(char,roll_status$conditions)),exhaustion_cards())
+      removeModal();showModal(modalDialog(title=paste(info$label,"result"),div(class="sc-fan",div(class="sc-card sc-fan-card",tags$img(src=ability_img(info$ability))),skill_cards,lapply(status_cards,function(card)div(class="sc-card sc-fan-card sc-status-roll",tags$img(src=card$image,title=card$reason))),div(class="sc-card sc-fan-card",tags$img(src=paste0("assets/ability-cards/roll-mode/",switch(mode,Advantage="advantage",Disadvantage="disadvantage","straight-roll"),".jpg")))),div(class="sc-breakdown",div(class="sc-breakdown-row",span(selected_text),strong(die)),div(class="sc-breakdown-row",span(paste(info$label,"modifier")),strong(signed(modifier))),if(length(roll_status$reasons))div(class="sc-status-note",strong("Status effects"),tags$ul(lapply(roll_status$reasons,tags$li))),if(card_bonus||nzchar(effect_text))div(class="sc-breakdown-row",span(if(nzchar(effect_text))effect_text else"Skill cards"),strong(signed(card_bonus))),div(class="sc-breakdown-row sc-breakdown-total",span(if(roll_status$auto_fail)"Automatic failure"else"Total"),strong(total))),footer=modalButton("Done"),size="l",easyClose=TRUE))
       add_log(paste0("🎲 ",info$label,if(info$kind=="save")" save"else" check",if(nzchar(context))paste0(" — ",context)else"",": ",dice," ",signed(modifier),if(card_bonus)paste0(" ",signed(card_bonus)," cards")else""," = ",total,if(nzchar(effect_text))paste0(" (",effect_text,")")else""));pending(NULL)
     }
     observeEvent(input$do_normal,roll("Straight"),ignoreInit=TRUE);observeEvent(input$do_adv,roll("Advantage"),ignoreInit=TRUE);observeEvent(input$do_dis,roll("Disadvantage"),ignoreInit=TRUE)

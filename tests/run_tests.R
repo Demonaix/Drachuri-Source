@@ -58,6 +58,7 @@ load_functions(global_file, c(
   "camp_foraging_reward", "merchant_stock_category", "merchant_select_stock",
   "required_intake", "warmth_requirement_hours",
   "character_skill_modifier", "skill_card_count_for_rank", "character_skill_cards", "resolve_skill_card_roll", "party_skill_support_result",
+  "status_condition_definitions", "active_character_conditions", "character_condition_status_cards", "encounter_condition_values", "exhaustion_effect_text", "character_roll_status",
   "equipped_magical_traits", "new_character", "validate_character", "inventory_empty", "inventory_normalize",
   "weapon_meta_defaults_global", "standard_spear_attack_modes",
   "upgrade_weapon_damage_die", "standard_weapon_attack_modes",
@@ -1933,6 +1934,28 @@ test("players can submit bounded diagnostic reports for persistent DM review", {
   stopifnot(grepl("Send Report to DM", sidebar, fixed = TRUE))
   stopifnot(grepl("Attached diagnostic log", control, fixed = TRUE))
   stopifnot(grepl("Mark Resolved", control, fixed = TRUE))
+})
+
+test("live encounter conditions become detailed player status cards", {
+  char <- test_env$validate_character(list(meta=list(name="Tester")))
+  snapshot <- list(effects=data.frame(effect_type="condition",target_actor_id="player-1",payload='{"condition":"blinded"}',stringsAsFactors=FALSE))
+  conditions <- test_env$encounter_condition_values(snapshot,"player-1")
+  cards <- test_env$character_condition_status_cards(char,conditions)
+  stopifnot(identical(conditions,"blinded"))
+  stopifnot(length(cards)==1L,grepl("automatically fail",cards[[1L]]$reason,fixed=TRUE))
+  stopifnot(file.exists(file.path(project_dir,"DND APP Drachuri Edition Player_v2","www",cards[[1L]]$image)))
+})
+
+test("conditions and exhaustion enact skill and save rules", {
+  char <- test_env$validate_character(list(status=list(conditions=c("poisoned","restrained"),exhaustion=3L)))
+  ability <- test_env$character_roll_status(char,"ability","dex")
+  save <- test_env$character_roll_status(char,"save","dex")
+  stopifnot(ability$mode=="Disadvantage",save$mode=="Disadvantage")
+  char$status$conditions <- c("blinded","stunned")
+  sight <- test_env$character_roll_status(char,"ability","int",context="look for a hidden mark")
+  strength_save <- test_env$character_roll_status(char,"save","str")
+  stopifnot(isTRUE(sight$auto_fail),isTRUE(strength_save$auto_fail))
+  stopifnot(grepl("hit point maximum halved",test_env$exhaustion_effect_text(4L),fixed=TRUE))
 })
 
 cat("\n", tests_run, " tests passed.\n", sep = "")
