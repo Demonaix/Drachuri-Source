@@ -1853,6 +1853,16 @@ set_phase_watches_open <- function(phase_id,open=TRUE) {
   tryCatch(DBI::dbExecute(con,"UPDATE session_time_phases SET watches_open=$2 WHERE id=$1 AND status='open'",params=list(as.integer(phase_id),isTRUE(open)))>0L,error=function(e)FALSE)
 }
 
+confirm_session_phase_ready <- function(phase_id,character_id,ready=TRUE) {
+  con<-get_db_connection();if(is.null(con))return(FALSE);on.exit(release_db_connection(con),add=TRUE)
+  tryCatch({if(isTRUE(ready))DBI::dbExecute(con,"INSERT INTO session_phase_confirmations(phase_id,character_id) VALUES($1,$2) ON CONFLICT(phase_id,character_id) DO UPDATE SET confirmed_at=now()",params=list(as.integer(phase_id),as.character(character_id)))else DBI::dbExecute(con,"DELETE FROM session_phase_confirmations WHERE phase_id=$1 AND character_id=$2",params=list(as.integer(phase_id),as.character(character_id)));TRUE},error=function(e){message("confirm_session_phase_ready failed: ",e$message);FALSE})
+}
+
+get_session_phase_confirmations <- function(phase_id) {
+  con<-get_db_connection();if(is.null(con))return(data.frame());on.exit(release_db_connection(con),add=TRUE)
+  tryCatch(DBI::dbGetQuery(con,"SELECT * FROM session_phase_confirmations WHERE phase_id=$1 ORDER BY confirmed_at",params=list(as.integer(phase_id))),error=function(e)data.frame())
+}
+
 phase_hour_label <- function(time_of_day,offset) {
   starts<-c(dawn=6,day=12,dusk=18,night=0);hour<-(starts[[normalise_time_of_day(time_of_day)]]+as.numeric(offset))%%24
   format(as.POSIXct("2000-01-01",tz="UTC")+hour*3600,"%l:%M %p",tz="UTC") |> trimws()
@@ -1886,7 +1896,7 @@ resolve_session_phase <- function(phase_id,next_phase_kind=NULL,next_duration_ho
     char$status$needs_hours<-as.list(next_hours);if(day_changed){char$status$ate_today<-FALSE;char$status$drank_today<-FALSE};char$status$has_fire<-FALSE;char$meta$day<-as.integer(updated_env$day_number[[1L]]%||%char$meta$day%||%1L);char<-sync_exhaustion_effects(char)
     final_exhaustion<-as.integer(char$status$exhaustion%||%0L);if(!length(card_effects))card_effects<-"No status card crossed a penalty threshold"
     try(save_character_to_db(char,char_id=cid),silent=TRUE)
-    phase_message<-paste0("Rest phase resolved: ",paste(card_effects,collapse="; "),". Exhaustion ",starting_exhaustion," → ",final_exhaustion,".")
+    phase_message<-paste0(if(phase$phase_kind[[1L]]=="rest")"Rest phase resolved: "else"Standard phase resolved: ",paste(card_effects,collapse="; "),". Exhaustion ",starting_exhaustion," → ",final_exhaustion,".")
     try(queue_character_refresh(cid,"phase_resolution",phase_message),silent=TRUE)
     results[[cid]]<-list(actions=types,sindre_hours=hours,exhaustion=final_exhaustion,starting_exhaustion=starting_exhaustion,card_effects=card_effects,message=phase_message)
   }

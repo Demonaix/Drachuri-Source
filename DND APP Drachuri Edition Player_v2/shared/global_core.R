@@ -2319,7 +2319,7 @@ warmth_requirement_hours <- function(environment = list()) {
   24
 }
 
-character_rest_status_cards <- function(x, has_fire = NULL, planned_actions = character(), environment = list()) {
+character_rest_status_cards <- function(x, has_fire = NULL, planned_actions = character(), environment = list(), phase_hours = 0) {
   x <- validate_character(x); status <- x$status %||% list(); cards <- list()
   add <- function(key,label,image,reason,tone="neutral") cards[[length(cards)+1L]] <<- list(key=key,label=label,image=paste0("assets/status-cards/",image),reason=reason,tone=tone)
   needs<-status$needs_hours%||%list();fire <- if(is.null(has_fire))isTRUE(status$has_fire%||%FALSE)else isTRUE(has_fire);warmth_limit<-warmth_requirement_hours(environment);warmth_hours<-as.numeric(needs$warmth%||%0)
@@ -2332,7 +2332,8 @@ character_rest_status_cards <- function(x, has_fire = NULL, planned_actions = ch
   if(identical(race,"tylwyth teg")){
     addiction <- (x$resources$blood%||%list())$addiction%||%list();stage<-suppressWarnings(as.integer(addiction$stage%||%1L));if(is.na(stage))stage<-1L;stage<-max(1L,min(4L,stage))
     intake<-suppressWarnings(as.numeric(addiction$current_day_intake%||%0));if(is.na(intake))intake<-0;needed<-suppressWarnings(as.numeric(required_intake(addiction)));if(is.na(needed))needed<-1;enough<-intake>=needed;blood_hours<-as.numeric(needs$blood%||%0);check_in<-max(0,24-(blood_hours%%24));if(check_in==0)check_in<-24
-    add(if(enough)"sufficient_blood"else"insufficient_blood",if(enough)"Sufficient Blood"else"Insufficient Blood",if(enough)"rest/sufficient_blood.png"else"rest/insufficient_blood.png",if(enough)paste0("Requirement met: ",round(intake,2)," of ",round(needed,2)," pints. The next blood check is in ",round(check_in,1)," hours.")else paste0("Drink ",round(max(0,needed-intake),2)," more pints before the blood check in ",round(check_in,1)," hours. If still short, Stage ",stage," withdrawal will apply."),if(enough)"positive"else"risk")
+    crosses_phase<-as.numeric(phase_hours%||%0)>=check_in
+    add(if(enough)"sufficient_blood"else"insufficient_blood",if(enough)"Sufficient Blood"else"Insufficient Blood",if(enough)"rest/sufficient_blood.png"else"rest/insufficient_blood.png",if(enough)paste0("Requirement met: ",round(intake,2)," of ",round(needed,2)," pints. This card lasts ",round(check_in,1)," more hours.",if(crosses_phase)" The current phase crosses that check; a new blood-intake cycle begins before the phase ends."else"")else paste0("Drink ",round(max(0,needed-intake),2)," more pints before the blood check in ",round(check_in,1)," hours. If still short, Stage ",stage," withdrawal will apply.",if(crosses_phase)" This phase crosses the threshold."else""),if(enough)"positive"else"risk")
     files<-c("blood_addiction_1_thirsting.png","blood_addiction_2_craving.png","blood_addiction_3_bloodbound.png","blood_addiction_4_bloodstarved.png");labels<-c("Thirsting","Craving","Bloodbound","Bloodstarved")
     add(paste0("blood_addiction_",stage),paste("Blood Addiction",stage,"—",labels[[stage]]),paste0("blood-addiction/",files[[stage]]),paste("Persistent blood-addiction stage",stage,"."),"persistent")
   }
@@ -2340,7 +2341,7 @@ character_rest_status_cards <- function(x, has_fire = NULL, planned_actions = ch
   if(exhaustion>0L){exhaustion<-max(1L,min(6L,exhaustion));files<-c("exhaustion_1_weary.png","exhaustion_2_fatigued.png","exhaustion_3_spent.png","exhaustion_4_haggard.png","exhaustion_5_wretched.png","exhaustion_6_collapsed.png");labels<-c("Weary","Fatigued","Spent","Haggard","Wretched","Collapsed");add(paste0("exhaustion_",exhaustion),paste("Exhaustion",exhaustion,"—",labels[[exhaustion]]),paste0("conditions/",files[[exhaustion]]),paste("Current exhaustion level:",exhaustion),"persistent")}
   actions<-unique(as.character(planned_actions%||%character()))
   sleep_hours<-as.numeric(needs$sleep%||%0);if(sleep_hours>=24&&!"long_rest"%in%actions)add("long_rest_overdue","Long Rest Overdue","rest/long_rest.png",paste0("No Long Rest for ",round(sleep_hours,1)," hours; each 24-hour threshold adds exhaustion."),"risk")
-  if("long_rest"%in%actions)add("long_rest","Long Rest","rest/long_rest.png","Six hours allocated. On resolution: full HP, long-rest recovery, and one exhaustion removed.","planned")
+  if("long_rest"%in%actions)add("rested","Rest Planned","rest/long_rest.png","Six hours of sleep are allocated; you will be Rested when the DM resolves the phase.","planned") else if(sleep_hours<24)add("rested","Rested","rest/long_rest.png",paste0("Your last Long Rest remains valid for ",round(max(0,24-sleep_hours),1)," more hours."),"positive") else add("not_rested","Not Rested","rest/long_rest.png","You have gone 24 hours without a Long Rest. Resolve a planned Long Rest to recover.","risk")
   if("short_rest"%in%actions)add("short_rest","Short Rest","rest/short_rest.png","One hour allocated. Recovery is applied when the phase resolves.","planned")
   cards
 }

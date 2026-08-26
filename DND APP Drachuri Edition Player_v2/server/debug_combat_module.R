@@ -1457,11 +1457,11 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       }
     }
     is_exploration_phase <- reactive({combat<-combat_tbl();is.data.frame(combat)&&nrow(combat)>0L&&identical(tolower(as.character(combat$phase[[1L]]%||%"")),"exploration")})
-    observe({exploring<-isTRUE(is_exploration_phase());for(id in c("combat_primary_controls","combat_status_group"))shinyjs::toggle(id=session$ns(id),condition=!exploring)})
-    observeEvent(input$toggle_movement_menu,{shinyjs::toggle(id=session$ns("combat_movement_panel"))},ignoreInit=TRUE)
-    observeEvent(input$toggle_actions_menu,{shinyjs::toggle(id=session$ns("combat_actions_panel"))},ignoreInit=TRUE)
-    observeEvent(input$toggle_glyphs_menu,{shinyjs::toggle(id=session$ns("combat_glyphs_panel"))},ignoreInit=TRUE)
-    observeEvent(input$toggle_turn_menu,{shinyjs::toggle(id=session$ns("combat_turn_panel"))},ignoreInit=TRUE)
+    observe({exploring<-isTRUE(is_exploration_phase());for(id in c("combat_primary_controls","combat_status_group"))shinyjs::toggle(id=id,condition=!exploring)})
+    observeEvent(input$toggle_movement_menu,{shinyjs::toggle(id="combat_movement_panel")},ignoreInit=TRUE)
+    observeEvent(input$toggle_actions_menu,{shinyjs::toggle(id="combat_actions_panel")},ignoreInit=TRUE)
+    observeEvent(input$toggle_glyphs_menu,{shinyjs::toggle(id="combat_glyphs_panel")},ignoreInit=TRUE)
+    observeEvent(input$toggle_turn_menu,{shinyjs::toggle(id="combat_turn_panel")},ignoreInit=TRUE)
     
     is_players_turn <- reactive({
       cid <- as.character(core$state$char_id %||% "")

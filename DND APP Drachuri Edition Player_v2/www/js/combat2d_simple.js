@@ -893,6 +893,7 @@ function setupFullscreen2DHandler() {
 
     try {
       if (!document.fullscreenElement) {
+        document.body.classList.add("combat-document-fullscreen");
         const fullscreenRoot = document.documentElement;
         if (fullscreenRoot.requestFullscreen) {
           await fullscreenRoot.requestFullscreen();
@@ -910,6 +911,7 @@ function setupFullscreen2DHandler() {
       setTimeout(() => scrollActiveTokenIntoView2D(), 120);
       setTimeout(() => scrollActiveTokenIntoView2D(), 400);
     } catch (err) {
+      document.body.classList.remove("combat-document-fullscreen");
       console.error("2D fullscreen failed:", err);
       alert("Fullscreen failed. Check browser console.");
     }

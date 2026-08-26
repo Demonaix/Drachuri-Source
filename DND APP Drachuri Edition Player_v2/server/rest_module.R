@@ -425,16 +425,18 @@ restTabServer <- function(
     observe({invalidateLater(2000,session);sid<-online_session_id();if(is.na(sid)){active_phase(NULL);return()};active_phase(get_open_session_phase(sid))})
     phase_remaining<-reactive({invalidateLater(750,session);p<-active_phase();cid<-as.character(state$char_id%||%"");if(is.null(p)||!nzchar(cid)||p$phase_kind[[1L]]!="rest")return(0);session_phase_time_remaining(p$id[[1L]],cid)})
     spend_phase_time<-function(type,label,hours,start=NULL,end=NULL){p<-active_phase();cid<-as.character(state$char_id%||%"");if(is.null(p)||p$phase_kind[[1L]]!="rest")return(structure(list(),error="The DM has not opened Rest Mode."));allocate_session_phase_time(p$id[[1L]],cid,type,label,hours,start,end)}
+    phase_confirmation_ui<-function(p){cid<-as.character(state$char_id%||%"");confirmed<-cid%in%as.character(get_session_phase_confirmations(p$id[[1L]])$character_id%||%character());div(style="margin-top:10px",actionButton(session$ns("confirm_phase_ready"),if(confirmed)"✓ Ready for DM to resolve"else"Confirm phase plan",class=if(confirmed)"btn btn-success"else"btn btn-primary"),tags$small(style="margin-left:8px",if(confirmed)"Click again to make changes."else"Every active player must confirm."))}
     output$rest_mode_panel<-renderUI({
       p<-active_phase()
       if(is.null(p))return(div(class="rest-mode-panel",strong("No phase is open.")," The DM controls when party time advances."))
-      if(p$phase_kind[[1L]]!="rest")return(div(class="rest-mode-panel",strong("Standard phase in progress.")," Sindre will regenerate for six hours when the DM resolves it; camp-time activities are unavailable."))
+      if(p$phase_kind[[1L]]!="rest")return(div(class="rest-mode-panel",strong("Standard phase in progress.")," Sindre will regenerate for six hours when the DM resolves it; camp-time activities are unavailable.",phase_confirmation_ui(p)))
       budget<-as.numeric(p$duration_hours[[1L]]);remaining<-phase_remaining();spent<-budget-remaining
       div(class="rest-mode-panel",fluidRow(
         column(3,div(class="phase-clock",style=paste0("--spent:",round(spent/budget*100),"%"),div(class="phase-clock-inner",paste0(remaining,"h"),tags$small("remaining")))),
-        column(9,h4(paste0("Rest Mode — plan your ",budget," hours")),p("Long rest uses 6h; short rest, gathering, water collection and foraging use 1h; watches use 2h; glyphs use exact crafting time."),div(style="display:flex;gap:8px;flex-wrap:wrap",actionButton(session$ns("plan_short_rest"),"Allocate Short Rest (1h)"),actionButton(session$ns("plan_long_rest"),"Allocate Long Rest (6h)",class="btn btn-primary"),actionButton(session$ns("organise_watches"),"Organise Watches")),uiOutput(session$ns("phase_plan")),uiOutput(session$ns("watch_rota")))
+        column(9,h4(paste0("Rest Mode — plan your ",budget," hours")),p("Long rest uses 6h; short rest, gathering, water collection and foraging use 1h; watches use 2h; glyphs use exact crafting time."),div(style="display:flex;gap:8px;flex-wrap:wrap",actionButton(session$ns("plan_short_rest"),"Allocate Short Rest (1h)"),actionButton(session$ns("plan_long_rest"),"Allocate Long Rest (6h)",class="btn btn-primary"),actionButton(session$ns("organise_watches"),"Organise Watches")),uiOutput(session$ns("phase_plan")),uiOutput(session$ns("watch_rota")),phase_confirmation_ui(p))
       ))
     })
+    observeEvent(input$confirm_phase_ready,{p<-active_phase();req(p);cid<-as.character(state$char_id%||%"");rows<-get_session_phase_confirmations(p$id[[1L]]);ready<-cid%in%as.character(rows$character_id%||%character());confirm_session_phase_ready(p$id[[1L]],cid,!ready);showNotification(if(ready)"Readiness withdrawn."else"You are ready for the DM to resolve this phase.",type="message")},ignoreInit=TRUE)
     output$active_status_cards<-renderUI({
       invalidateLater(1000,session)
       p<-active_phase();if(is.null(p))return(NULL)
@@ -442,7 +444,7 @@ restTabServer <- function(
       cid<-as.character(state$char_id%||%"");actions<-character()
       if(p$phase_kind[[1L]]=="rest"&&nzchar(cid)){rows<-get_session_phase_actions(p$id[[1L]],cid);if(nrow(rows))actions<-as.character(rows$action_type)}
       env<-shared_environment()%||%list(climate=x$environment$temperature%||%"Temperate",weather="")
-      cards<-character_rest_status_cards(x,fire,actions,env)
+      cards<-character_rest_status_cards(x,fire,actions,env,as.numeric(p$duration_hours[[1L]]))
       div(class="rest-status-wrap",
         div(class="rest-status-head",h4("Active Rest Cards"),tags$small("These cards show what is currently protecting or threatening you when the phase resolves.")),
         div(class="rest-status-hand",lapply(cards,function(card)div(class=paste("rest-status-card",card$tone),title=card$reason,tags$img(src=card$image,alt=card$label),div(class="rest-status-reason",card$reason))))

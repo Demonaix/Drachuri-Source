@@ -110,6 +110,17 @@ server_player <- function(input, output, session) {
   #Toast!
   source("server/core_character.R")
   core <- characterCoreServer(input, output, session)
+
+  observe({
+    invalidateLater(1800,session)
+    cid<-as.character(core$state$char_id%||%"");if(!nzchar(cid)||isTRUE(core$state$offline_mode))return()
+    update<-consume_character_refresh(cid);if(is.null(update)||!is.list(update$character))return()
+    core$state$char<-update$character;if(is.function(core$bump_char_rev))core$bump_char_rev()
+    phase_messages<-as.character(update$messages[as.character(update$kinds)=="phase_resolution"]%||%character())
+    other_messages<-as.character(update$messages[as.character(update$kinds)!="phase_resolution"]%||%character())
+    if(length(other_messages))showNotification(paste(unique(other_messages),collapse="\n"),type="message",duration=8)
+    if(length(phase_messages))showModal(modalDialog(title="Phase Resolved",div(class="phase-resolution-screen",h4("What happened"),lapply(unique(phase_messages),p),p("Your character sheet, status cards, health and Sindre have been refreshed.")),footer=modalButton("Continue"),easyClose=FALSE,size="m"))
+  })
   
   source("session_db.R") #Helpers for sessions (overflow from global basically)
   source("plug/skills_data.R")
