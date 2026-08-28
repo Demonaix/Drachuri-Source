@@ -1895,6 +1895,19 @@ test("installed player UI re-anchors late Shiny sessions to the app root", {
   stopifnot(grepl("setwd(normalizePath(drachuri_app_root", server_source, fixed = TRUE))
 })
 
+test("hidden player modules pause their expensive database polling", {
+  server_source <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition Player_v2", "server.R"), warn = FALSE), collapse = "\n")
+  core_source <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition Player_v2", "server", "core_character.R"), warn = FALSE), collapse = "\n")
+  camp_source <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition Player_v2", "server", "camp_module.R"), warn = FALSE), collapse = "\n")
+  rest_source <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition Player_v2", "server", "rest_module.R"), warn = FALSE), collapse = "\n")
+  inventory_source <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition Player_v2", "server", "inventory_module.R"), warn = FALSE), collapse = "\n")
+  stopifnot(grepl('active_tab = "camp"', core_source, fixed = TRUE))
+  stopifnot(grepl("input$main_tabs", server_source, fixed = TRUE))
+  stopifnot(grepl('state$active_tab%||%"camp"),"camp"', camp_source, fixed = TRUE))
+  stopifnot(grepl('rest_visible<-function()', rest_source, fixed = TRUE))
+  stopifnot(grepl('state$active_tab%||%"camp"),"inventory"', inventory_source, fixed = TRUE))
+})
+
 test("Mac player waits in a branded launcher before opening the browser", {
   launch <- paste(readLines(file.path("installer", "mac", "Drachuri Player"), warn = FALSE), collapse = "\n")
   runner <- paste(readLines(file.path("installer", "player", "installed_run.R"), warn = FALSE), collapse = "\n")

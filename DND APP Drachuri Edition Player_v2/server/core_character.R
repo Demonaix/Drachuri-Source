@@ -48,6 +48,7 @@ characterCoreServer <- function(input, output, session) {
     char = validate_character(new_character()),
     char_id = NULL,
     active_session_id = NULL,
+    active_tab = "camp",
     offline_mode = FALSE,
     offline_modal_shown = FALSE,
     sync_enabled = FALSE

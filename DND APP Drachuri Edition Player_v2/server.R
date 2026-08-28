@@ -111,6 +111,13 @@ server_player <- function(input, output, session) {
   source("server/core_character.R")
   core <- characterCoreServer(input, output, session)
 
+  # Modules use this to pause expensive database polling while their tab is
+  # hidden. Changing tabs immediately invalidates the relevant observers, so
+  # the newly opened screen still refreshes without waiting for its timer.
+  observeEvent(input$main_tabs, {
+    core$state$active_tab <- as.character(input$main_tabs %||% "camp")
+  }, ignoreInit = FALSE)
+
   observe({
     invalidateLater(1800,session)
     cid<-as.character(core$state$char_id%||%"");if(!nzchar(cid)||isTRUE(core$state$offline_mode))return()

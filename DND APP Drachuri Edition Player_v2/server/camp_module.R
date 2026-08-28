@@ -373,6 +373,7 @@ campServer <- function(
     shared_clock<-reactiveVal(NULL)
     observe({
       invalidateLater(2500,session)
+      if(!identical(as.character(state$active_tab%||%"camp"),"camp"))return()
       sid<-suppressWarnings(as.integer(state$active_session_id%||%NA))
       if(isTRUE(state$offline_mode)||is.na(sid)||sid<1L)return()
       value<-get_session_environment(sid);if(is.null(value))return();shared_clock(value)

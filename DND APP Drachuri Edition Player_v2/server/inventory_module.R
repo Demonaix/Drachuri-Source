@@ -99,6 +99,7 @@ inventoryTabServer <- function(id, state, restoring, add_log, char_rev, session_
 
     observe({
       invalidateLater(2500, session)
+      if(!identical(as.character(state$active_tab%||%"camp"),"inventory"))return()
       cid <- current_trade_character()
       if (!nzchar(cid) || isTRUE(state$offline_mode) || !is.null(active_assignment()) ||
           !is.null(session$userData$pending_trade_id) || !is.null(session$userData$pending_note_id) ||
