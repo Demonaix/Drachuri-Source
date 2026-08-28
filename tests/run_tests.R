@@ -1781,6 +1781,15 @@ test("Windows player installer is self-contained and does not require RStudio", 
   stopifnot(!grepl("RStudio", launch, fixed = TRUE))
 })
 
+test("tracked source paths can be checked out on Windows", {
+  tracked <- system2("git", "ls-files", stdout=TRUE)
+  components <- unlist(strsplit(tracked,"/",fixed=TRUE),use.names=FALSE)
+  invalid_chars <- grepl('[:*?"<>|]',components)
+  reserved <- grepl('^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\\..*)?$',components,ignore.case=TRUE)
+  trailing <- grepl('[ .]$',components)
+  stopifnot(!any(invalid_chars|reserved|trailing))
+})
+
 test("Mac player installer builds one DMG with app, R and locked packages", {
   installer_dir <- file.path("installer", "mac")
   required <- c("Drachuri Player", "Info.plist", "component.plist", "prepare_mac_library.R", "build_mac_installer.sh", "README.md")
