@@ -1913,6 +1913,15 @@ test("hidden player modules pause their expensive database polling", {
   stopifnot(grepl('state$active_tab%||%"camp"),"inventory"', inventory_source, fixed = TRUE))
 })
 
+test("local test launcher clears only stale Drachuri Shiny servers", {
+  start_source <- paste(readLines(file.path(project_dir, "test-env", "run_local_apps.sh"), warn = FALSE), collapse = "\n")
+  stop_source <- paste(readLines(file.path(project_dir, "test-env", "stop_local_apps.sh"), warn = FALSE), collapse = "\n")
+  stopifnot(grepl('stop_local_apps.sh', start_source, fixed = TRUE))
+  stopifnot(grepl('app*.pids', stop_source, fixed = TRUE))
+  stopifnot(grepl('shiny::runApp(', stop_source, fixed = TRUE))
+  stopifnot(grepl('lsof -nP -tiTCP:', stop_source, fixed = TRUE))
+})
+
 test("Mac player waits in a branded launcher before opening the browser", {
   launch <- paste(readLines(file.path("installer", "mac", "Drachuri Player"), warn = FALSE), collapse = "\n")
   runner <- paste(readLines(file.path("installer", "player", "installed_run.R"), warn = FALSE), collapse = "\n")
