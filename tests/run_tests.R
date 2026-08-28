@@ -588,6 +588,11 @@ test("party HUD is the authoritative combat roster", {
   stopifnot(grepl('dewydd_troell = "dewydd-troell.png"', party_hud_source, fixed = TRUE))
   stopifnot(grepl('eleri = "eleri.png"', party_hud_source, fixed = TRUE))
   stopifnot(grepl('party-portrait-initial', party_hud_source, fixed = TRUE))
+  stopifnot(grepl('open_character_deck', party_hud_source, fixed = TRUE))
+  stopifnot(grepl('character_rest_status_cards', party_hud_source, fixed = TRUE))
+  stopifnot(grepl('character_condition_status_cards', party_hud_source, fixed = TRUE))
+  stopifnot(grepl('Skill Cards', party_hud_source, fixed = TRUE))
+  stopifnot(grepl('Back to Deck', party_hud_source, fixed = TRUE))
 })
 
 test("Character and Level camp shortcuts route to different modules", {
@@ -2007,6 +2012,7 @@ test("combat fullscreen expands only the map beneath persistent HUDs", {
   stopifnot(grepl("[id$='partyhud_root']",combat_css,fixed=TRUE))
   stopifnot(grepl("[id$='status_card_dock']",combat_css,fixed=TRUE))
   stopifnot(grepl("body.combat-document-fullscreen .modal",combat_css,fixed=TRUE))
+  stopifnot(grepl("background:rgba(255,255,245,.62)",combat_css,fixed=TRUE))
   stopifnot(grepl("close_actions_menu",combat_server,fixed=TRUE))
   stopifnot(grepl("Natural Magic can be cast on your turn",combat_server,fixed=TRUE))
   stopifnot(grepl('combat.css?v=',combat_server,fixed=TRUE))

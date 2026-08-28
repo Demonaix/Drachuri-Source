@@ -120,6 +120,19 @@ partyHudUI <- function(id) {
       box-shadow: 0 0 0 2px rgba(36,130,190,0.22), 0 8px 20px rgba(0,0,0,0.18);
     }
 
+    #", root_id, " .party-strip.deck-available{cursor:pointer;transition:transform .14s ease,filter .14s ease;}
+    #", root_id, " .party-strip.deck-available:hover,#", root_id, " .party-strip.deck-available:focus{transform:translateX(4px);filter:brightness(1.06);outline:2px solid rgba(215,185,109,.9);outline-offset:-2px;}
+
+    .modal-dialog:has(.party-deck-modal){width:min(1120px,94vw)}
+    .party-deck-intro{margin:-4px 0 14px;color:#655238}
+    .party-deck-section{margin:15px 0 22px}.party-deck-section h4{font-family:Cinzel,Georgia,serif;border-bottom:1px solid rgba(139,103,51,.45);padding-bottom:6px}
+    .party-deck-grid{display:flex;flex-wrap:wrap;gap:13px;align-items:flex-start}
+    .party-deck-card{width:128px;padding:0 0 8px!important;border:1px solid #9c7740!important;border-radius:10px!important;overflow:hidden;background:#ead6a8!important;color:#392810!important;box-shadow:0 5px 13px rgba(45,29,12,.27);white-space:normal!important}
+    .party-deck-card:hover,.party-deck-card:focus{transform:translateY(-5px);box-shadow:0 10px 20px rgba(45,29,12,.38)}
+    .party-deck-card img{display:block;width:126px;height:158px;object-fit:cover}.party-deck-card span{display:block;padding:7px 6px 0;font:700 11px Cinzel,Georgia,serif;line-height:1.25}
+    .party-deck-detail{text-align:center}.party-deck-detail img{width:min(360px,76vw);aspect-ratio:4/5;object-fit:cover;border-radius:13px;box-shadow:0 12px 34px rgba(0,0,0,.42)}
+    .party-deck-detail h3{font-family:Cinzel,Georgia,serif}.party-deck-detail p{max-width:640px;margin:12px auto 0;font-size:16px;line-height:1.5}
+
     #", root_id, " .party-name-row{
       display:flex;
       align-items:center;
@@ -257,6 +270,7 @@ grid-template-columns: 10px 1fr;
   
   tagList(
     tags$style(HTML(css)),
+    tags$script(HTML(sprintf("$(document).on('click keydown','#%s .party-strip.deck-available',function(e){if(e.type==='keydown'&&e.key!=='Enter'&&e.key!==' ')return;if(e.type==='keydown')e.preventDefault();Shiny.setInputValue('%s',$(this).data('characterId'),{priority:'event'});});$(document).on('click','.party-deck-card',function(){Shiny.setInputValue('%s',$(this).data('cardIndex'),{priority:'event'});});",root_id,ns("open_character_deck"),ns("open_deck_card")))),
     div(
       id = root_id,
       div(
@@ -305,6 +319,7 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
     hud_sig  <- reactiveVal("init")
     hud_combat <- reactiveVal(data.frame())
     hud_combat_sig <- reactiveVal("init")
+    active_deck <- reactiveVal(NULL)
     
     resolved_session_id <- reactive({
       sid <- suppressWarnings(as.integer(state$active_session_id %||% NA))
@@ -429,6 +444,37 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
         status_icons = unique(status_icons)
       )
     }
+
+    ability_names<-c(str="Strength",dex="Dexterity",con="Constitution",int="Intelligence",bld_str="Blood Strength",cha="Charisma")
+    ability_dirs<-c(str="strength",dex="dexterity",con="constitution",int="intelligence",bld_str="blood-strength",cha="charisma")
+    ability_help<-c(str="Raw physical power: lifting, forcing, climbing and striking.",dex="Agility, balance, precision and controlled movement.",con="Health, stamina and resistance to physical hardship.",int="Reasoning, memory, investigation and learned knowledge.",bld_str="Instinct, perception and connection to blood or primal power.",cha="Presence, confidence, influence and force of personality.")
+    skill_core<-c(athletics="brute",clutch="grasp",wrestling="grappler",throwing="hurler",dead_lift="titan",acrobatics="acrobat",sleight_of_hand="quickhand",stealth="shadow",precision="marksman",endurance="bulwark",tolerance="ironblood",fortitude="stalwart",arcana="arcanist",history="chronicler",investigation="investigator",nature="naturalist",religion="theologian",analysis="strategist",perception="watcher",survival="stalker",insight="reader",medicine="healer",animal_handling="beastfriend",mandred_connection="mandred-touched",deception="trickster",intimidation="menace",persuasion="orator",performance="virtuoso",presence="luminary")
+    skill_aspect<-c(athletics="enforcer",clutch="binder",wrestling="wrestler",throwing="artillerist",dead_lift="bearer",acrobatics="daredevil",sleight_of_hand="pilferer",stealth="ghost",precision="deadeye",endurance="survivor",tolerance="resistant",fortitude="guardian",arcana="seer",history="lorekeeper",investigation="inquisitor",nature="warden",religion="devotee",analysis="tactician",perception="observer",survival="hunter",insight="empath",medicine="physician",animal_handling="handler",mandred_connection="conduit",deception="liar",intimidation="dread",persuasion="diplomat",performance="muse",presence="leader")
+    skill_descriptor<-c(athletics="mighty",clutch="tenacious",wrestling="relentless",throwing="keen",dead_lift="mighty",acrobatics="nimble",sleight_of_hand="cunning",stealth="elusive",precision="keen",endurance="hardy",tolerance="hardened",fortitude="resolute",arcana="mystic",history="learned",investigation="shrewd",nature="wildwise",religion="devout",analysis="calculating",perception="watchful",survival="seasoned",insight="intuitive",medicine="practised",animal_handling="beastwise",mandred_connection="touched",deception="cunning",intimidation="fearsome",persuasion="silver-tongued",performance="mesmeric",presence="commanding")
+    skill_card_labels<-c(reliable="Reliable",wild_card="Wild Card",inspired="Inspired")
+    skill_card_help<-c(reliable="On a natural roll of 1–5, add the proficiency bonus again.",wild_card="Roll a d6: on 1 subtract the proficiency bonus; on 6 add it.",inspired="On a natural roll of 16–20, add the proficiency bonus again.")
+    card_key<-function(x)gsub(" ","_",tolower(as.character(x)))
+    ability_card_image<-function(ch,ab){score<-suppressWarnings(as.integer(ch$abilities[[ab]]%||%10L));if(is.na(score))score<-10L;mod<-mod_calc(score);paste0("assets/ability-cards/",ability_dirs[[ab]],"/",if(mod<0)paste0("minus-",abs(mod))else paste0("plus-",mod),".jpg")}
+    skill_card_image<-function(skill_key,variant){art<-c(reliable="core",wild_card="aspect",inspired="descriptor")[[variant]]%||%"core";lookup<-switch(art,core=skill_core,aspect=skill_aspect,descriptor=skill_descriptor);folder<-switch(art,core="skill-cores",aspect="skill-aspects",descriptor="skill-descriptors");paste0("assets/skill-cards/",folder,"/",unname(lookup[[skill_key]]%||%skill_core[[skill_key]]),".jpg")}
+    deck_card<-function(group,key,label,image,reason)list(group=group,key=key,label=label,image=image,reason=reason)
+
+    build_character_deck<-function(character_id){
+      ch<-if(identical(as.character(character_id),as.character(state$char_id%||%"")))validate_character(state$char)else tryCatch(validate_character(load_character_from_db(character_id)),error=function(e)NULL)
+      if(is.null(ch))return(NULL)
+      cards<-list()
+      for(ab in names(ability_names)){score<-as.integer(ch$abilities[[ab]]%||%10L);mod<-mod_calc(score);cards[[length(cards)+1L]]<-deck_card("Abilities",paste0("ability_",ab),ability_names[[ab]],ability_card_image(ch,ab),paste0(ability_help[[ab]]," Score ",score,"; modifier ",if(mod>=0)"+"else"",mod,"."))}
+      for(i in seq_len(nrow(SKILLS_LIST))){skill<-as.character(SKILLS_LIST$Skill[[i]]);key<-card_key(skill);rank<-as.character(ch$prof$skills[[key]]%||%"None");variants<-character_skill_cards(ch,key);if(!length(variants))next;for(variant in variants)cards[[length(cards)+1L]]<-deck_card("Skill Cards",paste(key,variant,sep="_"),paste0(skill," — ",skill_card_labels[[variant]]),skill_card_image(key,variant),paste0(SKILL_DESC[[skill]]%||%skill," Training: ",rank,". ",skill_card_help[[variant]]))}
+      sid<-resolved_session_id();env<-list(climate=ch$environment$temperature%||%"Temperate",weather="");fire<-isTRUE(ch$status$has_fire);actions<-character();phase<-NULL
+      if(!is.na(sid)){fresh_env<-tryCatch(get_session_environment(sid),error=function(e)NULL);if(!is.null(fresh_env))env<-fresh_env;fire<-isTRUE(tryCatch(get_session_fire(sid),error=function(e)fire));phase<-tryCatch(get_open_session_phase(sid),error=function(e)NULL);if(!is.null(phase)&&identical(as.character(phase$phase_kind[[1L]]),"rest")){rows<-tryCatch(get_session_phase_actions(phase$id[[1L]],character_id),error=function(e)data.frame());if(nrow(rows))actions<-as.character(rows$action_type)}}
+      rest_cards<-character_rest_status_cards(ch,fire,actions,env,if(is.null(phase))0 else as.numeric(phase$duration_hours[[1L]]));for(card in rest_cards)cards[[length(cards)+1L]]<-deck_card("Rest & Survival",card$key,card$label,card$image,card$reason)
+      extra_conditions<-if(is.function(live_snapshot))encounter_condition_values(live_snapshot(),character_id)else character();condition_cards<-character_condition_status_cards(ch,extra_conditions);for(card in condition_cards)cards[[length(cards)+1L]]<-deck_card("Conditions",card$key,card$label,card$image,card$reason)
+      list(character=ch,cards=cards)
+    }
+
+    show_character_deck<-function(){deck<-active_deck();if(is.null(deck))return();cards<-deck$cards;groups<-unique(vapply(cards,function(card)card$group,character(1)));showModal(modalDialog(class="party-deck-modal",title=paste0(deck$character$meta$name%||%"Character"," — Card Deck"),div(class="party-deck-intro","Select any card to enlarge it and read its complete effect."),lapply(groups,function(group){indices<-which(vapply(cards,function(card)identical(card$group,group),logical(1)));div(class="party-deck-section",h4(group),div(class="party-deck-grid",lapply(indices,function(index){card<-cards[[index]];tags$button(type="button",class="party-deck-card",`data-card-index`=index,title=paste("Open",card$label),tags$img(src=card$image,alt=card$label),tags$span(card$label))})))}),footer=modalButton("Close"),easyClose=TRUE,size="l"))}
+    observeEvent(input$open_character_deck,{cid<-as.character(input$open_character_deck%||%"");if(!nzchar(cid))return();deck<-build_character_deck(cid);if(is.null(deck))return(showNotification("That character's card deck could not be loaded.",type="warning"));active_deck(deck);show_character_deck()},ignoreInit=TRUE)
+    observeEvent(input$open_deck_card,{deck<-active_deck();index<-suppressWarnings(as.integer(input$open_deck_card));if(is.null(deck)||is.na(index)||index<1L||index>length(deck$cards))return();card<-deck$cards[[index]];showModal(modalDialog(class="party-deck-modal",title=card$label,div(class="party-deck-detail",tags$img(src=card$image,alt=card$label),h3(card$label),p(card$reason)),footer=tagList(actionButton(session$ns("back_to_deck"),"Back to Deck"),modalButton("Close")),easyClose=TRUE,size="l"))},ignoreInit=TRUE)
+    observeEvent(input$back_to_deck,show_character_deck(),ignoreInit=TRUE)
     
     build_party_rows <- function() {
       if (isTRUE(state$offline_mode)) return(data.frame())
@@ -658,7 +704,11 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
         tags$div(
           class = "party-row",
           tags$div(
-            class = paste("party-strip", if (is_active_turn) "active-turn" else "", if (is_self) "self-player" else ""),
+            class = paste("party-strip", if (is_active_turn) "active-turn" else "", if (is_self) "self-player" else "",if(identical(actor_type,"player"))"deck-available"else""),
+            `data-character-id`=if(identical(actor_type,"player"))actor_id else NULL,
+            role=if(identical(actor_type,"player"))"button"else NULL,
+            tabindex=if(identical(actor_type,"player"))"0"else NULL,
+            title=if(identical(actor_type,"player"))paste("View",nm,"card deck")else NULL,
             tags$div(
               class = paste("party-portrait", if (identical(actor_type, "enemy")) "enemy" else ""),
               if (nzchar(portrait_file)) {

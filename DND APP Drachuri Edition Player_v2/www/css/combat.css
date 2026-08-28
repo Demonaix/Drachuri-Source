@@ -452,6 +452,7 @@ body.combat-document-fullscreen .combat-map-toolbar{position:fixed;right:14px;to
 body.combat-document-fullscreen .combat-log-card{visibility:hidden!important;pointer-events:none!important}
 body.combat-document-fullscreen>.combat-fullscreen-controls{position:fixed!important;left:205px;right:205px;top:84px;z-index:1000003!important;max-height:calc(100vh - 168px);overflow:visible;margin:0!important;padding:8px 12px!important;background:rgba(247,231,195,.96)!important;box-shadow:0 6px 22px rgba(0,0,0,.35)!important}
 body.combat-document-fullscreen [id$='partyhud_root'],body.combat-document-fullscreen .global-hud,body.combat-document-fullscreen [id$='status_card_dock']{z-index:1000005!important}
+body.combat-document-fullscreen .global-hud .hudbar-inner{background:rgba(255,255,245,.62)!important;border-color:rgba(191,167,111,.66)!important;box-shadow:0 7px 22px rgba(0,0,0,.24)!important;backdrop-filter:blur(6px) saturate(.82)!important}
 body.combat-document-fullscreen [id$='partyhud_root']{top:245px!important;max-height:calc(100vh - 255px)!important}
 body.combat-document-fullscreen .modal-backdrop{z-index:1000010!important}
 body.combat-document-fullscreen .modal{z-index:1000011!important}
