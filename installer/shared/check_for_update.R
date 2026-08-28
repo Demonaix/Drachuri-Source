@@ -9,10 +9,10 @@ repository <- if (file.exists(repository_file)) trimws(readLines(repository_file
 if (!grepl("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", repository)) quit(save = "no", status = 0L)
 if (!requireNamespace("jsonlite", quietly = TRUE)) quit(save = "no", status = 0L)
 
-numeric_version <- function(x) {
+parse_version <- function(x) {
   bits <- regmatches(x, regexpr("[0-9]+(?:\\.[0-9]+){1,3}", x, perl = TRUE))
-  if (!length(bits) || !nzchar(bits)) return(numeric_version("0.0.0"))
-  utils::numeric_version(bits)
+  if (!length(bits) || !nzchar(bits)) bits <- "0.0.0"
+  base::numeric_version(bits)
 }
 
 manifest_url <- sprintf("https://github.com/%s/releases/latest/download/drachuri-update.json", repository)
@@ -23,7 +23,7 @@ manifest <- tryCatch({
   jsonlite::fromJSON(manifest_url, simplifyVector = FALSE)
 }, error = function(e) NULL)
 if (is.null(manifest) || is.null(manifest$version) ||
-    numeric_version(manifest$version) <= numeric_version(current_version)) {
+    parse_version(manifest$version) <= parse_version(current_version)) {
   quit(save = "no", status = 0L)
 }
 

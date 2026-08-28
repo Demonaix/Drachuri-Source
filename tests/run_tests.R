@@ -1929,6 +1929,8 @@ test("installed launchers check one cross-platform GitHub release manifest", {
   mac_player_build <- paste(readLines(file.path("installer", "mac", "build_mac_installer.sh"), warn = FALSE), collapse = "\n")
   release_script <- paste(readLines(file.path("scripts", "release_drachuri.sh"), warn = FALSE), collapse = "\n")
   stopifnot(grepl("releases/latest/download/drachuri-update.json", updater, fixed = TRUE))
+  stopifnot(grepl("base::numeric_version", updater, fixed = TRUE))
+  stopifnot(!grepl("utils::numeric_version", updater, fixed = TRUE))
   stopifnot(grepl("manifest$products[[product]][[platform]]", updater, fixed = TRUE))
   stopifnot(grepl("player mac", mac_player, fixed = TRUE))
   stopifnot(grepl("control mac", mac_control, fixed = TRUE))
