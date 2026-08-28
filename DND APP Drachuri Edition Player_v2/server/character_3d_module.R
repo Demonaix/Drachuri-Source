@@ -37,14 +37,31 @@ character3DTabUI <- function(id) {
   accessory_choices <- make_gltf_choices("_Acc|Pauldrons|Cape|Cloak|Shoulder")
   
   tabPanel(
-    "3D Character",
+    "Combat Markers",
     value = "character_3d",
     
-    h4("🧍 3D Character Builder"),
+    h4("Combat Marker Workshop"),
+    p("Choose how your character is recognised on both combat maps. Your existing 3D character pieces remain available below."),
+    div(
+      class = "magic-card",
+      style = "margin-bottom:12px;",
+      h4("2D map marker"),
+      fluidRow(
+        column(4, selectInput(ns("marker_2d_shape"), "Token shape", choices=c("Round"="circle", "Shield"="shield", "Diamond"="diamond"))),
+        column(4, colourInput(ns("marker_2d_color"), "Token colour", value="#4b91b5")),
+        column(4, textInput(ns("marker_2d_symbol"), "Symbol (up to 2 characters)", value=""))
+      ),
+      h4("3D map marker"),
+      fluidRow(
+        column(4, selectInput(ns("marker_3d_style"), "Marker aura", choices=c("Arcane wisps"="wisps", "Steady beacon"="beacon", "Subtle"="subtle"))),
+        column(4, colourInput(ns("marker_3d_color"), "Aura colour", value="#77ddff"))
+      )
+    ),
     
     div(
       class = "magic-card",
       style = "margin-bottom:12px;",
+      h4("3D character pieces"),
       
       fluidRow(
         column(
@@ -126,7 +143,7 @@ character3DTabUI <- function(id) {
       
       fluidRow(
         column(4, actionButton(ns("load_preview"), "🔄 Load Preview", class = "btn btn-primary")),
-        column(4, actionButton(ns("save_3d_character"), "💾 Save 3D Character", class = "btn btn-success")),
+        column(4, actionButton(ns("save_3d_character"), "Save Combat Markers", class = "btn btn-success")),
         column(4, actionButton(ns("reset_3d_character"), "♻ Reset", class = "btn btn-warning"))
       )
     ),
@@ -147,7 +164,7 @@ character3DTabUI <- function(id) {
     ),
     
     tags$hr(),
-    h4("Saved 3D Config"),
+    h4("Saved Combat Marker Config"),
     uiOutput(ns("saved_3d_ui"))
   )
 }
@@ -167,6 +184,11 @@ character3DTabServer <- function(id, state, restoring, add_log, char_rev = NULL)
     default_3d <- function() {
       list(
         label = "",
+        marker_2d_shape = "circle",
+        marker_2d_color = "#4b91b5",
+        marker_2d_symbol = "",
+        marker_3d_style = "wisps",
+        marker_3d_color = "#77ddff",
         base_model = "models/universal_base/Heads/female_head.glb",
         hair_model = "",
         body_model = "",
@@ -228,6 +250,8 @@ character3DTabServer <- function(id, state, restoring, add_log, char_rev = NULL)
       div(
         class = "magic-card",
         tags$div(strong("Label: "), x$label %||% "None"),
+        tags$div(strong("2D marker: "), x$marker_2d_shape %||% "circle", " · ", x$marker_2d_color %||% "#4b91b5", if(nzchar(x$marker_2d_symbol %||% "")) paste0(" · ", x$marker_2d_symbol) else ""),
+        tags$div(strong("3D aura: "), x$marker_3d_style %||% "wisps", " · ", x$marker_3d_color %||% "#77ddff"),
         tags$div(strong("Base model: "), ifelse(nzchar(x$base_model %||% ""), basename(x$base_model), "None")),
         tags$div(strong("Hair model: "), ifelse(nzchar(x$hair_model %||% ""), basename(x$hair_model), "None")),
         tags$div(strong("Hair colour: "), x$hair_color %||% "#3b2416"),
@@ -263,6 +287,11 @@ character3DTabServer <- function(id, state, restoring, add_log, char_rev = NULL)
       
       state$char$character_3d <- list(
         label = input$character_3d_label %||% "",
+        marker_2d_shape = input$marker_2d_shape %||% "circle",
+        marker_2d_color = input$marker_2d_color %||% "#4b91b5",
+        marker_2d_symbol = substr(trimws(input$marker_2d_symbol %||% ""), 1L, 2L),
+        marker_3d_style = input$marker_3d_style %||% "wisps",
+        marker_3d_color = input$marker_3d_color %||% "#77ddff",
         base_model = normalise_base_for_save(input$base_model),
         hair_model = input$hair_model %||% "",
         body_model = input$body_model %||% "",
@@ -275,7 +304,7 @@ character3DTabServer <- function(id, state, restoring, add_log, char_rev = NULL)
         eye_texture = input$eye_texture %||% "T_Eye_Brown.png"
       )
       
-      add_log("🧍 3D character appearance saved.")
+      add_log("Combat marker appearance saved.")
       
       send_preview(
         base_model = input$base_model,
@@ -298,6 +327,11 @@ character3DTabServer <- function(id, state, restoring, add_log, char_rev = NULL)
       state$char$character_3d <- d
       
       updateTextInput(session, "character_3d_label", value = d$label)
+      updateSelectInput(session, "marker_2d_shape", selected = d$marker_2d_shape)
+      updateColourInput(session, "marker_2d_color", value = d$marker_2d_color)
+      updateTextInput(session, "marker_2d_symbol", value = d$marker_2d_symbol)
+      updateSelectInput(session, "marker_3d_style", selected = d$marker_3d_style)
+      updateColourInput(session, "marker_3d_color", value = d$marker_3d_color)
       updateSelectInput(session, "base_model", selected = d$base_model)
       updateSelectInput(session, "hair_model", selected = d$hair_model)
       updateColourInput(session, "hair_color", value = d$hair_color)
@@ -336,6 +370,11 @@ character3DTabServer <- function(id, state, restoring, add_log, char_rev = NULL)
         x <- state$char$character_3d
         
         updateTextInput(session, "character_3d_label", value = x$label %||% "")
+        updateSelectInput(session, "marker_2d_shape", selected = x$marker_2d_shape %||% "circle")
+        updateColourInput(session, "marker_2d_color", value = x$marker_2d_color %||% "#4b91b5")
+        updateTextInput(session, "marker_2d_symbol", value = x$marker_2d_symbol %||% "")
+        updateSelectInput(session, "marker_3d_style", selected = x$marker_3d_style %||% "wisps")
+        updateColourInput(session, "marker_3d_color", value = x$marker_3d_color %||% "#77ddff")
         updateSelectInput(session, "base_model", selected = normalise_base_for_ui(x$base_model %||% ""))
         updateSelectInput(session, "hair_model", selected = x$hair_model %||% "")
         updateColourInput(session, "hair_color", value = x$hair_color %||% "#3b2416")

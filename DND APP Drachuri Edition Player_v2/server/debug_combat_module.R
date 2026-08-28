@@ -1372,7 +1372,12 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         "model_feet",
         "model_headgear",
         "model_accessory",
-        "hair_color"
+        "hair_color",
+        "marker_2d_shape",
+        "marker_2d_color",
+        "marker_2d_symbol",
+        "marker_3d_style",
+        "marker_3d_color"
       )
       
       for (col in model_cols) {
@@ -1417,6 +1422,11 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         render_df$model_headgear[i]  <- safe_chr1(char3d$headgear_model)
         render_df$model_accessory[i] <- safe_chr1(char3d$accessory_model)
         render_df$hair_color[i]      <- safe_chr1(char3d$hair_color, "#3b2416")
+        render_df$marker_2d_shape[i] <- safe_chr1(char3d$marker_2d_shape, "circle")
+        render_df$marker_2d_color[i] <- safe_chr1(char3d$marker_2d_color, "#4b91b5")
+        render_df$marker_2d_symbol[i] <- safe_chr1(char3d$marker_2d_symbol, "")
+        render_df$marker_3d_style[i] <- safe_chr1(char3d$marker_3d_style, "wisps")
+        render_df$marker_3d_color[i] <- safe_chr1(char3d$marker_3d_color, "#77ddff")
       }
       
       render_df

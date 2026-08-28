@@ -183,6 +183,7 @@ CLASS_SPELL_DEFINITIONS <- list(
     description = "A storm fills a 40-foot-radius area. Fire damage dealt inside it is reduced by 4; cold and lightning damage is increased by 2."
   ),
   call_beast = list(
+    # NEXT CHANGE: improve beast selection, placement, stat cards and player control.
     name = "Call Beast", class = "Hanianol Sorcerer", level = 2L,
     choice = c(natural_specialty = "Animals"), tags = c("spell", "combat", "summoning"),
     action_type = "action", cost = 20L, range_ft = 30L,

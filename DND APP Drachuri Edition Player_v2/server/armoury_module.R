@@ -525,6 +525,11 @@ armouryTabServer <- function(id, state, restoring, add_log, char_rev) {
               safe_log("🛡️ Armor equipped.", toast = TRUE)
               
             } else if (identical(this_type, "weapon")) {
+              equipped_weapon_count <- sum(d$type == "weapon" & as.logical(d$equipped) & !as.logical(d$in_bag), na.rm = TRUE)
+              if (!isTRUE(d$equipped[idx]) && equipped_weapon_count >= 2L) {
+                safe_log("⚠️ You can ready a maximum of two weapons. Stow one first.", toast = TRUE)
+                return()
+              }
               d$equipped[idx] <- !isTRUE(d$equipped[idx])
               if (isTRUE(d$equipped[idx])) d$in_bag[idx] <- FALSE
               write_inventory(d)

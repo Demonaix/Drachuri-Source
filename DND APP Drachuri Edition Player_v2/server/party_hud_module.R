@@ -10,7 +10,7 @@ partyHudUI <- function(id) {
   position: fixed;
   top: 110px;
   left: 0px;
-  width: 194px;
+  width: var(--party-hud-width, clamp(154px, 13.5vw, 194px));
   z-index: 10000;
   pointer-events: none;
   max-height: calc(100vh - 125px);
@@ -46,7 +46,7 @@ partyHudUI <- function(id) {
     }
 
     #", root_id, " .partyhud-empty{
-      width: 182px;
+      width: calc(100% - 12px);
       padding: 7px 9px;
       border-radius: 3px;
       border: 1px solid rgba(91,56,30,0.88);
@@ -58,7 +58,7 @@ partyHudUI <- function(id) {
     }
 
     #", root_id, " .party-row{
-      width: 182px;
+      width: calc(100% - 12px);
       pointer-events: none;
     }
 
@@ -130,6 +130,8 @@ partyHudUI <- function(id) {
     .party-deck-card{width:128px;padding:0 0 8px!important;border:1px solid #9c7740!important;border-radius:10px!important;overflow:hidden;background:#ead6a8!important;color:#392810!important;box-shadow:0 5px 13px rgba(45,29,12,.27);white-space:normal!important}
     .party-deck-card:hover,.party-deck-card:focus{transform:translateY(-5px);box-shadow:0 10px 20px rgba(45,29,12,.38)}
     .party-deck-card img{display:block;width:126px;height:158px;object-fit:cover}.party-deck-card span{display:block;padding:7px 6px 0;font:700 11px Cinzel,Georgia,serif;line-height:1.25}
+    .party-deck-art{position:relative}.party-deck-art img{width:100%}.party-deck-ability-score,.party-deck-ability-mod{position:absolute;display:flex!important;align-items:center;justify-content:center;padding:0!important;border-radius:50%;font-family:Cinzel,Georgia,serif!important;font-weight:900!important;color:#2c1b0c;background:rgba(244,224,167,.94);border:2px solid #735025;box-shadow:0 2px 6px rgba(0,0,0,.35)}
+    .party-deck-ability-score{left:7px;bottom:7px;width:34px;height:34px;font-size:15px!important}.party-deck-ability-mod{right:7px;bottom:7px;width:39px;height:39px;font-size:14px!important}
     .party-deck-detail{text-align:center}.party-deck-detail img{width:min(360px,76vw);aspect-ratio:4/5;object-fit:cover;border-radius:13px;box-shadow:0 12px 34px rgba(0,0,0,.42)}
     .party-deck-detail h3{font-family:Cinzel,Georgia,serif}.party-deck-detail p{max-width:640px;margin:12px auto 0;font-size:16px;line-height:1.5}
 
@@ -456,13 +458,13 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
     card_key<-function(x)gsub(" ","_",tolower(as.character(x)))
     ability_card_image<-function(ch,ab){score<-suppressWarnings(as.integer(ch$abilities[[ab]]%||%10L));if(is.na(score))score<-10L;mod<-mod_calc(score);paste0("assets/ability-cards/",ability_dirs[[ab]],"/",if(mod<0)paste0("minus-",abs(mod))else paste0("plus-",mod),".jpg")}
     skill_card_image<-function(skill_key,variant){art<-c(reliable="core",wild_card="aspect",inspired="descriptor")[[variant]]%||%"core";lookup<-switch(art,core=skill_core,aspect=skill_aspect,descriptor=skill_descriptor);folder<-switch(art,core="skill-cores",aspect="skill-aspects",descriptor="skill-descriptors");paste0("assets/skill-cards/",folder,"/",unname(lookup[[skill_key]]%||%skill_core[[skill_key]]),".jpg")}
-    deck_card<-function(group,key,label,image,reason)list(group=group,key=key,label=label,image=image,reason=reason)
+    deck_card<-function(group,key,label,image,reason,score=NULL,modifier=NULL)list(group=group,key=key,label=label,image=image,reason=reason,score=score,modifier=modifier)
 
     build_character_deck<-function(character_id){
       ch<-if(identical(as.character(character_id),as.character(state$char_id%||%"")))validate_character(state$char)else tryCatch(validate_character(load_character_from_db(character_id)),error=function(e)NULL)
       if(is.null(ch))return(NULL)
       cards<-list()
-      for(ab in names(ability_names)){score<-as.integer(ch$abilities[[ab]]%||%10L);mod<-mod_calc(score);cards[[length(cards)+1L]]<-deck_card("Abilities",paste0("ability_",ab),ability_names[[ab]],ability_card_image(ch,ab),paste0(ability_help[[ab]]," Score ",score,"; modifier ",if(mod>=0)"+"else"",mod,"."))}
+      for(ab in names(ability_names)){score<-as.integer(ch$abilities[[ab]]%||%10L);mod<-mod_calc(score);cards[[length(cards)+1L]]<-deck_card("Abilities",paste0("ability_",ab),ability_names[[ab]],ability_card_image(ch,ab),paste0(ability_help[[ab]]," Score ",score,"; modifier ",if(mod>=0)"+"else"",mod,"."),score=score,modifier=mod)}
       for(i in seq_len(nrow(SKILLS_LIST))){skill<-as.character(SKILLS_LIST$Skill[[i]]);key<-card_key(skill);rank<-as.character(ch$prof$skills[[key]]%||%"None");variants<-character_skill_cards(ch,key);if(!length(variants))next;for(variant in variants)cards[[length(cards)+1L]]<-deck_card("Skill Cards",paste(key,variant,sep="_"),paste0(skill," — ",skill_card_labels[[variant]]),skill_card_image(key,variant),paste0(SKILL_DESC[[skill]]%||%skill," Training: ",rank,". ",skill_card_help[[variant]]))}
       sid<-resolved_session_id();env<-list(climate=ch$environment$temperature%||%"Temperate",weather="");fire<-isTRUE(ch$status$has_fire);actions<-character();phase<-NULL
       if(!is.na(sid)){fresh_env<-tryCatch(get_session_environment(sid),error=function(e)NULL);if(!is.null(fresh_env))env<-fresh_env;fire<-isTRUE(tryCatch(get_session_fire(sid),error=function(e)fire));phase<-tryCatch(get_open_session_phase(sid),error=function(e)NULL);if(!is.null(phase)&&identical(as.character(phase$phase_kind[[1L]]),"rest")){rows<-tryCatch(get_session_phase_actions(phase$id[[1L]],character_id),error=function(e)data.frame());if(nrow(rows))actions<-as.character(rows$action_type)}}
@@ -471,9 +473,10 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
       list(character=ch,cards=cards)
     }
 
-    show_character_deck<-function(){deck<-active_deck();if(is.null(deck))return();cards<-deck$cards;groups<-unique(vapply(cards,function(card)card$group,character(1)));showModal(modalDialog(class="party-deck-modal",title=paste0(deck$character$meta$name%||%"Character"," — Card Deck"),div(class="party-deck-intro","Select any card to enlarge it and read its complete effect."),lapply(groups,function(group){indices<-which(vapply(cards,function(card)identical(card$group,group),logical(1)));div(class="party-deck-section",h4(group),div(class="party-deck-grid",lapply(indices,function(index){card<-cards[[index]];tags$button(type="button",class="party-deck-card",`data-card-index`=index,title=paste("Open",card$label),tags$img(src=card$image,alt=card$label),tags$span(card$label))})))}),footer=modalButton("Close"),easyClose=TRUE,size="l"))}
+    card_art<-function(card){div(class="party-deck-art",tags$img(src=card$image,alt=card$label),if(!is.null(card$score))tags$span(class="party-deck-ability-score",card$score),if(!is.null(card$modifier))tags$span(class="party-deck-ability-mod",paste0(if(card$modifier>=0)"+"else"",card$modifier)))}
+    show_character_deck<-function(){deck<-active_deck();if(is.null(deck))return();cards<-deck$cards;groups<-unique(vapply(cards,function(card)card$group,character(1)));showModal(modalDialog(class="party-deck-modal",title=paste0(deck$character$meta$name%||%"Character"," — Card Deck"),div(class="party-deck-intro","Select any card to enlarge it and read its complete effect."),lapply(groups,function(group){indices<-which(vapply(cards,function(card)identical(card$group,group),logical(1)));div(class="party-deck-section",h4(group),div(class="party-deck-grid",lapply(indices,function(index){card<-cards[[index]];tags$button(type="button",class="party-deck-card",`data-card-index`=index,title=paste("Open",card$label),card_art(card),tags$span(card$label))})))}),footer=modalButton("Close"),easyClose=TRUE,size="l"))}
     observeEvent(input$open_character_deck,{cid<-as.character(input$open_character_deck%||%"");if(!nzchar(cid))return();deck<-build_character_deck(cid);if(is.null(deck))return(showNotification("That character's card deck could not be loaded.",type="warning"));active_deck(deck);show_character_deck()},ignoreInit=TRUE)
-    observeEvent(input$open_deck_card,{deck<-active_deck();index<-suppressWarnings(as.integer(input$open_deck_card));if(is.null(deck)||is.na(index)||index<1L||index>length(deck$cards))return();card<-deck$cards[[index]];showModal(modalDialog(class="party-deck-modal",title=card$label,div(class="party-deck-detail",tags$img(src=card$image,alt=card$label),h3(card$label),p(card$reason)),footer=tagList(actionButton(session$ns("back_to_deck"),"Back to Deck"),modalButton("Close")),easyClose=TRUE,size="l"))},ignoreInit=TRUE)
+    observeEvent(input$open_deck_card,{deck<-active_deck();index<-suppressWarnings(as.integer(input$open_deck_card));if(is.null(deck)||is.na(index)||index<1L||index>length(deck$cards))return();card<-deck$cards[[index]];showModal(modalDialog(class="party-deck-modal",title=card$label,div(class="party-deck-detail",card_art(card),h3(card$label),p(card$reason)),footer=tagList(actionButton(session$ns("back_to_deck"),"Back to Deck"),modalButton("Close")),easyClose=TRUE,size="l"))},ignoreInit=TRUE)
     observeEvent(input$back_to_deck,show_character_deck(),ignoreInit=TRUE)
     
     build_party_rows <- function() {

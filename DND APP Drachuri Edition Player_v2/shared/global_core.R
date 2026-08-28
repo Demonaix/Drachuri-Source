@@ -1527,6 +1527,11 @@ inventory_normalize <- function(df = NULL) {
   df$equipped[is.na(df$equipped)] <- FALSE
   df$in_bag[is.na(df$in_bag)] <- FALSE
   df$edit[is.na(df$edit)] <- FALSE
+
+  # A character has two ready-weapon slots. Legacy saves may contain more;
+  # keep the first two ready and safely stow the remainder without deleting them.
+  ready_weapons <- which(df$type == "weapon" & df$equipped & !df$in_bag)
+  if (length(ready_weapons) > 2L) df$equipped[ready_weapons[-c(1L, 2L)]] <- FALSE
   
   if (!"meta" %in% names(df)) {
     df$meta <- vector("list", nrow(df))
@@ -3148,6 +3153,11 @@ validate_character <- function(x) {
   if (!is.list(x$character_3d)) x$character_3d <- list()
   
   x$character_3d$label <- x$character_3d$label %||% ""
+  x$character_3d$marker_2d_shape <- x$character_3d$marker_2d_shape %||% "circle"
+  x$character_3d$marker_2d_color <- x$character_3d$marker_2d_color %||% "#4b91b5"
+  x$character_3d$marker_2d_symbol <- substr(as.character(x$character_3d$marker_2d_symbol %||% ""), 1L, 2L)
+  x$character_3d$marker_3d_style <- x$character_3d$marker_3d_style %||% "wisps"
+  x$character_3d$marker_3d_color <- x$character_3d$marker_3d_color %||% "#77ddff"
   
   x$character_3d$base_model <- x$character_3d$base_model %||%
     "models/universal_base/Base Characters/Godot - UE/Superhero_Female_FullBody.gltf"

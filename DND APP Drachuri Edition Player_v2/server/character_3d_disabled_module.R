@@ -1,10 +1,10 @@
 character3DTabUI <- function(id) {
   shiny::tabPanel(
-    "3D Character",
+    "Combat Markers",
     value = "character_3d",
     shiny::div(
       class = "magic-card",
-      shiny::h4("3D Character Builder is currently disabled"),
+      shiny::h4("Combat Marker Workshop is currently unavailable"),
       shiny::p("This module will return after its performance work is complete.")
     )
   )

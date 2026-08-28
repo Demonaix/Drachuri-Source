@@ -279,7 +279,8 @@ body.parchment #app-panel .tab-content > .tab-pane.active{
   left: 50%;
   top: 90px;
   transform: translateX(-50%);
-  width: min(1050px, calc(100vw - 54px));
+  width: min(1050px, calc(100vw - var(--party-hud-width, clamp(154px, 13.5vw, 194px)) - 70px));
+  margin-left: calc(var(--party-hud-width, clamp(154px, 13.5vw, 194px)) / 2);
   max-height: calc(100vh - 92px);
   overflow-y: auto;
   overflow-x: hidden;
@@ -289,6 +290,11 @@ body.parchment #app-panel .tab-content > .tab-pane.active{
   border: 1px solid rgba(191,167,111,0.88);
   border-radius: 16px;
   box-shadow: 0 14px 40px rgba(0,0,0,0.45);
+}
+
+@media (max-width: 1100px){
+  body{--party-hud-width:154px}
+  body.parchment #app-panel .tab-content > .tab-pane.active{left:var(--party-hud-width);transform:none;margin-left:0;width:calc(100vw - var(--party-hud-width) - 24px)}
 }
 
 body.parchment #app-panel .tab-content > .tab-pane.active .container-fluid{

@@ -756,6 +756,19 @@ function placeOrUpdateToken2D(tile) {
   if (tile.is_self_actor === true || tile.is_self_actor === "true") tokenEl.classList.add("self-player");
 
   tokenEl.textContent = actorInitial2D(tile);
+  if (actorType === "player") {
+    const markerSymbol = safeText2D(tile.marker_2d_symbol, "").trim().slice(0, 2);
+    if (markerSymbol) tokenEl.textContent = markerSymbol;
+    const markerColor = safeText2D(tile.marker_2d_color, "");
+    if (/^#[0-9a-f]{6}$/i.test(markerColor)) tokenEl.style.background = markerColor;
+    const markerShape = safeText2D(tile.marker_2d_shape, "circle");
+    tokenEl.style.borderRadius = markerShape === "shield" ? "48% 48% 62% 62%" : markerShape === "diamond" ? "18%" : "50%";
+    tokenEl.style.transform = markerShape === "diamond" ? "rotate(45deg)" : "";
+  } else {
+    tokenEl.style.background = "";
+    tokenEl.style.borderRadius = "";
+    tokenEl.style.transform = "";
+  }
   tokenEl.title = buildTokenTitle2D(tile);
 
   tokenEl.dataset.actorId = id;

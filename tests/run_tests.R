@@ -953,6 +953,18 @@ test("Defence Fighting Style adds one AC only while armoured", {
   stopifnot(test_env$calc_auto_ac_for_char(no_style) == 14L)
 })
 
+test("legacy saves keep only two weapons ready without deleting inventory", {
+  load_functions(global_file, c("inventory_normalize"))
+  ready <- test_env$inventory_empty()
+  for (i in 1:4) ready <- rbind(ready, data.frame(
+    id=paste0("ready_",i), name=paste("Weapon",i), type="weapon", desc="", value=0,
+    weight=1, qty=1, equipped=TRUE, in_bag=FALSE, meta=I(list(list())), edit=FALSE,
+    stringsAsFactors=FALSE
+  ))
+  ready <- test_env$inventory_normalize(ready)
+  stopifnot(nrow(ready) == 4L, sum(ready$equipped) == 2L)
+})
+
 test("Body armour, shield and helm use separate non-stacking slots", {
   test_env$validate_character <- identity
   test_env$get_character_ability_mod <- function(char, stat) 2L

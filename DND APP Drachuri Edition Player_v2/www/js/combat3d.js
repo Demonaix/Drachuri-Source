@@ -868,8 +868,10 @@ function createToken(tile) {
   const y = terrainHeight(terrain) + 0.05;
 
   const isPlayer = String(tile.occupant_type || "") === "player";
-  const mainColor = isPlayer ? 0x77ddff : 0xff7744;
-  const glowColor = isPlayer ? 0x44ccff : 0xff5533;
+  const customMarkerColor = String(tile.marker_3d_color || "");
+  const parsedMarkerColor = /^#[0-9a-f]{6}$/i.test(customMarkerColor) ? parseInt(customMarkerColor.slice(1), 16) : null;
+  const mainColor = isPlayer && parsedMarkerColor !== null ? parsedMarkerColor : (isPlayer ? 0x77ddff : 0xff7744);
+  const glowColor = mainColor;
 
   const token = new THREE.Group();
 
@@ -941,6 +943,9 @@ hitbox.position.y = 0.68;
   const beamGroup = createFallbackBeam(mainColor);
   const spiralGroup = createFallbackSpiral(mainColor);
   const particleGroup = createFallbackParticles(tile);
+  const markerStyle = String(tile.marker_3d_style || "wisps");
+  if (isPlayer && markerStyle === "beacon") { spiralGroup.visible = false; particleGroup.visible = false; }
+  if (isPlayer && markerStyle === "subtle") { beamGroup.visible = false; spiralGroup.visible = false; particleGroup.visible = false; }
 
   const glowOrb = new THREE.Mesh(
     new THREE.SphereGeometry(0.055, 16, 16),

@@ -287,8 +287,8 @@ campUI <- function(id) {
               "left: 52%; top: 34%; width: 13%; height: 13%;",
               "left: 52%; top: 34%;"),
       
-      # 3D Character Builder
-      hotspot("go_character_3d", "3D Character",
+      # Combat marker workshop
+      hotspot("go_character_3d", "Combat Markers",
               "left: 68%; top: 24%; width: 9%; height: 24%;",
               "left: 68%; top: 24%;"),
       
