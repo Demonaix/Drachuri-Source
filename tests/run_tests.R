@@ -1781,6 +1781,8 @@ test("Windows player installer is self-contained and does not require RStudio", 
   stopifnot(!grepl("renv::restore", restore, fixed = TRUE))
   stopifnot(grepl("R_HOME=%~dp0runtime\\R", launch, fixed = TRUE))
   stopifnot(grepl("bin\\Rscript.exe", launch, fixed = TRUE))
+  stopifnot(grepl("DND_LAUNCH_BROWSER=true", launch, fixed = TRUE))
+  stopifnot(!grepl('"%R_HOME%\\bin\\x64\\Rscript.exe" --vanilla', launch, fixed = TRUE))
   stopifnot(grepl("Rscript.exe", launch, fixed = TRUE))
   stopifnot(!grepl("RStudio", launch, fixed = TRUE))
 })
