@@ -2177,25 +2177,49 @@ end_actor_concentration <- function(encounter_id, source_actor_id) {
   }, error = function(e) FALSE)
 }
 
+get_summonable_animals <- function(max_cr = NULL) {
+  con <- get_db_connection(); if (is.null(con)) return(data.frame())
+  on.exit(release_db_connection(con), add = TRUE)
+  params <- list(); where <- "WHERE summonable = TRUE"
+  if (!is.null(max_cr) && is.finite(as.numeric(max_cr))) { where <- paste(where,"AND challenge_rating <= $1"); params <- list(as.numeric(max_cr)) }
+  tryCatch(DBI::dbGetQuery(con,paste("SELECT * FROM animals",where,"ORDER BY challenge_rating,name"),params=params),error=function(e)data.frame())
+}
+
 create_encounter_summon <- function(encounter_id, owner_actor_id, name,
                                     max_cr = "1/2", hp_max = 10L, ac = 12L,
-                                    movement_speed = 30L, expires_round = NULL) {
+                                    movement_speed = 30L, expires_round = NULL,
+                                    animal_id = NULL, attack_name = "Natural Attack",
+                                    attack_bonus = 2L, damage_expr = "1d6",
+                                    damage_type = "slashing", portrait_asset = "summoned-beast.png") {
   con <- get_db_connection()
   if (is.null(con)) return(NULL)
   on.exit(release_db_connection(con), add = TRUE)
   expires_round <- suppressWarnings(as.integer(expires_round %||% NA_integer_))
   tryCatch(DBI::dbGetQuery(con, paste(
     "INSERT INTO encounter_summons (encounter_id, owner_actor_id, name, max_cr,",
-    "hp_max, hp_current, ac, movement_speed, expires_round)",
-    "VALUES ($1,$2,$3,$4,$5,$5,$6,$7,$8) RETURNING *"
+    "hp_max, hp_current, ac, movement_speed, expires_round, animal_id, attack_name, attack_bonus, damage_expr, damage_type, portrait_asset)",
+    "VALUES ($1,$2,$3,$4,$5,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *"
   ), params = list(
     as.integer(encounter_id), as.character(owner_actor_id), as.character(name),
     as.character(max_cr), as.integer(hp_max), as.integer(ac),
-    as.integer(movement_speed), expires_round
+    as.integer(movement_speed), expires_round, as.character(animal_id %||% NA_character_),
+    as.character(attack_name), as.integer(attack_bonus), as.character(damage_expr),
+    as.character(damage_type), as.character(portrait_asset)
   )), error = function(e) {
     message("create_encounter_summon failed: ", e$message)
     NULL
   })
+}
+
+damage_encounter_summon <- function(encounter_id, summon_uuid, amount) {
+  con <- get_db_connection(); if (is.null(con)) return(NULL)
+  on.exit(release_db_connection(con), add=TRUE)
+  tryCatch({
+    row<-DBI::dbGetQuery(con,"SELECT hp_current,temp_hp FROM encounter_summons WHERE encounter_id=$1 AND summon_uuid=$2",params=list(as.integer(encounter_id),as.character(summon_uuid)))
+    if(!nrow(row))return(NULL);old_hp<-as.integer(row$hp_current[[1L]]);old_temp<-as.integer(row$temp_hp[[1L]]);dmg<-max(0L,as.integer(amount));absorbed<-min(old_temp,dmg);new_temp<-old_temp-absorbed;new_hp<-max(0L,old_hp-(dmg-absorbed))
+    DBI::dbExecute(con,"UPDATE encounter_summons SET hp_current=$1,temp_hp=$2,is_active=($1>0),updated_at=now() WHERE encounter_id=$3 AND summon_uuid=$4",params=list(new_hp,new_temp,as.integer(encounter_id),as.character(summon_uuid)))
+    list(hp_before=old_hp,hp_after=new_hp,temp_before=old_temp,temp_after=new_temp,amount=dmg)
+  },error=function(e){message("damage_encounter_summon failed: ",e$message);NULL})
 }
 
 get_encounter_summons <- function(encounter_id) {
@@ -2695,6 +2719,12 @@ get_encounter_actors <- function(encounter_id) {
     ac = suppressWarnings(as.integer(actor_column(summons, "ac", NA))),
     movement_speed = suppressWarnings(as.integer(actor_column(summons, c("movement_speed", "speed_ft"), NA))),
     owner_actor_id = as.character(actor_column(summons, "owner_actor_id", "")),
+    animal_id = as.character(actor_column(summons, "animal_id", "")),
+    attack_name = as.character(actor_column(summons, "attack_name", "Natural Attack")),
+    attack_bonus = suppressWarnings(as.integer(actor_column(summons, "attack_bonus", 2L))),
+    damage_expr = as.character(actor_column(summons, "damage_expr", "1d6")),
+    damage_type = as.character(actor_column(summons, "damage_type", "slashing")),
+    portrait_asset = as.character(actor_column(summons, "portrait_asset", "summoned-beast.png")),
     stringsAsFactors = FALSE
   )
   

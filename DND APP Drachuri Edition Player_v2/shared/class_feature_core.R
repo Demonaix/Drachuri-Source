@@ -183,16 +183,19 @@ CLASS_SPELL_DEFINITIONS <- list(
     description = "A storm fills a 40-foot-radius area. Fire damage dealt inside it is reduced by 4; cold and lightning damage is increased by 2."
   ),
   call_beast = list(
-    # NEXT CHANGE: improve beast selection, placement, stat cards and player control.
     name = "Call Beast", class = "Hanianol Sorcerer", level = 2L,
     choice = c(natural_specialty = "Animals"), tags = c("spell", "combat", "summoning"),
     action_type = "action", cost = 20L, range_ft = 30L,
     target = list(type = "point", affects = "empty_space"),
     resolution = list(type = "automatic"),
     effects = list(list(type = "summon", allegiance = "friendly", creature_type = "beast",
-                        scaling = list(`2` = "CR 1/2", `11` = "CR 1", `15` = "CR 2"))),
+      scaling = list(
+        `2`=list(`1`=1,`2`=0.5,`4`=0.25),
+        `11`=list(`1`=2,`2`=1,`4`=0.5,`8`=0.25),
+        `15`=list(`1`=4,`2`=2,`4`=1,`8`=0.5)
+      ))),
     duration = "30_minutes", concentration = TRUE,
-    description = "Summon a friendly beast in an empty space. Its maximum CR is 1/2, becoming CR 1 at level 11 and CR 2 at level 15. It acts immediately after you."
+    description = "Call nearby beasts to aid you: choose one, two, four, or at higher levels eight identical beasts. Quantity determines the maximum CR. Each beast has its own turn and dies at 0 HP."
   ),
   wasting_sickness = list(
     name = "Wasting Sickness", class = "Hanianol Sorcerer", level = 2L,

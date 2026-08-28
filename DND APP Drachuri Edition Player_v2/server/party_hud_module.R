@@ -540,6 +540,7 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
             initiative = suppressWarnings(as.integer(summons$initiative %||% NA_integer_)),
             turn_order = suppressWarnings(as.integer(summons$turn_order %||% NA_integer_)),
             is_active = as.logical(summons$is_active %||% TRUE),
+            portrait_asset = as.character(summons$portrait_asset %||% "summoned-beast.png"),
             stringsAsFactors = FALSE
           )
           rows <- dplyr::bind_rows(rows, summon_rows)
@@ -691,8 +692,8 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
         if (is.na(sindre_max))  sindre_max <- 0L
         if (is.na(sindre_temp)) sindre_temp <- 0L
         
-        race_txt <- if (identical(actor_type, "enemy")) "Enemy" else as.character(extra$race %||% "")
-        class_txt <- if (identical(actor_type, "enemy")) "Combatant" else as.character(extra$class %||% "")
+        race_txt <- if (identical(actor_type, "enemy")) "Enemy" else if(identical(actor_type,"summon"))"Beast"else as.character(extra$race %||% "")
+        class_txt <- if (identical(actor_type, "enemy")) "Combatant" else if(identical(actor_type,"summon"))"Called Ally"else as.character(extra$class %||% "")
         
         if (!nzchar(race_txt))  race_txt  <- "—"
         if (!nzchar(class_txt)) class_txt <- "—"
@@ -700,7 +701,7 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
         status_icons <- extra$status_icons %||% character(0)
         conditions <- strsplit(as.character(row$conditions[1] %||% ""), ",", fixed = TRUE)[[1L]]
         conditions <- conditions[nzchar(conditions)]
-        portrait_file <- if (identical(actor_type, "player")) party_portrait_file(nm) else ""
+        portrait_file <- if (identical(actor_type, "player")) party_portrait_file(nm) else if(identical(actor_type,"summon"))as.character(row$portrait_asset[1]%||%"summoned-beast.png")else ""
         portrait_initial <- toupper(substr(trimws(nm), 1L, 1L))
         if (!nzchar(portrait_initial)) portrait_initial <- "?"
         

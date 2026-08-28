@@ -1285,7 +1285,13 @@ test("all Natural Magic specialties retain their homebrew combat contracts", {
 
   beast <- spells$call_beast
   stopifnot(identical(beast$effects[[1L]]$type, "summon"))
-  stopifnot(identical(unname(unlist(beast$effects[[1L]]$scaling[c("2", "11", "15")])), c("CR 1/2", "CR 1", "CR 2")))
+  bands<-beast$effects[[1L]]$scaling
+  stopifnot(identical(unname(unlist(bands[["2"]])),c(1,.5,.25)))
+  stopifnot(identical(unname(unlist(bands[["11"]])),c(2,1,.5,.25)))
+  stopifnot(identical(unname(unlist(bands[["15"]])),c(4,2,1,.5)))
+  migration<-readLines(file.path(project_dir,"database","migrations","045_call_beast_catalogue.sql"),warn=FALSE)
+  stopifnot(any(grepl("summonable BOOLEAN",migration,fixed=TRUE)),sum(grepl("'summon_",migration,fixed=TRUE))>=10L)
+  stopifnot(!any(grepl("Elephant|Crocodile|Polar Bear",migration)))
 
   disease <- spells$wasting_sickness
   stopifnot(identical(disease$resolution$ability, "con"))

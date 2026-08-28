@@ -1097,7 +1097,16 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     output$natural_spell_preview_ui <- renderUI({
       spell <- natural_magic_spells()[[as.character(input$natural_spell_id %||% "")]]
       if (is.null(spell)) return(NULL)
-      div(class = "confirm-box", tags$strong(spell$name), tags$p(spell$description),
+      call_beast_ui <- NULL
+      if (identical(as.character(input$natural_spell_id %||% ""), "call_beast")) {
+        char<-validate_character(core$state$char);classes<-normalise_character_classes(char);lvl<-sum(vapply(classes,function(x)if(identical(as.character(x$class%||%""),"Hanianol Sorcerer"))as.integer(x$level%||%0L)else 0L,integer(1)))
+        quantities<-if(lvl>=11L)c(1L,2L,4L,8L)else c(1L,2L,4L)
+        max_for<-function(n)if(lvl>=15L)c(`1`=4,`2`=2,`4`=1,`8`=.5)[[as.character(n)]]else if(lvl>=11L)c(`1`=2,`2`=1,`4`=.5,`8`=.25)[[as.character(n)]]else c(`1`=1,`2`=.5,`4`=.25)[[as.character(n)]]
+        qty<-as.integer(input$call_beast_quantity%||%quantities[[1L]]);if(!qty%in%quantities)qty<-quantities[[1L]]
+        beasts<-get_summonable_animals(max_for(qty));choices<-if(nrow(beasts))setNames(beasts$id,paste0(beasts$name," · CR ",format(beasts$challenge_rating,trim=TRUE)," · HP ",beasts$max_hp," · AC ",beasts$armour_class," · ",beasts$attack_name," ",ifelse(beasts$attack_bonus>=0,"+",""),beasts$attack_bonus," (",beasts$damage_expr,")"))else character()
+        call_beast_ui<-tagList(selectInput(session$ns("call_beast_quantity"),"How many beasts?",choices=setNames(quantities,paste(quantities,"beast",ifelse(quantities==1,"","s"))),selected=qty),selectInput(session$ns("call_beast_animal"),paste0("Beast (maximum CR ",max_for(qty),")"),choices=choices),if(!length(choices))tags$p(class="text-danger","No summonable beasts are available. Apply database migration 045."))
+      }
+      div(class = "confirm-box", tags$strong(spell$name), tags$p(spell$description),call_beast_ui,
           tags$p(tags$strong("Concentration: "), if (isTRUE(spell$concentration)) "Yes" else "No"))
     })
 
@@ -1121,6 +1130,15 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         if (identical(as.character(entry$class %||% ""), "Hanianol Sorcerer")) as.integer(entry$level %||% 0L) else 0L
       }, integer(1)))
       spell <- scale_class_spell(spell, hanianol_level)
+      call_beast_plan <- NULL
+      if (identical(spell_id,"call_beast")) {
+        qty<-as.integer(input$call_beast_quantity%||%1L);allowed<-if(hanianol_level>=11L)c(1L,2L,4L,8L)else c(1L,2L,4L)
+        if(!qty%in%allowed)return(showNotification("Choose a valid number of beasts.",type="error"))
+        max_cr<-if(hanianol_level>=15L)c(`1`=4,`2`=2,`4`=1,`8`=.5)[[as.character(qty)]]else if(hanianol_level>=11L)c(`1`=2,`2`=1,`4`=.5,`8`=.25)[[as.character(qty)]]else c(`1`=1,`2`=.5,`4`=.25)[[as.character(qty)]]
+        beasts<-get_summonable_animals(max_cr);beast<-beasts[as.character(beasts$id)==as.character(input$call_beast_animal%||%""),,drop=FALSE]
+        if(!nrow(beast))return(showNotification("Choose an available beast for this summoning pattern.",type="error"))
+        call_beast_plan<-list(quantity=qty,max_cr=max_cr,beast=beast[1,,drop=FALSE])
+      }
       eid <- current_encounter_id()
       round_number <- as.integer(combat_tbl()$round_number[1] %||% 1L)
       caster_id <- as.character(core$state$char_id %||% "")
@@ -1152,22 +1170,13 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
 
       created <- NULL
       if (identical(spell_id, "call_beast")) {
-        max_cr <- if (hanianol_level >= 15L) "2" else if (hanianol_level >= 11L) "1" else "1/2"
-        beast_stats <- if (hanianol_level >= 15L) c(hp = 35L, ac = 14L) else if (hanianol_level >= 11L) c(hp = 22L, ac = 13L) else c(hp = 12L, ac = 12L)
-        summon <- create_encounter_summon(
-          eid, caster_id, paste0(core$state$char$meta$name %||% "Hanianol", "'s Beast"),
-          max_cr = max_cr, hp_max = beast_stats[["hp"]], ac = beast_stats[["ac"]],
-          expires_round = round_number + duration_rounds
-        )
-        if (!is.null(summon) && nrow(summon)) {
-          upsert_encounter_actor_position(eid, "summon", as.character(summon$summon_uuid[1]), center_x, center_y)
-          created <- create_encounter_effect(
-            eid, "player", caster_id, spell_id, "summon", payload,
-            target_actor_type = "summon", target_actor_id = as.character(summon$summon_uuid[1]),
-            starts_round = round_number, ends_round = round_number + duration_rounds,
-            concentration = TRUE
-          )
+        beast<-call_beast_plan$beast;qty<-call_beast_plan$quantity;owner_row<-actors[as.character(actors$actor_id)==caster_id&as.character(actors$actor_type)=="player",,drop=FALSE];owner_init<-if(nrow(owner_row))as.integer(owner_row$initiative[[1L]]%||%0L)else 0L;last_order<-suppressWarnings(max(as.integer(actors$turn_order),na.rm=TRUE));if(!is.finite(last_order))last_order<-0L
+        offsets<-rbind(c(1,0),c(-1,0),c(0,1),c(0,-1),c(1,1),c(-1,1),c(1,-1),c(-1,-1),c(2,0),c(0,2));tiles<-map_tiles_rv();actors_now<-encounter_actors_tbl();used<-paste(actors_now$x,actors_now$y,sep=",");spawned<-character()
+        for(j in seq_len(qty)){spot<-NULL;for(k in seq_len(nrow(offsets))){sx<-center_x+offsets[k,1];sy<-center_y+offsets[k,2];if(any(tiles$x==sx&tiles$y==sy)&&!paste(sx,sy,sep=",")%in%used){spot<-c(sx,sy);used<-c(used,paste(sx,sy,sep=","));break}};if(is.null(spot))next
+          summon<-create_encounter_summon(eid,caster_id,paste0(as.character(beast$name[[1L]]),if(qty>1L)paste0(" ",j)else""),max_cr=as.character(call_beast_plan$max_cr),hp_max=beast$max_hp[[1L]],ac=beast$armour_class[[1L]],movement_speed=beast$speed[[1L]],expires_round=round_number+duration_rounds,animal_id=beast$id[[1L]],attack_name=beast$attack_name[[1L]],attack_bonus=beast$attack_bonus[[1L]],damage_expr=beast$damage_expr[[1L]],damage_type=beast$damage_type[[1L]],portrait_asset=beast$portrait_asset[[1L]])
+          if(!is.null(summon)&&nrow(summon)){sid<-as.character(summon$summon_uuid[[1L]]);upsert_encounter_actor_position(eid,"summon",sid,spot[[1L]],spot[[2L]]);set_actor_turn_order(eid,sid,"summon",owner_init,last_order+j);spawned<-c(spawned,sid)}
         }
+        if(length(spawned)){payload$quantity<-length(spawned);payload$animal_id<-as.character(beast$id[[1L]]);created<-create_encounter_effect(eid,"player",caster_id,spell_id,"summon",payload,target_actor_type="summon",target_actor_id=spawned[[1L]],starts_round=round_number,ends_round=round_number+duration_rounds,concentration=TRUE)}
       } else {
         created <- create_encounter_effect(
           eid, "player", caster_id, spell_id,
@@ -1914,6 +1923,10 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
           )
         ))
       }
+      if (identical(actor_type,"summon")) {
+        summons<-tryCatch(get_encounter_summons(current_encounter_id()),error=function(e)data.frame());row<-summons[as.character(summons$summon_uuid)==actor_id,,drop=FALSE];if(!nrow(row))return(NULL)
+        return(list(meta=list(name=as.character(row$name[[1L]]),race="Beast"),build=list(class="Summoned Beast",level=1L),abilities=list(str=10,dex=10,con=10,int=3,cha=6,bld_str=8),resources=list(hp=list(max=as.integer(row$hp_max[[1L]]),cur=as.integer(row$hp_current[[1L]]),temp=as.integer(row$temp_hp[[1L]])),sindre=list(cur=0,total=0,temp=0)),status=list(effects=character(),exhaustion=0,bloodlust=FALSE),combat_profile=list(ac_override=as.integer(row$ac[[1L]]),speed_ft=as.integer(row$movement_speed[[1L]]),attack_bonus=as.integer(row$attack_bonus[[1L]]),damage_expr=as.character(row$damage_expr[[1L]]),damage_type=as.character(row$damage_type[[1L]]))))
+      }
       
       NULL
     }
@@ -1932,6 +1945,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
           }
         }
       }
+      if(identical(actor_type,"summon")){summons<-tryCatch(get_encounter_summons(current_encounter_id()),error=function(e)data.frame());row<-summons[as.character(summons$summon_uuid)==as.character(actor_id),,drop=FALSE];if(nrow(row)){ac<-as.integer(row$ac[[1L]]%||%NA);if(!is.na(ac))return(ac)}}
       
       if (!is.null(actor_obj)) {
         ac <- tryCatch(calc_auto_ac_for_char(actor_obj), error = function(e) NA_integer_)
@@ -4428,6 +4442,14 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
           easyClose = TRUE
         ))
         
+      } else if (identical(attacker_type, "summon")) {
+        actors<-encounter_actors_tbl();summon_row<-actors[as.character(actors$actor_id)==as.character(attacker_id)&as.character(actors$actor_type)=="summon",,drop=FALSE]
+        target_type<-get_actor_type_by_id(target_id);target_char<-load_actor_for_combat(target_id,target_type)
+        if(!nrow(summon_row)||is.null(target_char)){log_safe("⚠️ Could not load the summoned beast or its target.");return()}
+        attacker_char<-list(combat_profile=list(attack_bonus=as.integer(summon_row$attack_bonus[[1L]]%||%2L),damage_expr=as.character(summon_row$damage_expr[[1L]]%||%"1d6"),damage_type=as.character(summon_row$damage_type[[1L]]%||%"slashing")))
+        preview<-build_enemy_attack_preview(attacker_char,target_char,attacker_name,get_actor_display_name(target_id),attacker_id,target_id,"summon",target_type)
+        preview$weapon_name<-as.character(summon_row$attack_name[[1L]]%||%"Natural Attack");pending_attack(preview);base_proposed<-if(isTRUE(preview$is_hit))compute_final_attack(preview)$adjusted$total else 0L
+        showModal(modalDialog(title=paste("Confirm",preview$weapon_name),uiOutput(session$ns("attack_confirm_ui")),numericInput(session$ns("final_damage_override"),"Final damage to apply",value=base_proposed,min=0,step=1),footer=tagList(modalButton("Cancel"),actionButton(session$ns("apply_attack_final"),"Apply Result",class="btn btn-danger")),easyClose=TRUE,size="m"))
       } else if (identical(attacker_type, "enemy")) {
         attacker_char <- load_actor_for_combat(attacker_id, "enemy")
         target_type <- get_actor_type_by_id(target_id)
@@ -4851,6 +4873,8 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
             character_id = preview$target_id,
             amount = final_damage
           )
+        } else if (identical(preview$target_type,"summon")) {
+          damage_encounter_summon(eid,preview$target_id,final_damage)
         } else {
           tryCatch(
             damage_encounter_enemy(
