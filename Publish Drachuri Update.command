@@ -19,5 +19,10 @@ read -r notes
 [ -n "$notes" ] || notes="Drachuri improvements and fixes."
 
 "$root/scripts/release_drachuri.sh" --version "$version" --repository "$repository" --notes "$notes"
+git -C "$root" add VERSION distribution/GITHUB_REPOSITORY
+if ! git -C "$root" diff --cached --quiet; then
+  git -C "$root" commit -m "Release Drachuri $version"
+fi
+git -C "$root" push origin main
 printf '\nRelease complete. Press Return to close.\n'
 read -r _

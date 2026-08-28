@@ -1910,6 +1910,13 @@ test("installed launchers check one cross-platform GitHub release manifest", {
   stopifnot(grepl('"windows":$player_windows_json', release_script, fixed = TRUE))
   stopifnot(grepl('"control":{"mac":$control_mac_json,"windows":null}', release_script, fixed = TRUE))
   stopifnot(grepl('"$gh_bin" release create', release_script, fixed = TRUE))
+  windows_publish <- paste(readLines(file.path(project_dir,"Build and Publish Drachuri Windows.cmd"),warn=FALSE),collapse="\n")
+  windows_publish_ps <- paste(readLines(file.path(project_dir,"installer","player","publish_windows_installer.ps1"),warn=FALSE),collapse="\n")
+  mac_publish <- paste(readLines(file.path(project_dir,"Publish Drachuri Update.command"),warn=FALSE),collapse="\n")
+  stopifnot(grepl("git pull --ff-only",windows_publish,fixed=TRUE))
+  stopifnot(grepl("gh release upload",windows_publish_ps,fixed=TRUE))
+  stopifnot(grepl("products.player.windows",windows_publish_ps,fixed=TRUE))
+  stopifnot(grepl('git -C "$root" push origin main',mac_publish,fixed=TRUE))
 })
 
 test("control dashboard ships its branded lightweight DM desk theme", {
