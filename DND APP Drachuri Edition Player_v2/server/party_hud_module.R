@@ -131,7 +131,7 @@ partyHudUI <- function(id) {
     .party-deck-card:hover,.party-deck-card:focus{transform:translateY(-5px);box-shadow:0 10px 20px rgba(45,29,12,.38)}
     .party-deck-card img{display:block;width:126px;height:158px;object-fit:cover}.party-deck-card span{display:block;padding:7px 6px 0;font:700 11px Cinzel,Georgia,serif;line-height:1.25}
     .party-deck-art{position:relative}.party-deck-art img{width:100%}.party-deck-ability-score,.party-deck-ability-mod{position:absolute;display:flex!important;align-items:center;justify-content:center;padding:0!important;border-radius:50%;font-family:Cinzel,Georgia,serif!important;font-weight:900!important;color:#2c1b0c;background:rgba(244,224,167,.94);border:2px solid #735025;box-shadow:0 2px 6px rgba(0,0,0,.35)}
-    .party-deck-ability-score{left:7px;bottom:7px;width:34px;height:34px;font-size:15px!important}.party-deck-ability-mod{right:7px;bottom:7px;width:39px;height:39px;font-size:14px!important}
+    .party-deck-ability-score{left:7px;top:7px;width:34px;height:34px;font-size:15px!important}.party-deck-ability-mod{right:7px;top:7px;width:39px;height:39px;font-size:14px!important}
     .party-deck-detail{text-align:center}.party-deck-detail img{width:min(360px,76vw);aspect-ratio:4/5;object-fit:cover;border-radius:13px;box-shadow:0 12px 34px rgba(0,0,0,.42)}
     .party-deck-detail h3{font-family:Cinzel,Georgia,serif}.party-deck-detail p{max-width:640px;margin:12px auto 0;font-size:16px;line-height:1.5}
 

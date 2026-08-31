@@ -590,7 +590,11 @@ function buildTerrainTile(tile) {
   const h = terrainHeight(terrain);
   const blockHeight = Math.max(0.12, Math.abs(h) + 0.22);
 
-  const geo =   terrain === "stone" || terrain === "wall"     ? new THREE.BoxGeometry(0.96, blockHeight, 0.96, 2, 2, 2)     : new THREE.BoxGeometry(0.98, blockHeight, 0.98, 1, 1, 1);
+  // Slightly overlap neighbouring terrain blocks so the golden table surface
+  // cannot shine through as a grid around every generated zone.
+  const geo = terrain === "stone" || terrain === "wall"
+    ? new THREE.BoxGeometry(0.995, blockHeight, 0.995, 2, 2, 2)
+    : new THREE.BoxGeometry(1.008, blockHeight, 1.008, 1, 1, 1);
 
   const baseColor = new THREE.Color(terrainColor(terrain));
   const variance = (seededRandom(tile.x, tile.y, 999) - 0.5) * terrainColourVariance(terrain);
@@ -611,8 +615,8 @@ const mat = new THREE.MeshStandardMaterial({
   color: tex ? 0xffffff : baseColor,
   roughness: terrain === "water" ? 0.42 : 0.94,
   metalness: terrain === "water" ? 0.04 : 0,
-  emissive: reachable ? 0x143d18 : 0x000000,
-  emissiveIntensity: reachable ? 0.16 : 0.018
+  emissive: 0x000000,
+  emissiveIntensity: 0
 });
 
   const mesh = new THREE.Mesh(geo, mat);
@@ -657,17 +661,17 @@ function updateReachableHighlights(tiles) {
     const terrain = String(tile.terrain || "grass").toLowerCase();
 
     if (isTruthy(tile.is_pending_move)) {
-      mesh.material.emissive.setHex(0xffcc33);
-      mesh.material.emissiveIntensity = 0.42;
+      mesh.material.emissive.setHex(0x2f7f8f);
+      mesh.material.emissiveIntensity = 0.18;
     } else if (isTruthy(tile.is_reachable)) {
-      mesh.material.emissive.setHex(0x143d18);
-      mesh.material.emissiveIntensity = 0.16;
+      mesh.material.emissive.setHex(0x000000);
+      mesh.material.emissiveIntensity = 0;
     } else if (terrain === "water") {
       mesh.material.emissive.setHex(0x0e263d);
       mesh.material.emissiveIntensity = 0.11;
     } else {
       mesh.material.emissive.setHex(0x000000);
-      mesh.material.emissiveIntensity = 0.018;
+      mesh.material.emissiveIntensity = 0;
     }
   });
 }

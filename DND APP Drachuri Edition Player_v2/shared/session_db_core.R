@@ -1459,6 +1459,12 @@ build_snapshot_encounter_actors <- function(snapshot) {
     initiative = suppressWarnings(as.integer(summons$initiative %||% rep(NA_integer_, nrow(summons)))),
     turn_order = suppressWarnings(as.integer(summons$turn_order %||% rep(NA_integer_, nrow(summons)))),
     is_active = as.logical(summons$is_active %||% rep(TRUE, nrow(summons))),
+    owner_actor_id = as.character(summons$owner_actor_id %||% rep("",nrow(summons))),
+    attack_name = as.character(summons$attack_name %||% rep("Natural Attack",nrow(summons))),
+    attack_bonus = suppressWarnings(as.integer(summons$attack_bonus %||% rep(2L,nrow(summons)))),
+    damage_expr = as.character(summons$damage_expr %||% rep("1d6",nrow(summons))),
+    damage_type = as.character(summons$damage_type %||% rep("slashing",nrow(summons))),
+    portrait_asset = as.character(summons$portrait_asset %||% rep("summoned-beast.png",nrow(summons))),
     stringsAsFactors = FALSE
   )
 

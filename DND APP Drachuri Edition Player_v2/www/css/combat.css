@@ -448,12 +448,20 @@ body.combat-document-fullscreen .combat-3d-shell{height:100vh!important;padding:
 body.combat-document-fullscreen .combat-3d-canvas{height:100vh!important;min-height:100vh!important;border-radius:0!important}
 body.combat-document-fullscreen .combat-2d-shell{height:100vh!important;padding:0!important}
 body.combat-document-fullscreen .combat-2d-canvas{height:100vh!important;min-height:100vh!important;border-radius:0!important}
-body.combat-document-fullscreen .combat-map-toolbar{position:fixed;right:14px;top:84px;z-index:1000004;padding:6px 8px;border-radius:9px;background:rgba(247,231,195,.92);color:#3e2f1c}
+body.combat-document-fullscreen .combat-map-toolbar{position:fixed;right:14px;top:84px;z-index:1000004;padding:6px 8px;border-radius:9px;background:rgba(247,231,195,.56);color:#3e2f1c;backdrop-filter:blur(5px)}
 body.combat-document-fullscreen .combat-log-card{visibility:hidden!important;pointer-events:none!important}
-body.combat-document-fullscreen>.combat-fullscreen-controls{position:fixed!important;left:205px;right:205px;top:84px;z-index:1000003!important;max-height:calc(100vh - 168px);overflow:visible;margin:0!important;padding:8px 12px!important;background:rgba(247,231,195,.96)!important;box-shadow:0 6px 22px rgba(0,0,0,.35)!important}
+body.combat-document-fullscreen>.combat-fullscreen-controls{position:fixed!important;left:calc(var(--party-hud-width, 194px) + 18px);right:290px;top:84px;z-index:1000003!important;max-height:calc(100vh - 168px);overflow:visible;margin:0!important;padding:8px 12px!important;background:rgba(247,231,195,.54)!important;border-color:rgba(191,167,111,.54)!important;box-shadow:0 6px 22px rgba(0,0,0,.22)!important;backdrop-filter:blur(5px)}
 body.combat-document-fullscreen [id$='partyhud_root'],body.combat-document-fullscreen .global-hud,body.combat-document-fullscreen [id$='status_card_dock']{z-index:1000005!important}
-body.combat-document-fullscreen .global-hud .hudbar-inner{background:rgba(255,255,245,.62)!important;border-color:rgba(191,167,111,.66)!important;box-shadow:0 7px 22px rgba(0,0,0,.24)!important;backdrop-filter:blur(6px) saturate(.82)!important}
-body.combat-document-fullscreen [id$='partyhud_root']{top:245px!important;max-height:calc(100vh - 255px)!important}
+body.combat-document-fullscreen .global-hud .hudbar-inner{background:rgba(255,255,245,.48)!important;border-color:rgba(191,167,111,.52)!important;box-shadow:0 7px 22px rgba(0,0,0,.18)!important;backdrop-filter:blur(6px) saturate(.82)!important}
+body.combat-document-fullscreen [id$='partyhud_root']{left:8px!important;right:auto!important;transform:none!important;top:245px!important;max-height:calc(100vh - 255px)!important;overflow-x:visible!important}
+body.combat-document-fullscreen [id$='partyhud_root'] .partyhud-shell{align-items:flex-start!important}
+body.combat-document-fullscreen [id$='partyhud_root'] .partyhud-label{align-self:flex-start!important;max-width:calc(100% - 8px);box-sizing:border-box;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.combat-document-fullscreen [id$='partyhud_root'] .party-row,body.combat-document-fullscreen [id$='partyhud_root'] .partyhud-empty{width:calc(100% - 8px)!important}
+body.combat-document-fullscreen [id$='partyhud_root'] .party-strip{background:rgba(211,174,111,.67)!important;box-shadow:0 4px 14px rgba(0,0,0,.2)!important;backdrop-filter:blur(4px)}
+body.combat-document-fullscreen [id$='partyhud_root'] .party-strip.active-turn{background:rgba(201,126,91,.69)!important}
+body.combat-document-fullscreen [id$='partyhud_root'] .party-strip.self-player{background:rgba(150,188,181,.69)!important}
+body.combat-document-fullscreen [id$='status_card_dock'] .status-fan-card{opacity:.78}body.combat-document-fullscreen [id$='status_card_dock'] .status-fan-card:hover,body.combat-document-fullscreen [id$='status_card_dock'] .status-fan-card:focus{opacity:1}
+@media(max-width:1200px){body.combat-document-fullscreen>.combat-fullscreen-controls{right:170px;left:calc(var(--party-hud-width,154px) + 12px)}}
 body.combat-document-fullscreen .modal-backdrop{z-index:1000010!important}
 body.combat-document-fullscreen .modal{z-index:1000011!important}
 

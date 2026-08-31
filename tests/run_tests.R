@@ -421,16 +421,24 @@ test("session snapshot combines players, enemies, and positions", {
       temp_hp = 0L, initiative = 12L, turn_order = 2L, is_active = TRUE,
       ac = 13L, movement_speed = 30L, stringsAsFactors = FALSE
     ),
+    summons = data.frame(
+      summon_uuid="s1",name="Called Wolf",hp_current=11L,hp_max=11L,temp_hp=0L,
+      initiative=17L,turn_order=3L,is_active=TRUE,owner_actor_id="p1",
+      attack_name="Bite",attack_bonus=4L,damage_expr="2d4+2",damage_type="piercing",
+      portrait_asset="summoned-beast.png",stringsAsFactors=FALSE
+    ),
     positions = data.frame(
-      actor_id = c("p1", "e1"), actor_type = c("player", "enemy"),
-      x = c(2L, 5L), y = c(3L, 6L), stringsAsFactors = FALSE
+      actor_id = c("p1", "e1", "s1"), actor_type = c("player", "enemy", "summon"),
+      x = c(2L, 5L, 3L), y = c(3L, 6L, 3L), stringsAsFactors = FALSE
     )
   )
   combined <- test_env$build_snapshot_encounter_actors(snapshot)
-  stopifnot(nrow(combined) == 2L)
+  stopifnot(nrow(combined) == 3L)
   stopifnot(combined$x[combined$actor_id == "p1"] == 2L)
   stopifnot(combined$y[combined$actor_id == "e1"] == 6L)
   stopifnot(combined$current_hp[combined$actor_id == "e1"] == 8L)
+  stopifnot(combined$owner_actor_id[combined$actor_id == "s1"] == "p1")
+  stopifnot(combined$attack_name[combined$actor_id == "s1"] == "Bite")
 })
 
 test("player snapshots conceal exploration and hidden enemies", {
@@ -2039,7 +2047,8 @@ test("combat fullscreen expands only the map beneath persistent HUDs", {
   stopifnot(grepl("[id$='partyhud_root']",combat_css,fixed=TRUE))
   stopifnot(grepl("[id$='status_card_dock']",combat_css,fixed=TRUE))
   stopifnot(grepl("body.combat-document-fullscreen .modal",combat_css,fixed=TRUE))
-  stopifnot(grepl("background:rgba(255,255,245,.62)",combat_css,fixed=TRUE))
+  stopifnot(grepl("background:rgba(255,255,245,.48)",combat_css,fixed=TRUE))
+  stopifnot(grepl("left:8px!important",combat_css,fixed=TRUE))
   stopifnot(grepl("close_actions_menu",combat_server,fixed=TRUE))
   stopifnot(grepl("Natural Magic can be cast on your turn",combat_server,fixed=TRUE))
   stopifnot(grepl('combat.css?v=',combat_server,fixed=TRUE))
