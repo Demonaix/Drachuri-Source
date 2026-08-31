@@ -175,6 +175,19 @@ test("required skill-card setup takes priority over opportunity prompts", {
   stopifnot(grepl("isTRUE(session$userData$required_character_setup)",combat,fixed=TRUE))
 })
 
+test("card-led rolls include sound, explanations, weapons, grapples and saves", {
+  player_dir<-file.path(project_dir,"DND APP Drachuri Edition Player_v2")
+  ui<-paste(readLines(file.path(player_dir,"ui.R"),warn=FALSE),collapse="\n")
+  skills<-paste(readLines(file.path(player_dir,"server","skills_module.R"),warn=FALSE),collapse="\n")
+  combat<-paste(readLines(file.path(player_dir,"server","debug_combat_module.R"),warn=FALSE),collapse="\n")
+  sound<-file.path(player_dir,"www","assets","sounds","card-hover.mp3")
+  stopifnot(file.exists(sound),file.info(sound)$size>1000L)
+  stopifnot(grepl("drachuri-card-hover-audio",ui,fixed=TRUE),grepl("mouseover",ui,fixed=TRUE))
+  stopifnot(grepl("What ",skills,fixed=TRUE),grepl("SKILL_DESC[[label]]",skills,fixed=TRUE))
+  stopifnot(grepl("attack_ability=attack_ability",combat,fixed=TRUE),grepl("character_skill_modifier(char,\"Wrestling\"",combat,fixed=TRUE))
+  stopifnot(grepl("save_detail<-list",combat,fixed=TRUE),grepl("combat-resolution-cards",combat,fixed=TRUE))
+})
+
 test("party skill support is useful, risky, and bounded", {
   mixed<-test_env$party_skill_support_result(16L,c(18L,12L,7L),3L);stopifnot(mixed$total==16L,mixed$support==0L)
   strong<-test_env$party_skill_support_result(16L,c(18L,19L,20L,17L),3L);stopifnot(strong$total==19L,strong$support==3L)

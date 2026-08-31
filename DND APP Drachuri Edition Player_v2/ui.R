@@ -89,6 +89,25 @@ document.addEventListener('click', function(e){
     # Music controller
     tags$script(src = "music.js"),
     tags$script(src = "settings.js"),
+    tags$audio(id="drachuri-card-hover-audio",src="assets/sounds/card-hover.mp3",preload="auto"),
+    tags$script(HTML("
+(function(){
+  var lastCard=null,lastPlayed=0;
+  var selector='.sc-card,.sc-art,.sc-ability-status img,.status-fan-card,.blood-status-card,.party-deck-card,.rest-status-card,.weapon-card,.ability-card,.skill-card,.magic-card';
+  document.addEventListener('mouseover',function(event){
+    var card=event.target.closest&&event.target.closest(selector);
+    if(!card||card===lastCard||card.contains(event.relatedTarget))return;
+    var now=Date.now();if(now-lastPlayed<90)return;
+    var audio=document.getElementById('drachuri-card-hover-audio');if(!audio)return;
+    lastCard=card;lastPlayed=now;audio.pause();audio.currentTime=0;audio.volume=.32;
+    var play=audio.play();if(play&&play.catch)play.catch(function(){});
+  },true);
+  document.addEventListener('mouseout',function(event){
+    var card=event.target.closest&&event.target.closest(selector);
+    if(card&&!card.contains(event.relatedTarget))lastCard=null;
+  },true);
+})();
+")),
 
     # -----------------------------
     # CSS

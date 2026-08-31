@@ -234,6 +234,12 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     }
     
     pending_attack <- reactiveVal(NULL)
+    combat_ability_labels<-c(str="Strength",dex="Dexterity",con="Constitution",int="Intelligence",bld_str="Blood Strength",cha="Charisma")
+    combat_ability_dirs<-c(str="strength",dex="dexterity",con="constitution",int="intelligence",bld_str="blood-strength",cha="charisma")
+    combat_ability_card_src<-function(ability,score=10L){ability<-tolower(as.character(ability%||%"str"));score<-suppressWarnings(as.integer(score));if(is.na(score))score<-10L;modifier<-max(-5L,min(5L,floor((score-10L)/2L)));file<-if(modifier<0L)paste0("minus-",abs(modifier))else paste0("plus-",modifier);paste0("assets/ability-cards/",combat_ability_dirs[[ability]]%||%"strength","/",file,".jpg")}
+    weapon_attack_ability<-function(char,weapon_row){stat<-tolower(as.character(weapon_row$stat[1]%||%"str"));if(identical(stat,"finesse")){str_mod<-get_character_ability_mod(char,"str");dex_mod<-get_character_ability_mod(char,"dex");stat<-if(dex_mod>str_mod)"dex"else"str"};if(!stat%in%names(combat_ability_labels))stat<-"str";stat}
+    combat_resolution_card<-function(src,label,detail=NULL)div(class="combat-resolution-card sc-card",tags$img(src=src,alt=label),strong(label),if(!is.null(detail))span(detail))
+    wrestling_card_src<-function(variant)switch(as.character(variant),reliable="assets/skill-cards/skill-cores/grappler.jpg",wild_card="assets/skill-cards/skill-aspects/wrestler.jpg",inspired="assets/skill-cards/skill-descriptors/relentless.jpg","assets/skill-cards/skill-cores/grappler.jpg")
     turn_move_ft <- reactiveVal(0L)
     pending_move <- reactiveVal(NULL)
     movement_dash <- reactiveVal(FALSE)
@@ -684,16 +690,16 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         return()
       }
       if (!spend_attack_safe(core$state$char, "Grapple")) return()
-      str_mod <- floor((as.integer(core$state$char$abilities$str %||% 10L) - 10L) / 2L)
-      proficiency <- character_proficiency_bonus(core$state$char)
-      attacker_total <- sample.int(20L, 1L) + str_mod + proficiency
-      defender_total <- sample.int(20L, 1L) + 2L
+      char<-validate_character(core$state$char);attacker_roll<-sample.int(20L,1L);attacker_modifier<-character_skill_modifier(char,"Wrestling",SKILLS_LIST);grapple_cards<-character_skill_cards(char,"wrestling");card_result<-resolve_skill_card_roll(attacker_roll,attacker_modifier,character_proficiency_bonus(char),grapple_cards);attacker_total<-as.integer(card_result$total)
+      defender_roll<-sample.int(20L,1L);defender_modifier<-2L;defender_total<-defender_roll+defender_modifier
       success <- attacker_total >= defender_total
       if (success) apply_combat_condition("grappled", target_id, target_type, "grapple", ends_round = NULL,
                                           payload = list(grappler_id = as.character(core$state$char_id)))
       removeModal()
       log_safe(paste0(if (success) "🤼 Grapple succeeds" else "⚠️ Grapple fails",
                       " (", attacker_total, " vs ", defender_total, ")."))
+      grapple_art<-if(length(grapple_cards))lapply(grapple_cards,function(variant)combat_resolution_card(wrestling_card_src(variant),paste("Wrestling —",tools::toTitleCase(gsub("_"," ",variant))),paste0(attacker_roll," + ",attacker_modifier,if(card_result$card_bonus!=0L)paste0(" + cards ",card_result$card_bonus)else""," = ",attacker_total)))else list(combat_resolution_card(wrestling_card_src("reliable"),"Wrestling",paste0(attacker_roll," + ",attacker_modifier," = ",attacker_total)))
+      showModal(modalDialog(title=if(success)"Grapple succeeds"else"Grapple resisted",div(class="combat-resolution-cards",tagList(grapple_art),div(class="combat-resolution-versus","VS"),combat_resolution_card(combat_ability_card_src("str",10L+2L*defender_modifier),paste(get_actor_display_name(target_id),"defence"),paste0(defender_roll," + ",defender_modifier," = ",defender_total))),div(class="combat-resolution-summary",if(success)"Your Wrestling cards overpower the target."else"The target resists your grapple."),footer=modalButton("Done"),size="l",easyClose=TRUE))
     }, ignoreInit = TRUE)
 
     observeEvent(input$standard_escape_grapple, {
@@ -2095,6 +2101,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
           ))
         }
       }
+      attack_ability<-weapon_attack_ability(attacker_char,weapon_row)
       list(
         resistances = resistances,
         immunities = get_vec("immunities"),
@@ -2403,6 +2410,8 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         target_name = as.character(target_name),
         weapon_id = as.character(weapon_row$id[1] %||% ""),
         weapon_name = as.character(weapon_row$name[1] %||% "Weapon"),
+        attack_ability=attack_ability,
+        attack_ability_score=as.integer(attacker_char$abilities[[attack_ability]]%||%10L),
         attack_roll = as.integer(attack_roll),
         attack_rolls = as.integer(attack_rolls),
         attack_adv_mode = adv,
@@ -2526,6 +2535,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       }
       
       tagList(
+        if(identical(as.character(preview$attacker_type%||%""),"player"))div(class="combat-resolution-cards",combat_resolution_card(combat_ability_card_src(preview$attack_ability,preview$attack_ability_score),paste(combat_ability_labels[[preview$attack_ability]]%||%"Strength","weapon attack"),paste0("Natural ",preview$attack_roll," + ",preview$attack_bonus," = ",preview$attack_total))),
         div(
           class = "confirm-box",
           div(class = "combat-section-title", "Attack Preview"),
@@ -3903,6 +3913,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       raw_damage <- resolved_damage$amount
 
       save_succeeded <- FALSE
+      save_detail <- NULL
       resolution_type <- as.character(action$resolution$type %||% "")
       if (identical(resolution_type, "spell_attack")) {
         spell_attack <- sample.int(20L, 1L) + character_proficiency_bonus(char) +
@@ -3920,6 +3931,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         save_roll <- sample.int(20L, 1L)
         save_dc <- class_spell_save_dc(char, feature$spell %||% list(class = feature$class %||% ""))
         save_succeeded <- save_roll + save_mod >= save_dc
+        save_detail<-list(ability=ability,roll=save_roll,modifier=save_mod,total=save_roll+save_mod,dc=save_dc)
         if (save_succeeded && grepl("half_damage", as.character(action$resolution$on_success %||% ""), fixed = TRUE)) {
           raw_damage <- floor(raw_damage / 2L)
         }
@@ -3994,6 +4006,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       )
       removeModal()
       log_safe(paste0("✨ ", ability_name, " deals ", final_damage, " damage to ", target_name, "."))
+      if(!is.null(save_detail))showModal(modalDialog(title=paste(ability_name,"— saving throw"),div(class="combat-resolution-cards",combat_resolution_card(combat_ability_card_src("bld_str",char$abilities$bld_str%||%10L),paste0(ability_name," save DC"),paste0("DC ",save_detail$dc)),div(class="combat-resolution-versus","VS"),combat_resolution_card(combat_ability_card_src(save_detail$ability,10L+2L*save_detail$modifier),paste(target_name,combat_ability_labels[[save_detail$ability]]%||%tools::toTitleCase(save_detail$ability),"save"),paste0(save_detail$roll," + ",save_detail$modifier," = ",save_detail$total))),div(class="combat-resolution-summary",paste0(if(save_succeeded)"Save succeeded"else"Save failed"," — ",final_damage," ",resolved_damage$damage_type," damage applied.")),footer=modalButton("Done"),size="l",easyClose=TRUE))
       bump_refresh()
     }, ignoreInit = TRUE)
 
