@@ -2933,11 +2933,11 @@ resolve_skill_card_roll <- function(natural_roll, modifier, proficiency_bonus, c
   cards <- unique(as.character(cards %||% character()))
   card_bonus <- 0L
   effects <- character()
-  if ("reliable" %in% cards && natural_roll <= 5L) {
+  if ("reliable" %in% cards && natural_roll >= 2L && natural_roll <= 4L) {
     card_bonus <- card_bonus + proficiency_bonus
     effects <- c(effects, paste0("Reliable +", proficiency_bonus))
   }
-  if ("inspired" %in% cards && natural_roll >= 16L) {
+  if ("inspired" %in% cards && natural_roll >= 18L) {
     card_bonus <- card_bonus + proficiency_bonus
     effects <- c(effects, paste0("Inspired +", proficiency_bonus))
   }

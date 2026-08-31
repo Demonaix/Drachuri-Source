@@ -31,7 +31,7 @@ skillsTabServer <- function(id,state,restoring,add_log,char_rev,live_snapshot=NU
     rank<-function(k)as.character(state$char$prof$skills[[k]]%||%"None")
     card_types<-c("reliable","wild_card","inspired")
     card_labels<-c(reliable="Reliable",wild_card="Wild Card",inspired="Inspired")
-    card_help<-c(reliable="Natural 1–5: add proficiency bonus again.",wild_card="Roll d6: 1 subtracts proficiency bonus; 6 adds it.",inspired="Natural 16–20: add proficiency bonus again.")
+    card_help<-c(reliable="Natural 2–4: add proficiency bonus again.",wild_card="Roll d6: 1 subtracts proficiency bonus; 6 adds it.",inspired="Natural 18–20: add proficiency bonus again.")
     variants<-function(k,r=rank(k)) character_skill_cards(state$char,k)
     card_art<-c(reliable="core",wild_card="aspect",inspired="descriptor")
     skill_img<-function(k,v){art<-unname(card_art[[v]]%||%"core");map<-switch(art,core=core,aspect=aspect,descriptor=descriptor);folder<-switch(art,core="skill-cores",aspect="skill-aspects",descriptor="skill-descriptors");paste0("assets/skill-cards/",folder,"/",unname(map[[k]]%||%core[[k]]),".jpg")}
@@ -79,6 +79,8 @@ skillsTabServer <- function(id,state,restoring,add_log,char_rev,live_snapshot=NU
     }
     lapply(abs,function(ab)observeEvent(input[[paste0("ability_",ab)]],choose_roll("save",labs[[ab]],ab),ignoreInit=TRUE))
     editor<-reactiveVal(NULL);required_prompt_open<-reactiveVal(FALSE)
+    missing_card_keys<-function(x=validate_character(state$char)){keys<-key(SKILLS_LIST$Skill);Filter(function(k){needed<-skill_card_count_for_rank(x$prof$skills[[k]]%||%"None");needed>0L&&length(character_skill_cards(x,k))<needed},keys)}
+    session$userData$required_character_setup<-length(missing_card_keys())>0L
     show_skill_editor<-function(k,required=FALSE){
       row<-SKILLS_LIST[key(SKILLS_LIST$Skill)==k,,drop=FALSE];if(!nrow(row))return()
       sk<-as.character(row$Skill[[1L]]);r<-rank(k);needed<-skill_card_count_for_rank(r);editor(list(key=k,skill=sk,required=isTRUE(required),original_rank=r))
@@ -98,12 +100,11 @@ skillsTabServer <- function(id,state,restoring,add_log,char_rev,live_snapshot=NU
       if(length(selected)!=needed)return(showNotification(paste0(new_rank," requires exactly ",needed," skill card",if(needed==1L)"."else"s."),type="error",duration=7))
       x<-validate_character(state$char);x$prof$skills[[info$key]]<-new_rank;x$prof$skill_cards[[info$key]]<-selected;state$char<-x
       add_log(paste0("🃏 ",info$skill," changed to ",new_rank,if(length(selected))paste0(" with ",paste(card_labels[selected],collapse=" + "))else"."))
-      editor(NULL);required_prompt_open(FALSE);removeModal()
+      editor(NULL);required_prompt_open(FALSE);removeModal();session$userData$required_character_setup<-length(missing_card_keys(state$char))>0L
     },ignoreInit=TRUE)
     observeEvent(input$cancel_skill_editor,{editor(NULL);removeModal()},ignoreInit=TRUE)
     observe({
-      char_rev();x<-validate_character(state$char);if(isTRUE(required_prompt_open())||!is.null(editor()))return()
-      keys<-key(SKILLS_LIST$Skill);missing<-Filter(function(k){needed<-skill_card_count_for_rank(x$prof$skills[[k]]%||%"None");needed>0L&&length(character_skill_cards(x,k))<needed},keys)
+      char_rev();x<-validate_character(state$char);missing<-missing_card_keys(x);session$userData$required_character_setup<-length(missing)>0L;if(isTRUE(required_prompt_open())||!is.null(editor()))return()
       if(length(missing)){required_prompt_open(TRUE);show_skill_editor(missing[[1L]],TRUE)}
     })
 

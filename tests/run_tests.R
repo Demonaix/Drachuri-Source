@@ -161,6 +161,18 @@ test("skill card roll effects combine independently", {
   stopifnot(inspired_wild$card_bonus == 6L, inspired_wild$total == 29L)
   quiet_wild <- test_env$resolve_skill_card_roll(10L, 2L, 3L, "wild_card", wild_roll = 4L)
   stopifnot(quiet_wild$card_bonus == 0L, quiet_wild$total == 12L)
+  stopifnot(test_env$resolve_skill_card_roll(1L,0L,3L,"reliable")$card_bonus==0L)
+  stopifnot(test_env$resolve_skill_card_roll(4L,0L,3L,"reliable")$card_bonus==3L)
+  stopifnot(test_env$resolve_skill_card_roll(5L,0L,3L,"reliable")$card_bonus==0L)
+  stopifnot(test_env$resolve_skill_card_roll(17L,0L,3L,"inspired")$card_bonus==0L)
+  stopifnot(test_env$resolve_skill_card_roll(18L,0L,3L,"inspired")$card_bonus==3L)
+})
+
+test("required skill-card setup takes priority over opportunity prompts", {
+  skills<-paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","skills_module.R"),warn=FALSE),collapse="\n")
+  combat<-paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","debug_combat_module.R"),warn=FALSE),collapse="\n")
+  stopifnot(grepl("required_character_setup",skills,fixed=TRUE))
+  stopifnot(grepl("isTRUE(session$userData$required_character_setup)",combat,fixed=TRUE))
 })
 
 test("party skill support is useful, risky, and bounded", {
