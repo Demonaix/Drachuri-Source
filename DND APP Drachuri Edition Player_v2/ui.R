@@ -273,7 +273,11 @@ body {
    CAMP vs PARCHMENT THEMES
    ----------------------------- */
 body.camp { background: #000 !important; }
-body.parchment { background: #000; }
+body.parchment {
+  background: #000;
+  --module-left-gutter: calc(var(--party-hud-width, clamp(154px, 13.5vw, 194px)) + 8px);
+  --module-right-gutter: clamp(184px, 18vw, 255px);
+}
 
 /* -----------------------------
    CAMP TAB
@@ -295,11 +299,15 @@ body.parchment #app-panel .tab-content{
 
 body.parchment #app-panel .tab-content > .tab-pane.active{
   position: absolute;
-  left: 50%;
+  left: var(--module-left-gutter);
+  right: var(--module-right-gutter);
   top: 90px;
-  transform: translateX(-50%);
-  width: min(1050px, calc(100vw - var(--party-hud-width, clamp(154px, 13.5vw, 194px)) - 70px));
-  margin-left: calc(var(--party-hud-width, clamp(154px, 13.5vw, 194px)) / 2);
+  transform: none;
+  width: auto;
+  max-width: 1050px;
+  box-sizing: border-box;
+  margin-left: auto;
+  margin-right: auto;
   max-height: calc(100vh - 92px);
   overflow-y: auto;
   overflow-x: hidden;
@@ -313,7 +321,6 @@ body.parchment #app-panel .tab-content > .tab-pane.active{
 
 @media (max-width: 1100px){
   body{--party-hud-width:154px}
-  body.parchment #app-panel .tab-content > .tab-pane.active{left:var(--party-hud-width);transform:none;margin-left:0;width:calc(100vw - var(--party-hud-width) - 24px)}
 }
 
 body.parchment #app-panel .tab-content > .tab-pane.active .container-fluid{
@@ -328,11 +335,13 @@ body.parchment #app-panel .tab-content > .tab-pane.active .container-fluid{
   position: fixed;
   right: 14px;
   top: 90px;
+  width: clamp(170px, 16vw, 235px);
   z-index: 999950;
   display: none;
 }
 #return-camp-wrap{display:none;flex-direction:column;align-items:stretch;gap:6px}
 #return-camp-wrap .btn{
+  width: 100%;
   border-radius: 999px;
   padding: 10px 14px;
   box-shadow: 0 8px 20px rgba(0,0,0,0.35);
