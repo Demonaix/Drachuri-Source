@@ -186,7 +186,16 @@ test("card-led rolls include sound, explanations, weapons, grapples and saves", 
   stopifnot(grepl("drachuri-card-hover-audio",ui,fixed=TRUE),grepl("mouseover",ui,fixed=TRUE))
   stopifnot(grepl("What ",skills,fixed=TRUE),grepl("SKILL_DESC[[label]]",skills,fixed=TRUE))
   stopifnot(grepl("attack_ability=attack_ability",combat,fixed=TRUE),grepl("character_skill_modifier(char,\"Wrestling\"",combat,fixed=TRUE))
+  stopifnot(grepl("attack_ability<-weapon_attack_ability(attacker_char,weapon_row)",combat,fixed=TRUE))
   stopifnot(grepl("save_detail<-list",combat,fixed=TRUE),grepl("combat-resolution-cards",combat,fixed=TRUE))
+})
+
+test("opportunity attacks retain their reaction context and allow melee only", {
+  combat<-paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","debug_combat_module.R"),warn=FALSE),collapse="\n")
+  stopifnot(grepl("is_reaction_attack <- isTRUE(verified_opportunity)",combat,fixed=TRUE))
+  stopifnot(grepl("is_opp <- isTRUE(verified_opportunity)",combat,fixed=TRUE))
+  stopifnot(grepl("Opportunity attacks require an equipped melee weapon",combat,fixed=TRUE))
+  stopifnot(grepl("!vapply(seq_len(nrow(weapons)),function(i)weapon_is_ranged",combat,fixed=TRUE))
 })
 
 test("party skill support is useful, risky, and bounded", {

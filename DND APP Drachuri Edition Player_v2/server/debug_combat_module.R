@@ -2101,7 +2101,6 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
           ))
         }
       }
-      attack_ability<-weapon_attack_ability(attacker_char,weapon_row)
       list(
         resistances = resistances,
         immunities = get_vec("immunities"),
@@ -2400,7 +2399,8 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
           type = as.character(weapon_row$dmg_type1[1] %||% ""), rolls = die, total = die
         )))
       }
-      
+
+      attack_ability<-weapon_attack_ability(attacker_char,weapon_row)
       list(
         attacker_id = as.character(attacker_id),
         attacker_type = as.character(attacker_type %||% "player"),
@@ -4356,9 +4356,11 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       current_attack_mode(attack_mode)
       
       self_id <- as.character(core$state$char_id %||% "")
-      is_reaction_attack <- !isTRUE(is_players_turn())
+      # A verified movement event remains an opportunity attack even if the
+      # active-turn snapshot advances before the player answers the prompt.
+      is_reaction_attack <- isTRUE(verified_opportunity) || !isTRUE(is_players_turn())
       is_ready <- is_reaction_attack && "readied" %in% actor_conditions(self_id)
-      is_opp <- is_reaction_attack && !is_ready
+      is_opp <- isTRUE(verified_opportunity) || (is_reaction_attack && !is_ready)
       current_attack_is_opp(isTRUE(is_opp))
       current_attack_is_ready(isTRUE(is_ready))
       
@@ -4405,13 +4407,17 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         }
         
         weapons <- get_equipped_weapons_for_combat(attacker_char)
+        if (isTRUE(current_attack_is_opp()) && is.data.frame(weapons) && nrow(weapons)) {
+          weapons<-weapons[!vapply(seq_len(nrow(weapons)),function(i)weapon_is_ranged(weapons[i,,drop=FALSE]),logical(1)),,drop=FALSE]
+        }
         if (identical(attack_mode, "offhand")) {
           ready <- offhand_ready()
           allowed <- as.character(ready$weapon_ids %||% character())
           weapons <- weapons[as.character(weapons$id) %in% allowed, , drop = FALSE]
         }
         if (!is.data.frame(weapons) || nrow(weapons) == 0) {
-          log_safe(if (identical(attack_mode, "offhand")) "⚠️ No eligible light off-hand weapon is equipped."
+          log_safe(if (isTRUE(current_attack_is_opp())) "⚠️ Opportunity attacks require an equipped melee weapon."
+                   else if (identical(attack_mode, "offhand")) "⚠️ No eligible light off-hand weapon is equipped."
                    else "⚠️ No equipped weapons available.")
           return()
         }
