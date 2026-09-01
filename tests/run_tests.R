@@ -1973,6 +1973,14 @@ test("local test launcher clears only stale Drachuri Shiny servers", {
   stopifnot(grepl('lsof -nP -tiTCP:', stop_source, fixed = TRUE))
 })
 
+test("local PostgreSQL runtime stays outside the synced source tree", {
+  start_db<-paste(readLines(file.path(project_dir,"test-env","start_db.sh"),warn=FALSE),collapse="\n")
+  stop_db<-paste(readLines(file.path(project_dir,"test-env","stop_db.sh"),warn=FALSE),collapse="\n")
+  stopifnot(grepl("Library/Application Support/Drachuri/test-postgres",start_db,fixed=TRUE))
+  stopifnot(grepl("initdb",start_db,fixed=TRUE),grepl("DND_TEST_PGDATA",stop_db,fixed=TRUE))
+  stopifnot(!grepl('data_dir="$project_dir/test-env/.postgres-data"',start_db,fixed=TRUE))
+})
+
 test("Mac player waits in a branded launcher before opening the browser", {
   launch <- paste(readLines(file.path("installer", "mac", "Drachuri Player"), warn = FALSE), collapse = "\n")
   runner <- paste(readLines(file.path("installer", "player", "installed_run.R"), warn = FALSE), collapse = "\n")
