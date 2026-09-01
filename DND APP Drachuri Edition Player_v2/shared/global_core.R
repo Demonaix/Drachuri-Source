@@ -665,6 +665,31 @@ consume_heart_sindre <- function(current, maximum, temporary = 0,
   )
 }
 
+# Blood stores a discrete share of the donor's magical capacity. Sindre is a
+# whole-point resource, so fractional eighths are rounded down consistently for
+# both the bottle and the donor deduction.
+blood_sindre_per_pint <- function(char, body_pints = 8) {
+  s <- (char$resources %||% list())$sindre %||% list()
+  capacity <- max(0, as.numeric(s$total %||% 0) + as.numeric(s$locked %||% 0))
+  floor(capacity / max(1, as.numeric(body_pints)))
+}
+
+blood_donor_sindre_cost_per_pint <- function(char, body_pints = 8) {
+  s <- (char$resources %||% list())$sindre %||% list()
+  floor(max(0,as.numeric(s$total%||%0))/max(1,as.numeric(body_pints)))
+}
+
+blood_draw_result <- function(previous_pints, draw_pints, exhaustion = 0L, body_pints = 8L) {
+  previous <- max(0, as.numeric(previous_pints %||% 0))
+  drawn <- max(0, as.numeric(draw_pints %||% 0))
+  if (previous + drawn > body_pints) stop(paste0("A character cannot give more than ", body_pints, " pints in one day."))
+  before_penalty <- max(0L, ceiling(previous - 1))
+  after_penalty <- max(0L, ceiling(previous + drawn - 1))
+  gained <- max(0L, after_penalty - before_penalty)
+  list(previous_pints=previous,total_pints=previous+drawn,exhaustion_gained=gained,
+       exhaustion_after=min(6L,max(0L,as.integer(exhaustion%||%0L))+gained))
+}
+
 character_subclass_names <- function(x) {
   build <- x$build %||% list()
   classes <- build$classes %||% list()

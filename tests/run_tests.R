@@ -50,7 +50,7 @@ load_functions <- function(path, names) {
 load_functions(global_file, c(
   "character_save_payload", "restore_sindre", "reset_class_uses_for_rest",
   "armor_meta_defaults_global", "calc_auto_ac_for_char", "get_effective_max_hp", "get_weapon_hit_bonus",
-  "starting_character_hp", "camp_gathering_yield", "consume_heart_sindre",
+  "starting_character_hp", "camp_gathering_yield", "consume_heart_sindre", "blood_sindre_per_pint", "blood_donor_sindre_cost_per_pint", "blood_draw_result",
   "character_subclass_names", "magical_identity_labels", "skill_identity_labels",
   "character_magic_types", "bloodlust_bite_required", "merchant_pricing_multiplier",
   "merchant_item_stock_weight", "merchant_haggle_terms",
@@ -233,6 +233,16 @@ test("heart consumption grants predictable temporary Sindre", {
   stopifnot(identical(heart_eater$current, 100L))
   stopifnot(identical(heart_eater$temporary, 28L))
   stopifnot(identical(heart_eater$temporary_gained, 25L))
+})
+
+test("bottled blood transfers capacity, usable Sindre and exhaustion separately", {
+  char<-list(resources=list(sindre=list(cur=180,total=180,locked=160)))
+  stopifnot(test_env$blood_sindre_per_pint(char)==42L)
+  stopifnot(test_env$blood_donor_sindre_cost_per_pint(char)==22L)
+  first<-test_env$blood_draw_result(0,1,0L);second<-test_env$blood_draw_result(1,2,0L)
+  stopifnot(first$exhaustion_gained==0L,second$exhaustion_gained==2L,second$total_pints==3)
+  refused<-try(test_env$blood_draw_result(7,2,0L),silent=TRUE)
+  stopifnot(inherits(refused,"try-error"))
 })
 
 test("character identities use current subclasses and every skill family", {
@@ -1513,6 +1523,9 @@ test("ordinary non-equipment loot receives an authoritative category", {
   stopifnot(identical(test_env$inventory_item_category(mundane), "mundane_loot"))
   stopifnot(identical(test_env$inventory_item_category(crafting), "crafting"))
   stopifnot(identical(test_env$inventory_item_category(potion), "consumable"))
+  blood<-data.frame(type="blood",meta=I(list(list(category="blood"))))
+  heart<-data.frame(type="heart",meta=I(list(list(category="heart"))))
+  stopifnot(identical(test_env$inventory_item_category(blood),"blood"),identical(test_env$inventory_item_category(heart),"heart"))
 })
 
 test("non-animal NPCs receive a small universal mundane loot roll", {

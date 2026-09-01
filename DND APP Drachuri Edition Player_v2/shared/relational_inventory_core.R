@@ -69,7 +69,7 @@ inventory_item_category <- function(item) {
   type <- tolower(trimws(as.character(item$type[[1L]] %||% "item")))
   meta <- if (is.list(item$meta[[1L]])) item$meta[[1L]] else list()
   explicit <- tolower(as.character(meta$category %||% ""))
-  allowed <- c("mundane_loot", "food", "magical_item", "consumable", "crafting", "tool", "treasure", "quest")
+  allowed <- c("mundane_loot", "food", "magical_item", "consumable", "crafting", "tool", "treasure", "quest", "blood", "heart")
   if (explicit %in% allowed) return(explicit)
   if (type %in% c("consumable", "potion", "food", "drink")) return("consumable")
   if (type %in% c("crafting", "material", "ingredient")) return("crafting")
@@ -82,6 +82,12 @@ inventory_item_category <- function(item) {
 inventory_definition_id <- function(con, kind, item) {
   table <- c(weapon = "weapons", armour = "armour", item = "items")[[kind]]
   name <- trimws(as.character(item$name[[1L]] %||% "Unnamed item"))
+  meta <- if (is.list(item$meta[[1L]])) item$meta[[1L]] else list()
+  catalogue_id <- trimws(as.character(meta$catalogue_id %||% ""))
+  if (nzchar(catalogue_id)) {
+    known <- DBI::dbGetQuery(con,paste0("SELECT id FROM ",table," WHERE id=$1 LIMIT 1"),params=list(catalogue_id))
+    if (nrow(known)) return(as.character(known$id[[1L]]))
+  }
   found <- DBI::dbGetQuery(
     con, paste0("SELECT id FROM ", table, " WHERE lower(trim(name))=lower(trim($1)) LIMIT 1"),
     params = list(name)
@@ -89,7 +95,6 @@ inventory_definition_id <- function(con, kind, item) {
   if (nrow(found)) return(as.character(found$id[[1L]]))
   slug <- gsub("^_+|_+$", "", gsub("[^a-z0-9]+", "_", tolower(iconv(name, to = "ASCII//TRANSLIT", sub = ""))))
   id <- paste0("party_", if (nzchar(slug)) substr(slug, 1L, 70L) else "unnamed")
-  meta <- if (is.list(item$meta[[1L]])) item$meta[[1L]] else list()
   value <- suppressWarnings(as.numeric(item$value[[1L]] %||% 0)); if (is.na(value)) value <- 0
   weight <- suppressWarnings(as.numeric(item$weight[[1L]] %||% 0)); if (is.na(weight)) weight <- 0
   desc <- as.character(item$desc[[1L]] %||% "")
