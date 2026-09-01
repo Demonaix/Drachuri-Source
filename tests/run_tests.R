@@ -172,6 +172,7 @@ test("required skill-card setup takes priority over opportunity prompts", {
   skills<-paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","skills_module.R"),warn=FALSE),collapse="\n")
   combat<-paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","debug_combat_module.R"),warn=FALSE),collapse="\n")
   stopifnot(grepl("required_character_setup",skills,fixed=TRUE))
+  stopifnot(grepl("required_character_setup<-isolate",skills,fixed=TRUE))
   stopifnot(grepl("isTRUE(session$userData$required_character_setup)",combat,fixed=TRUE))
 })
 

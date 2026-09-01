@@ -81,7 +81,10 @@ skillsTabServer <- function(id,state,restoring,add_log,char_rev,live_snapshot=NU
     lapply(abs,function(ab)observeEvent(input[[paste0("ability_",ab)]],choose_roll("save",labs[[ab]],ab),ignoreInit=TRUE))
     editor<-reactiveVal(NULL);required_prompt_open<-reactiveVal(FALSE)
     missing_card_keys<-function(x=validate_character(state$char)){keys<-key(SKILLS_LIST$Skill);Filter(function(k){needed<-skill_card_count_for_rank(x$prof$skills[[k]]%||%"None");needed>0L&&length(character_skill_cards(x,k))<needed},keys)}
-    session$userData$required_character_setup<-length(missing_card_keys())>0L
+    # Module construction itself is outside a reactive consumer. Read the
+    # initial character explicitly under isolate; the observer below owns all
+    # subsequent reactive updates.
+    session$userData$required_character_setup<-isolate(length(missing_card_keys())>0L)
     show_skill_editor<-function(k,required=FALSE){
       row<-SKILLS_LIST[key(SKILLS_LIST$Skill)==k,,drop=FALSE];if(!nrow(row))return()
       sk<-as.character(row$Skill[[1L]]);r<-rank(k);needed<-skill_card_count_for_rank(r);editor(list(key=k,skill=sk,required=isTRUE(required),original_rank=r))
