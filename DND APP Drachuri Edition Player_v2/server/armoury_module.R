@@ -525,9 +525,18 @@ armouryTabServer <- function(id, state, restoring, add_log, char_rev) {
               safe_log("🛡️ Armor equipped.", toast = TRUE)
               
             } else if (identical(this_type, "weapon")) {
-              equipped_weapon_count <- sum(d$type == "weapon" & as.logical(d$equipped) & !as.logical(d$in_bag), na.rm = TRUE)
-              if (!isTRUE(d$equipped[idx]) && equipped_weapon_count >= 2L) {
-                safe_log("⚠️ You can ready a maximum of two weapons. Stow one first.", toast = TRUE)
+              is_ranged_weapon <- function(i) {
+                m <- d$meta[[i]] %||% list()
+                category <- tolower(as.character(m$weapon_category %||% m$category %||% ""))
+                isTRUE(m$is_ranged) || category %in% c("ranged", "ranged weapon") ||
+                  grepl("bow|crossbow|sling|blowgun|dart|firearm|pistol|rifle", tolower(d$name[[i]]))
+              }
+              ready <- which(d$type == "weapon" & as.logical(d$equipped) & !as.logical(d$in_bag))
+              ranged_slot <- is_ranged_weapon(idx)
+              occupied <- if (length(ready)) sum(vapply(ready, is_ranged_weapon, logical(1)) == ranged_slot) else 0L
+              limit <- if (ranged_slot) 1L else 3L
+              if (!isTRUE(d$equipped[idx]) && occupied >= limit) {
+                safe_log(if (ranged_slot) "You can ready one ranged weapon. Stow it first." else "You can ready three ordinary weapons. Stow one first.", toast = TRUE)
                 return()
               }
               d$equipped[idx] <- !isTRUE(d$equipped[idx])

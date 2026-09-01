@@ -2,7 +2,7 @@ hudUI <- function(id) {
   ns <- NS(id)
   tagList(
     tags$style(HTML(sprintf("
-#%s{position:fixed;left:50%%;bottom:0;transform:translateX(-50%%);z-index:10030;height:64px;display:flex;align-items:flex-end;justify-content:center;pointer-events:none;max-width:calc(100vw - 230px)}
+#%s{position:fixed;left:50%%;bottom:0;transform:translateX(-50%%);z-index:1030;height:64px;display:flex;align-items:flex-end;justify-content:center;pointer-events:none;max-width:calc(100vw - 230px)}
 #%s .status-card-fan{display:flex;align-items:flex-end;justify-content:center;padding:0 30px;pointer-events:auto}
 #%s .status-fan-card{position:relative;bottom:-92px;width:112px;height:140px;margin:0 -23px;padding:0;border:0;background:transparent;transition:bottom .18s ease,transform .18s ease,filter .18s ease;filter:drop-shadow(0 4px 5px rgba(0,0,0,.42));cursor:pointer}
 #%s .status-fan-card:nth-child(odd){transform:rotate(-4deg)} #%s .status-fan-card:nth-child(even){transform:rotate(4deg)}

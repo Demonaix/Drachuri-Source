@@ -11,6 +11,18 @@ glyph_mastery_level <- function(char) {
 }
 glyph_unlocked_ranks <- function(char) RUNE_TYPES[seq_len(glyph_mastery_level(char))]
 
+GLYPH_KNOTS <- c(rune="Knot of Runes", ward="Knot of Warding", enhancement="Knot of Enhancement")
+
+glyph_unlocked_types <- function(char) {
+  inv <- inventory_normalize((char$inventory %||% list())$items)
+  owned <- tolower(trimws(inv$name[as.numeric(inv$qty) > 0]))
+  names(GLYPH_KNOTS)[tolower(GLYPH_KNOTS) %in% owned]
+}
+
+glyph_type_unlocked <- function(char, glyph_type) {
+  tolower(as.character(glyph_type)) %in% glyph_unlocked_types(char)
+}
+
 GLYPH_PHYSICAL_TYPES <- c("Bludgeoning","Piercing","Slashing")
 
 glyph_ward_resistance_options <- function() c(GLYPH_DAMAGE_TYPES,GLYPH_PHYSICAL_TYPES)
@@ -60,6 +72,8 @@ glyph_consume_inventory_item <- function(inv,name) {
 
 glyph_project_spec <- function(char,glyph_type,rank,material=NULL,size_ft=NULL,enhancement_days=NULL) {
   glyph_type<-tolower(as.character(glyph_type));rank<-tools::toTitleCase(tolower(as.character(rank)))
+  required_knot<-if(glyph_type%in%names(GLYPH_KNOTS))unname(GLYPH_KNOTS[[glyph_type]])else"matching Glyph Knot"
+  if(!glyph_type_unlocked(char,glyph_type))stop(paste0("You need a ",required_knot," in your inventory to use this glyph family."))
   if(!rank%in%glyph_unlocked_ranks(char))stop(paste(rank,"glyphs require Glyph Level",match(rank,RUNE_TYPES),". Your Glyph Level is",glyph_mastery_level(char),"."))
   arcana<-glyph_arcana_bonus(char);rule<-get_glyph_rule(glyph_type,rank,arcana,material,size_ft,enhancement_days);if(is.null(rule))stop("That glyph combination is not valid.")
   if(glyph_type=="rune"){

@@ -68,7 +68,7 @@ load_functions(global_file, c(
 ))
 load_functions(relational_inventory_file, c("equipment_material_is_eligible", "inventory_item_category", "equipment_adjusted_value"))
 load_functions(enemy_generator_file, c("enemy_special_attack", "enemy_attack_catalog", "enemy_loot_catalog", "resolve_layered_damage_traits", "enemy_is_animal", "roll_enemy_mundane_loot", "roll_enemy_food_loot", "npc_feature_definition", "npc_feature_catalogue", "npc_feature_effect_summary"))
-load_functions(glyph_core_file,c("GLYPH_PHYSICAL_TYPES","glyph_character_level","glyph_unlocked_ranks","glyph_mastery_level","glyph_material_requirement","glyph_counter_outcome","glyph_default_identity","normalize_weapon_enchantments","validate_ward_resistances","glyph_zone_colour"))
+load_functions(glyph_core_file,c("GLYPH_KNOTS","GLYPH_PHYSICAL_TYPES","glyph_character_level","glyph_unlocked_ranks","glyph_mastery_level","glyph_unlocked_types","glyph_type_unlocked","glyph_material_requirement","glyph_counter_outcome","glyph_default_identity","normalize_weapon_enchantments","validate_ward_resistances","glyph_zone_colour"))
 load_functions(combat_map_file,c("empty_map_tiles","create_square_map_tiles"))
 load_functions(map_builder_file,c("control_map_presets","generate_control_map_tiles"))
 load_functions(encounter_generator_file,c("encounter_damage_average","encounter_template_threat","encounter_party_budget","compose_encounter_draft","encounter_draft_dimensions","encounter_draft_positions"))
@@ -420,6 +420,13 @@ test("weapon range and sight-blocking terrain gate attacks", {
   stopifnot(!isTRUE(blocked$ok), !isTRUE(blocked$line_clear))
   distant <- test_env$combat_attack_geometry(tiles, 1L, 1L, 6L, 1L, 5L, 20L, 1L)
   stopifnot(!isTRUE(distant$in_range))
+  open <- data.frame()
+  normal <- test_env$combat_attack_geometry(open, 1L, 1L, 31L, 1L, 150L, 600L)
+  long <- test_env$combat_attack_geometry(open, 1L, 1L, 32L, 1L, 150L, 600L)
+  edge <- test_env$combat_attack_geometry(open, 1L, 1L, 121L, 1L, 150L, 600L)
+  beyond <- test_env$combat_attack_geometry(open, 1L, 1L, 122L, 1L, 150L, 600L)
+  stopifnot(isTRUE(normal$normal_range), !isTRUE(long$normal_range), isTRUE(long$in_range),
+            edge$distance_ft == 600L, isTRUE(edge$in_range), !isTRUE(beyond$in_range))
 })
 
 test("hide difficulty reflects terrain, light, cover and perception", {
@@ -996,16 +1003,28 @@ test("Defence Fighting Style adds one AC only while armoured", {
   stopifnot(test_env$calc_auto_ac_for_char(no_style) == 14L)
 })
 
-test("legacy saves keep only two weapons ready without deleting inventory", {
+test("ready loadout keeps three ordinary weapons and one ranged weapon", {
   load_functions(global_file, c("inventory_normalize"))
   ready <- test_env$inventory_empty()
-  for (i in 1:4) ready <- rbind(ready, data.frame(
-    id=paste0("ready_",i), name=paste("Weapon",i), type="weapon", desc="", value=0,
+  for (i in 1:5) ready <- rbind(ready, data.frame(
+    id=paste0("ready_",i), name=if(i==5)"Longbow"else paste("Weapon",i), type="weapon", desc="", value=0,
     weight=1, qty=1, equipped=TRUE, in_bag=FALSE, meta=I(list(list())), edit=FALSE,
     stringsAsFactors=FALSE
   ))
   ready <- test_env$inventory_normalize(ready)
-  stopifnot(nrow(ready) == 4L, sum(ready$equipped) == 2L)
+  stopifnot(nrow(ready) == 5L, sum(ready$equipped) == 4L,
+            sum(ready$equipped & ready$name == "Longbow") == 1L)
+})
+
+test("glyph families require their matching inventory Knot", {
+  char <- list(inventory=list(items=test_env$inventory_empty()))
+  stopifnot(length(test_env$glyph_unlocked_types(char)) == 0L)
+  knot <- data.frame(id="knot",name="Knot of Warding",type="item",desc="",value=0,weight=.1,qty=1,
+                     equipped=FALSE,in_bag=FALSE,meta=I(list(list())),edit=FALSE,stringsAsFactors=FALSE)
+  char$inventory$items <- knot
+  stopifnot(identical(test_env$glyph_unlocked_types(char),"ward"),
+            isTRUE(test_env$glyph_type_unlocked(char,"ward")),
+            !isTRUE(test_env$glyph_type_unlocked(char,"rune")))
 })
 
 test("Body armour, shield and helm use separate non-stacking slots", {

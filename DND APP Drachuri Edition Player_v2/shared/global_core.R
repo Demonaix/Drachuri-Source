@@ -1528,10 +1528,20 @@ inventory_normalize <- function(df = NULL) {
   df$in_bag[is.na(df$in_bag)] <- FALSE
   df$edit[is.na(df$edit)] <- FALSE
 
-  # A character has two ready-weapon slots. Legacy saves may contain more;
-  # keep the first two ready and safely stow the remainder without deleting them.
+  # Ready loadout: three ordinary weapons plus one dedicated ranged weapon.
+  # Legacy saves are safely stowed rather than losing inventory rows.
   ready_weapons <- which(df$type == "weapon" & df$equipped & !df$in_bag)
-  if (length(ready_weapons) > 2L) df$equipped[ready_weapons[-c(1L, 2L)]] <- FALSE
+  if (length(ready_weapons)) {
+    ranged <- vapply(ready_weapons, function(i) {
+      meta <- df$meta[[i]] %||% list()
+      category <- tolower(as.character(meta$weapon_category %||% meta$category %||% ""))
+      isTRUE(meta$is_ranged) || category %in% c("ranged", "ranged weapon") ||
+        grepl("bow|crossbow|sling|blowgun|dart|firearm|pistol|rifle", tolower(df$name[[i]]))
+    }, logical(1))
+    ordinary_ready <- ready_weapons[!ranged]; ranged_ready <- ready_weapons[ranged]
+    keep <- c(ordinary_ready[seq_len(min(3L,length(ordinary_ready)))], ranged_ready[seq_len(min(1L,length(ranged_ready)))])
+    df$equipped[setdiff(ready_weapons, keep)] <- FALSE
+  }
   
   if (!"meta" %in% names(df)) {
     df$meta <- vector("list", nrow(df))
