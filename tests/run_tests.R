@@ -2123,7 +2123,7 @@ test("combat fullscreen expands only the map beneath persistent HUDs", {
   stopifnot(grepl("[id$='status_card_dock']",combat_css,fixed=TRUE))
   stopifnot(grepl("body.combat-document-fullscreen .modal",combat_css,fixed=TRUE))
   stopifnot(grepl("background:rgba(255,255,245,.48)",combat_css,fixed=TRUE))
-  stopifnot(grepl("left:8px!important",combat_css,fixed=TRUE))
+  stopifnot(grepl("left:16px!important",combat_css,fixed=TRUE))
   stopifnot(grepl("close_actions_menu",combat_server,fixed=TRUE))
   stopifnot(grepl("Natural Magic can be cast on your turn",combat_server,fixed=TRUE))
   stopifnot(grepl('combat.css?v=',combat_server,fixed=TRUE))

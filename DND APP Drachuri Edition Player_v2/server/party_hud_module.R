@@ -9,8 +9,8 @@ partyHudUI <- function(id) {
 #", root_id, "{
   position: fixed;
   top: 110px;
-  left: 8px;
-  width: calc(var(--party-hud-width, clamp(154px, 13.5vw, 194px)) - 8px);
+  left: 16px;
+  width: calc(var(--party-hud-width, clamp(154px, 13.5vw, 194px)) - 16px);
   z-index: 10000;
   pointer-events: none;
   max-height: calc(100vh - 125px);

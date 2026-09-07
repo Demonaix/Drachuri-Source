@@ -99,7 +99,7 @@ document.addEventListener('click', function(e){
     if(!card||card===lastCard||card.contains(event.relatedTarget))return;
     var now=Date.now();if(now-lastPlayed<90)return;
     var audio=document.getElementById('drachuri-card-hover-audio');if(!audio)return;
-    lastCard=card;lastPlayed=now;audio.pause();audio.currentTime=0;audio.volume=.32;
+    lastCard=card;lastPlayed=now;audio.pause();audio.currentTime=0;audio.volume=.10;
     var play=audio.play();if(play&&play.catch)play.catch(function(){});
   },true);
   document.addEventListener('mouseout',function(event){
