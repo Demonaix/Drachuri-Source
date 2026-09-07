@@ -41,6 +41,9 @@ packaged_version_file=$(find "$build/verify" -path '*/Drachuri Control.app/Conte
 [ -n "$packaged_version_file" ] || { echo "Packaged Control VERSION marker is missing." >&2; exit 1; }
 packaged_version=$(tr -d '\r\n' < "$packaged_version_file")
 [ "$packaged_version" = "$version" ] || { echo "Packaged Control version is $packaged_version, expected $version." >&2; exit 1; }
+# The expanded verification tree duplicates the complete bundled application.
+# Release it before staging the package for the DMG to keep peak disk use bounded.
+rm -rf "$build/verify" "$build/R-expanded" "$build/RFramework.pkg" "$build/DrachuriControlApp.pkg"
 mkdir "$build/dmg"; cp "$build/Drachuri-Control-$version.pkg" "$build/dmg/Install Drachuri Control.pkg"
 printf '%s\n' 'Install the package, then open Drachuri Control from Applications or Spotlight.' > "$build/dmg/README.txt"
 output="$release_dir/Drachuri-Control-Mac-$version.dmg"; rm -f "$output"
