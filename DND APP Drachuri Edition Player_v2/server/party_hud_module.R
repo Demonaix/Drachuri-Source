@@ -303,7 +303,8 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
         dewydd = "dewydd-troell.png",
         dewyd_troell = "dewydd-troell.png",
         dafydd_troell = "dewydd-troell.png",
-        eleri = "eleri.png"
+        eleri = "eleri.png",
+        nefretari = "nefretari.png"
       )
       result <- unname(portraits[key])
       if (length(result) && !is.na(result)) result else ""

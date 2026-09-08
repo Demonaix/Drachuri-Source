@@ -232,7 +232,8 @@ const PLAYER_POSTER_ART={
   dewydd:"dewydd-troell.png",
   dewyd_troell:"dewydd-troell.png",
   dafydd_troell:"dewydd-troell.png",
-  eleri:"eleri.png"
+  eleri:"eleri.png",
+  nefretari:"nefretari.png"
 };
 function playerPosterFile(row){if(String(row.occupant_type)!=="player")return "";const key=String(firstValue(row,["occupant_name","display_name","name"],"")).trim().toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"");return PLAYER_POSTER_ART[key]||"";}
 function playerPosterTexture(state,file){const tex=new THREE.TextureLoader().load(new URL(`../assets/player-posters/${file}`,import.meta.url).href,()=>requestRender(state));tex.colorSpace=THREE.SRGBColorSpace;return tex;}
