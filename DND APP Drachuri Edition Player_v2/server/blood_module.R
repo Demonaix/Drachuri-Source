@@ -246,6 +246,16 @@ bloodTabServer <- function(
       x <- ensure_blood_state(state$char)
       inventory_normalize(x$inventory$items)
     })
+
+    biological_item_kinds <- function(df) {
+      if (!is.data.frame(df) || !nrow(df)) return(character())
+      vapply(seq_len(nrow(df)), function(i) {
+        row <- df[i, , drop = FALSE]
+        type <- tolower(trimws(as.character(row$type[[1L]] %||% "")))
+        if (type %in% c("blood", "heart")) return(type)
+        inventory_item_category(row)
+      }, character(1))
+    }
     
     write_core <- function(x) {
       x <- ensure_blood_state(x)
@@ -278,7 +288,7 @@ bloodTabServer <- function(
     # ------------------------------------------------------------
     blood_items <- reactive({
       df <- get_inventory()
-      df <- df[df$type == "blood", , drop = FALSE]
+      df <- df[biological_item_kinds(df) == "blood", , drop = FALSE]
       if (!nrow(df)) return(df)
       
       df$pints <- suppressWarnings(as.numeric(df$qty))
@@ -303,7 +313,7 @@ bloodTabServer <- function(
     
     heart_items <- reactive({
       df <- get_inventory()
-      df <- df[df$type == "heart", , drop = FALSE]
+      df <- df[biological_item_kinds(df) == "heart", , drop = FALSE]
       if (!nrow(df)) return(df)
       
       df$hearts <- suppressWarnings(as.numeric(df$qty))
@@ -349,11 +359,13 @@ bloodTabServer <- function(
       
       x <- ensure_blood_state(state$char)
       inv <- inventory_normalize(x$inventory$items)
+      inv_kinds <- biological_item_kinds(inv)
       for (i in seq_len(nrow(inv))) {
-        if (!inv$type[[i]] %in% c("blood","heart")) next
+        kind <- inv_kinds[[i]]
+        if (!kind %in% c("blood","heart")) next
         m <- inv$meta[[i]] %||% list()
-        m$catalogue_id <- if (inv$type[[i]]=="blood") "stored_blood_pint" else "preserved_heart"
-        m$category <- inv$type[[i]]
+        m$catalogue_id <- if (kind=="blood") "stored_blood_pint" else "preserved_heart"
+        m$category <- kind
         inv$meta[[i]] <- m
         inv$weight[[i]] <- 1
       }
@@ -632,7 +644,7 @@ bloodTabServer <- function(
       }
       
       blood_obs_ids(unique(c(blood_obs_ids(), new_ids)))
-    }, ignoreInit = TRUE)
+    }, ignoreInit = FALSE)
     
     # ------------------------------------------------------------
     # Confirm drink
@@ -651,7 +663,7 @@ bloodTabServer <- function(
       x <- ensure_blood_state(state$char)
       df <- inventory_normalize(x$inventory$items)
       
-      idx <- which(df$id == this_id & df$type == "blood")
+      idx <- which(df$id == this_id & biological_item_kinds(df) == "blood")
       if (length(idx) != 1) return()
       
       row <- df[idx, , drop = FALSE]
@@ -743,7 +755,7 @@ bloodTabServer <- function(
             x <- ensure_blood_state(state$char)
             df <- inventory_normalize(x$inventory$items)
             
-            idx <- which(df$id == this_id & df$type == "heart")
+            idx <- which(df$id == this_id & biological_item_kinds(df) == "heart")
             if (length(idx) != 1) return()
             
             row <- df[idx, , drop = FALSE]
@@ -807,7 +819,7 @@ bloodTabServer <- function(
       }
       
       heart_obs_ids(unique(c(heart_obs_ids(), new_ids)))
-    }, ignoreInit = TRUE)
+    }, ignoreInit = FALSE)
     
     # ------------------------------------------------------------
     # Addiction UI

@@ -275,7 +275,8 @@ body {
 body.camp { background: #000 !important; }
 body.parchment {
   background: #000;
-  --module-left-gutter: calc(var(--party-hud-width, clamp(154px, 13.5vw, 194px)) + 8px);
+  --party-hud-width: clamp(154px, 13.5vw, 360px);
+  --module-left-gutter: calc(var(--party-hud-width) + 8px);
   --module-right-gutter: clamp(184px, 18vw, 255px);
 }
 
@@ -321,6 +322,12 @@ body.parchment #app-panel .tab-content > .tab-pane.active{
 
 @media (max-width: 1100px){
   body{--party-hud-width:154px}
+}
+
+@media (min-width: 1800px){
+  body.parchment #app-panel .tab-content > .tab-pane.active{
+    max-width:none;
+  }
 }
 
 body.parchment #app-panel .tab-content > .tab-pane.active .container-fluid{

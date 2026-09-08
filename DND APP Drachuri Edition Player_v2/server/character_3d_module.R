@@ -42,6 +42,14 @@ character3DTabUI <- function(id) {
     
     h4("Combat Marker Workshop"),
     p("Choose how your character is recognised on both combat maps. Your existing 3D character pieces remain available below."),
+    tags$style(HTML(sprintf("
+      #%s{display:flex;align-items:center;justify-content:center;gap:48px;min-height:190px;margin-top:8px;padding:18px;border:1px solid rgba(150,120,70,.45);border-radius:12px;background:radial-gradient(circle,rgba(44,38,31,.88),rgba(15,17,21,.96))}
+      #%s .marker-demo{display:flex;flex-direction:column;align-items:center;gap:8px;color:#f2e4be;font-weight:700}
+      #%s .marker-token{width:82px;height:82px;display:flex;align-items:center;justify-content:center;border:5px solid #ead38a;box-shadow:0 5px 14px rgba(0,0,0,.5);font:900 28px Cinzel,Georgia,serif;color:#fff;text-shadow:0 2px 4px #000}
+      #%s .marker-token.circle{border-radius:50%%} #%s .marker-token.shield{clip-path:polygon(50%% 0,94%% 16%%,86%% 72%%,50%% 100%%,14%% 72%%,6%% 16%%)} #%s .marker-token.diamond{transform:rotate(45deg)} #%s .marker-token.diamond span{transform:rotate(-45deg)}
+      #%s .marker-aura{width:90px;height:112px;border-radius:50%%;position:relative;background:radial-gradient(ellipse,var(--aura-core) 0%%,var(--aura-fade) 34%%,transparent 72%%);filter:drop-shadow(0 0 10px var(--aura-core))}
+      #%s .marker-aura.beacon{border:4px solid var(--aura-core);box-shadow:0 0 22px var(--aura-core),inset 0 0 18px var(--aura-core)} #%s .marker-aura.subtle{opacity:.48;filter:drop-shadow(0 0 5px var(--aura-core))}
+    ", ns("marker_preview"),ns("marker_preview"),ns("marker_preview"),ns("marker_preview"),ns("marker_preview"),ns("marker_preview"),ns("marker_preview"),ns("marker_preview"),ns("marker_preview"),ns("marker_preview")))),
     div(
       class = "magic-card",
       style = "margin-bottom:12px;",
@@ -55,7 +63,8 @@ character3DTabUI <- function(id) {
       fluidRow(
         column(4, selectInput(ns("marker_3d_style"), "Marker aura", choices=c("Arcane wisps"="wisps", "Steady beacon"="beacon", "Subtle"="subtle"))),
         column(4, colourInput(ns("marker_3d_color"), "Aura colour", value="#77ddff"))
-      )
+      ),
+      uiOutput(ns("marker_preview"))
     ),
     
     div(
@@ -212,6 +221,22 @@ character3DTabServer <- function(id, state, restoring, add_log, char_rev = NULL)
         state$char$character_3d[[nm]] <- state$char$character_3d[[nm]] %||% d[[nm]]
       }
     }
+
+    output$marker_preview <- renderUI({
+      ensure_3d_state()
+      name <- as.character(state$char$meta$name %||% "?")
+      symbol <- substr(trimws(as.character(input$marker_2d_symbol %||% "")), 1L, 2L)
+      if (!nzchar(symbol)) symbol <- substr(toupper(name), 1L, 1L)
+      token_colour <- as.character(input$marker_2d_color %||% "#4b91b5")
+      aura_colour <- as.character(input$marker_3d_color %||% "#77ddff")
+      shape <- as.character(input$marker_2d_shape %||% "circle")
+      aura <- as.character(input$marker_3d_style %||% "wisps")
+      tags$div(
+        class = "marker-live-preview",
+        tags$div(class="marker-demo", tags$div(class=paste("marker-token",shape),style=paste0("background:",token_colour,";"),tags$span(symbol)), tags$span("2D token")),
+        tags$div(class="marker-demo", tags$div(class=paste("marker-aura",aura),style=paste0("--aura-core:",aura_colour,";--aura-fade:",aura_colour,"66;")), tags$span("3D aura"))
+      )
+    })
     
     send_preview <- function(
     base_model = NULL,

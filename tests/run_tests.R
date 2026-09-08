@@ -2146,4 +2146,22 @@ test("complete dice result card library is shipped", {
   stopifnot(all(file.exists(expected)))
 })
 
+test("blood inventory actions initialise and large-screen player UI remains usable", {
+  blood <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition Player_v2", "server", "blood_module.R"), warn = FALSE), collapse = "\n")
+  markers <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition Player_v2", "server", "character_3d_module.R"), warn = FALSE), collapse = "\n")
+  party_hud <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition Player_v2", "server", "party_hud_module.R"), warn = FALSE), collapse = "\n")
+  player_ui <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition Player_v2", "ui.R"), warn = FALSE), collapse = "\n")
+  stopifnot(grepl('observeEvent(blood_items()', blood, fixed = TRUE))
+  stopifnot(grepl('observeEvent(heart_items()', blood, fixed = TRUE))
+  stopifnot(length(gregexpr('ignoreInit = FALSE', blood, fixed = TRUE)[[1L]]) >= 2L)
+  stopifnot(grepl('biological_item_kinds(df) == "blood"', blood, fixed = TRUE))
+  stopifnot(grepl('biological_item_kinds(df) == "heart"', blood, fixed = TRUE))
+  stopifnot(grepl('output$marker_preview <- renderUI', markers, fixed = TRUE))
+  stopifnot(grepl('input$marker_2d_color', markers, fixed = TRUE))
+  stopifnot(grepl('input$marker_3d_color', markers, fixed = TRUE))
+  stopifnot(grepl('@media (min-width:1800px)', party_hud, fixed = TRUE))
+  stopifnot(grepl('@media (min-width: 1800px)', player_ui, fixed = TRUE))
+  stopifnot(grepl('max-width:none', player_ui, fixed = TRUE))
+})
+
 cat("\n", tests_run, " tests passed.\n", sep = "")

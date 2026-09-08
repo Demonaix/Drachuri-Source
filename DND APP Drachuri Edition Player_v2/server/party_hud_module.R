@@ -10,7 +10,7 @@ partyHudUI <- function(id) {
   position: fixed;
   top: 110px;
   left: 16px;
-  width: calc(var(--party-hud-width, clamp(154px, 13.5vw, 194px)) - 16px);
+  width: calc(var(--party-hud-width, clamp(154px, 13.5vw, 360px)) - 16px);
   z-index: 10000;
   pointer-events: none;
   max-height: calc(100vh - 125px);
@@ -122,6 +122,21 @@ partyHudUI <- function(id) {
 
     #", root_id, " .party-strip.deck-available{cursor:pointer;transition:transform .14s ease,filter .14s ease;}
     #", root_id, " .party-strip.deck-available:hover,#", root_id, " .party-strip.deck-available:focus{transform:translateX(4px);filter:brightness(1.06);outline:2px solid rgba(215,185,109,.9);outline-offset:-2px;}
+
+    @media (min-width:1800px){
+      #", root_id, " .partyhud-shell{gap:11px}
+      #", root_id, " .partyhud-label{font-size:14px;padding:5px 12px}
+      #", root_id, " .party-row{width:calc(100% - 8px)}
+      #", root_id, " .party-strip{min-height:132px;padding:10px 10px 10px 106px}
+      #", root_id, " .party-portrait{left:6px;top:6px;width:91px;height:118px}
+      #", root_id, " .party-portrait-initial{font-size:39px}
+      #", root_id, " .party-name{font-size:15px}
+      #", root_id, " .party-turn-order,#", root_id, " .party-initiative{font-size:11px}
+      #", root_id, " .party-meta,#", root_id, " .party-condition{font-size:10px}
+      #", root_id, " .party-status-icon{font-size:13px}
+      #", root_id, " .party-mini-label{font-size:11px}
+      #", root_id, " .party-bar{height:10px}
+    }
 
     .modal-dialog:has(.party-deck-modal){width:min(1120px,94vw)}
     .party-deck-intro{margin:-4px 0 14px;color:#655238}
