@@ -2136,4 +2136,14 @@ test("combat fullscreen expands only the map beneath persistent HUDs", {
   stopifnot(grepl('combat2d_simple.js?v=',combat_server,fixed=TRUE))
 })
 
+test("complete dice result card library is shipped", {
+  dice_root <- file.path(project_dir, "DND APP Drachuri Edition Player_v2", "www", "assets", "dice-cards")
+  dice_sides <- c(4L, 6L, 8L, 10L, 12L, 20L)
+  expected <- unlist(lapply(dice_sides, function(sides) {
+    file.path(dice_root, paste0("d", sides), sprintf("d%d-%02d.png", sides, seq_len(sides)))
+  }), use.names = FALSE)
+  stopifnot(length(expected) == 60L)
+  stopifnot(all(file.exists(expected)))
+})
+
 cat("\n", tests_run, " tests passed.\n", sep = "")
