@@ -2,11 +2,19 @@ library(shiny)
 library(shinyjs)
 
 # Reuse the player's lean combat renderer instead of maintaining two divergent
-# copies. The control app is launched with this directory as its working folder.
-player_www <- normalizePath(
-  file.path("..", "DND APP Drachuri Edition Player_v2", "www"),
+# copies. Resolve it from the explicit installed-app location because Shiny can
+# re-source ui.R after temporarily changing the process working directory.
+control_app_dir <- Sys.getenv("DRACHURI_APP_DIR", unset = "")
+if (!nzchar(control_app_dir)) control_app_dir <- getwd()
+control_app_dir <- normalizePath(control_app_dir, mustWork = TRUE)
+if (!identical(normalizePath(getwd(), mustWork = TRUE), control_app_dir)) {
+  setwd(control_app_dir)
+}
+player_app_dir <- normalizePath(
+  file.path(dirname(control_app_dir), "DND APP Drachuri Edition Player_v2"),
   mustWork = TRUE
 )
+player_www <- file.path(player_app_dir, "www")
 if (!"player-assets" %in% names(shiny::resourcePaths())) {
   shiny::addResourcePath("player-assets", player_www)
 }
@@ -29,7 +37,7 @@ source("control_app/modules/control_merchants_module.R", local = FALSE)
 source("control_app/modules/control_story_module.R", local = FALSE)
 source("control_app/modules/control_issue_reports_module.R", local = FALSE)
 source("control_app/modules/control_geography_climate_module.R", local = FALSE)
-source("../DND APP Drachuri Edition Player_v2/server/party_hud_module.R", local = FALSE)
+source(file.path(player_app_dir, "server", "party_hud_module.R"), local = FALSE)
 
 ui_control <- fluidPage(
   useShinyjs(),
