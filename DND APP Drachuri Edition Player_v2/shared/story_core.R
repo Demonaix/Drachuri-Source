@@ -2,8 +2,13 @@ story_safe_id <- function(x) {
   x<-gsub("[^a-zA-Z0-9_-]+","-",tolower(trimws(as.character(x%||%"story"))));x<-gsub("^-+|-+$","",x);if(!nzchar(x))"story"else substr(x,1L,80L)
 }
 
-storyboard_root <- function(app_root=getwd()) {
-  path<-file.path(app_root,"storyboards");if(!dir.exists(path))dir.create(path,recursive=TRUE,showWarnings=FALSE);normalizePath(path,mustWork=FALSE)
+storyboard_root <- function(app_root=NULL) {
+  if(is.null(app_root)||!length(app_root)||is.na(app_root[[1L]])||!nzchar(as.character(app_root[[1L]])))app_root<-Sys.getenv("DRACHURI_DATA_DIR",unset="")
+  if(!nzchar(as.character(app_root[[1L]]))){wd<-getwd();app_root<-if(is.null(wd)||!length(wd))tempdir()else wd}
+  path<-file.path(as.character(app_root[[1L]]),"storyboards")
+  if(!dir.exists(path))dir.create(path,recursive=TRUE,showWarnings=FALSE)
+  if(!dir.exists(path)){path<-file.path(tempdir(),"Drachuri","storyboards");dir.create(path,recursive=TRUE,showWarnings=FALSE)}
+  normalizePath(path,mustWork=FALSE)
 }
 
 storyboard_path <- function(storyboard_id,app_root=getwd()) file.path(storyboard_root(app_root),story_safe_id(storyboard_id))

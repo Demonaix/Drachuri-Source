@@ -453,7 +453,7 @@ controlLiveCombatServer <- function(
     control_disengage <- reactiveVal(FALSE)
     reinforce_templates_rv <- reactiveVal(data.frame())
     audit_key <- reactiveVal(0L)
-    audit_log_path <- file.path("logs", "control-audit.log")
+    audit_log_path <- file.path(Sys.getenv("DRACHURI_LOG_DIR", unset = "logs"), "control-audit.log")
     if (!dir.exists(dirname(audit_log_path))) dir.create(dirname(audit_log_path), recursive = TRUE, showWarnings = FALSE)
 
     append_control_audit <- function(category, message, details = list()) {
