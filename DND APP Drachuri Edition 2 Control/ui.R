@@ -7,7 +7,9 @@ library(shinyjs)
 control_app_dir <- Sys.getenv("DRACHURI_APP_DIR", unset = "")
 if (!nzchar(control_app_dir)) control_app_dir <- getwd()
 control_app_dir <- normalizePath(control_app_dir, mustWork = TRUE)
-if (!identical(normalizePath(getwd(), mustWork = TRUE), control_app_dir)) {
+current_control_dir <- getwd()
+if (is.null(current_control_dir) ||
+    !identical(normalizePath(current_control_dir, mustWork = TRUE), control_app_dir)) {
   setwd(control_app_dir)
 }
 player_app_dir <- normalizePath(

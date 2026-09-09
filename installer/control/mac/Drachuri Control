@@ -5,6 +5,7 @@ resources_dir=$(CDPATH= cd -- "$macos_dir/../Resources" && pwd)
 support_dir="$HOME/Library/Application Support/Drachuri Control"
 mkdir -p "$support_dir/logs" "$support_dir/R-user"
 pid_file="$support_dir/control.pid"
+running_version_file="$support_dir/control.running-version"
 launch_url="http://127.0.0.1:48628"
 export DRACHURI_INSTALL_DIR="$resources_dir"
 export DRACHURI_APP_DIR="$resources_dir/workspace/DND APP Drachuri Edition 2 Control"
@@ -34,9 +35,16 @@ app_version="Unknown version"
   control mac "$app_version" "$resources_dir/update/GITHUB_REPOSITORY" >/dev/null 2>&1 || true
 if [ -f "$pid_file" ]; then
   existing_pid=$(cat "$pid_file" 2>/dev/null || true)
-  if [ -n "$existing_pid" ] && kill -0 "$existing_pid" 2>/dev/null; then open "$launch_url"; exit 0; fi
+  existing_version=$(cat "$running_version_file" 2>/dev/null || true)
+  if [ -n "$existing_pid" ] && kill -0 "$existing_pid" 2>/dev/null; then
+    if [ "$existing_version" = "$app_version" ]; then open "$launch_url"; exit 0; fi
+    kill "$existing_pid" 2>/dev/null || true
+    attempt=0
+    while kill -0 "$existing_pid" 2>/dev/null && [ "$attempt" -lt 20 ]; do sleep 0.1; attempt=$((attempt + 1)); done
+  fi
   rm -f "$pid_file"
 fi
 nohup /usr/bin/arch -x86_64 "$R_HOME/bin/Rscript" --vanilla "$resources_dir/installed_run.R" >> "$support_dir/logs/launcher-console.log" 2>&1 </dev/null &
 echo $! > "$pid_file"
+printf '%s\n' "$app_version" > "$running_version_file"
 exit 0
