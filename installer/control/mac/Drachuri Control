@@ -21,6 +21,16 @@ export LANG="en_GB.UTF-8"
 export LC_ALL="en_GB.UTF-8"
 export DRACHURI_PID_FILE="$pid_file"
 export DND_LAUNCH_PORT="48628"
+# Preserve storyboards created by older builds that stored them inside the app.
+mkdir -p "$support_dir/storyboards"
+bundled_storyboards="$DRACHURI_APP_DIR/storyboards"
+if [ -d "$bundled_storyboards" ]; then
+  for board in "$bundled_storyboards"/*; do
+    [ -d "$board" ] || continue
+    destination="$support_dir/storyboards/$(basename "$board")"
+    [ -e "$destination" ] || cp -R "$board" "$destination"
+  done
+fi
 if [ ! -x "$R_HOME/bin/Rscript" ]; then
   osascript -e 'display alert "Drachuri Control could not start" message "The R runtime is missing. Run the Drachuri Control installer again." as critical'
   exit 1
