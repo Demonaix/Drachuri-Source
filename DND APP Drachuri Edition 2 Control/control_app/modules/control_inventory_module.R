@@ -10,7 +10,7 @@ controlInventoryUI <- function(id) {
         tabsetPanel(id=ns("catalogue_tab"),
           tabPanel("All",DT::DTOutput(ns("cat_all"))),tabPanel("Weapons",DT::DTOutput(ns("cat_weapons"))),tabPanel("Armour",DT::DTOutput(ns("cat_armour"))),tabPanel("Animals",DT::DTOutput(ns("cat_animals"))),
           tabPanel("Food",DT::DTOutput(ns("cat_food"))),tabPanel("Magical",DT::DTOutput(ns("cat_magical"))),tabPanel("Mundane",DT::DTOutput(ns("cat_mundane"))),
-          tabPanel("Crafting",DT::DTOutput(ns("cat_crafting"))),tabPanel("Consumables",DT::DTOutput(ns("cat_consumable"))),tabPanel("Tools",DT::DTOutput(ns("cat_tool"))),tabPanel("Treasure & Quest",DT::DTOutput(ns("cat_special")))
+          tabPanel("Crafting",DT::DTOutput(ns("cat_crafting"))),tabPanel("Consumables",DT::DTOutput(ns("cat_consumable"))),tabPanel("Blood & Hearts",DT::DTOutput(ns("cat_biological"))),tabPanel("Tools",DT::DTOutput(ns("cat_tool"))),tabPanel("Treasure & Quest",DT::DTOutput(ns("cat_special")))
         ),
         div(style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:12px",actionButton(ns("new_item"),"New Definition",class="btn btn-primary"),actionButton(ns("edit_selected"),"Edit Selected",class="btn btn-default"),selectInput(ns("player_id"),NULL,choices=character(),width="260px"),actionButton(ns("give_item"),"Give Copy to Player",class="btn btn-success")),
         uiOutput(ns("item_preview"))
@@ -32,6 +32,14 @@ controlInventoryServer <- function(id, ctrl, players_tbl = NULL, bump_refresh = 
     seed <- lapply(names(enemy_loot_catalog()), function(key) {
       x <- enemy_loot_catalog()[[key]]; x$id <- key; x$pools <- default_pools[[key]] %||% character(); x
     })
+    concentrations <- c(Diluted=10L,Standard=25L,Potent=50L,Concentrated=100L)
+    blood_stock <- Map(function(label,sindre) list(
+      id=paste0("stored_blood_",tolower(label)),
+      name=paste(label,"Stored Blood"),
+      type="item",desc=paste0("A sealed one-pint bottle containing ",sindre," Sindre."),value=0,weight=1,qty=1,
+      meta=list(catalogue_id="stored_blood_pint",category="blood",source="DM blood reserve",sindre_per_unit=as.numeric(sindre)),pools=character()
+    ),names(concentrations),unname(concentrations))
+    seed <- c(seed, blood_stock)
     catalogue <- reactiveVal({
       saved <- if (file.exists(store_path)) tryCatch(readRDS(store_path), error=function(e) list()) else list()
       saved <- lapply(saved,function(x){if((x$type%||%"")=="weapon"&&!isTRUE(x$meta$lock_provenance)){x$name<-sub("^(Titanium Copper|Steel|Iron|Copper)[[:space:]]+","",x$name,ignore.case=TRUE);x$desc<-gsub("\\b(steel|iron|copper)[- ]?(headed|bladed)?[[:space:]]*","",x$desc,ignore.case=TRUE);x$meta$material<-NULL;x$meta$build_quality<-NULL};x})
@@ -40,7 +48,7 @@ controlInventoryServer <- function(id, ctrl, players_tbl = NULL, bump_refresh = 
     })
     save_store <- function(x) tryCatch({ saveRDS(x, store_path); TRUE }, error=function(e) FALSE)
     item_category<-function(x){if(identical(x$type,"weapon"))"weapon"else if((x$type%||%"")%in%c("armor","armour"))"armor"else if(identical(x$type,"animal"))"animal"else as.character(x$meta$category%||%if(identical(x$type,"consumable"))"consumable"else"mundane_loot")}
-    table_items<-function(key){items<-catalogue();Filter(function(x){magic<-isTRUE((x$meta%||%list())$is_magical)||item_category(x)=="magical_item";switch(key,all=TRUE,weapons=item_category(x)=="weapon",armour=item_category(x)=="armor",animals=item_category(x)=="animal",food=item_category(x)=="food",magical=magic,mundane=item_category(x)=="mundane_loot"&&!magic,crafting=item_category(x)=="crafting",consumable=item_category(x)=="consumable",tool=item_category(x)=="tool",special=item_category(x)%in%c("treasure","quest"),FALSE)},items)}
+    table_items<-function(key){items<-catalogue();Filter(function(x){magic<-isTRUE((x$meta%||%list())$is_magical)||item_category(x)=="magical_item";switch(key,all=TRUE,weapons=item_category(x)=="weapon",armour=item_category(x)=="armor",animals=item_category(x)=="animal",food=item_category(x)=="food",magical=magic,mundane=item_category(x)=="mundane_loot"&&!magic,crafting=item_category(x)=="crafting",consumable=item_category(x)=="consumable",biological=item_category(x)%in%c("blood","heart"),tool=item_category(x)=="tool",special=item_category(x)%in%c("treasure","quest"),FALSE)},items)}
     table_frame<-function(key){
       items<-table_items(key);if(!length(items))return(data.frame())
       do.call(rbind,lapply(items,function(x){
@@ -50,7 +58,7 @@ controlInventoryServer <- function(id, ctrl, players_tbl = NULL, bump_refresh = 
         data.frame(Name=x$name%||%"Item",Type=gsub("_"," ",category),Value=as.numeric(x$value%||%0),Weight=as.numeric(x$weight%||%0),Characteristics=detail,Pools=pools,stringsAsFactors=FALSE)
       }))
     }
-    for(key in c("all","weapons","armour","animals","food","magical","mundane","crafting","consumable","tool","special"))local({k<-key;output[[paste0("cat_",k)]]<-DT::renderDT(DT::datatable(table_frame(k),selection="single",rownames=FALSE,options=list(pageLength=10,scrollX=TRUE)));observeEvent(input[[paste0("cat_",k,"_rows_selected")]],{idx<-input[[paste0("cat_",k,"_rows_selected")]];items<-table_items(k);if(length(idx)&&idx<=length(items))updateSelectInput(session,"item_id",selected=as.character(items[[idx]]$id))},ignoreInit=TRUE)})
+    for(key in c("all","weapons","armour","animals","food","magical","mundane","crafting","consumable","biological","tool","special"))local({k<-key;output[[paste0("cat_",k)]]<-DT::renderDT(DT::datatable(table_frame(k),selection="single",rownames=FALSE,options=list(pageLength=10,scrollX=TRUE)));observeEvent(input[[paste0("cat_",k,"_rows_selected")]],{idx<-input[[paste0("cat_",k,"_rows_selected")]];items<-table_items(k);if(length(idx)&&idx<=length(items))updateSelectInput(session,"item_id",selected=as.character(items[[idx]]$id))},ignoreInit=TRUE)})
     observeEvent(input$edit_selected,{if(is.null(selected()))return(showNotification("Select an item row first.",type="warning"));shinyjs::show("editor_panel")},ignoreInit=TRUE)
     observeEvent(input$new_item,{shinyjs::show("editor_panel");updateTextInput(session,"name",value="New Item");updateSelectInput(session,"type",selected="mundane_loot");updateTextInput(session,"desc",value="");updateTextInput(session,"pools",value="");updateNumericInput(session,"value",value=0);updateNumericInput(session,"weight",value=0)},ignoreInit=TRUE)
     observe({

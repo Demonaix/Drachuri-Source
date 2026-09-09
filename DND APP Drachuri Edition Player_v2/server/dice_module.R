@@ -11,6 +11,7 @@ diceTabUI <- function(id) {
     div(
       id = ns("root"),
       class = "card",
+      tags$style(HTML(".dice-result-cards{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:12px;margin:10px 0 18px}.dice-result-card{position:relative;width:min(150px,28vw);aspect-ratio:1/1;border-radius:10px;overflow:hidden;box-shadow:0 5px 14px #2d1d0c55;opacity:.82;transition:.16s}.dice-result-card.is-selected{opacity:1;outline:4px solid #b88b2d;transform:translateY(-5px)}.dice-result-card img{width:100%;height:100%;object-fit:contain}.dice-result-label{position:absolute;left:8px;right:8px;bottom:8px;padding:4px;background:#fff4d9dd;border-radius:6px;text-align:center;font-weight:800}.dice-result-fallback{display:flex;flex-direction:column;align-items:center;justify-content:center;background:#ead8aa;color:#3e2f1c}.dice-result-fallback strong{font-size:42px}.dice-modifier-card{width:92px;height:122px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(145deg,#f1dfae,#c8a564);border:3px double #725020;border-radius:10px;box-shadow:0 5px 14px #2d1d0c55}.dice-modifier-sign{font:900 34px Cinzel,Georgia,serif}.dice-modifier-label{font:800 10px Cinzel,Georgia,serif;text-transform:uppercase}")),
       
       h3("🎲 Dice Roller"),
       tags$p(style="opacity:.85;", "Roll anything from a d4 to a d100. Supports advantage/disadvantage and modifiers."),
@@ -111,22 +112,17 @@ diceTabServer <- function(id, state, restoring, add_log, char_rev) {
     
     # last result storage
     last_result <- reactiveVal(NULL)
+    pending_manual_roll <- reactiveVal(NULL)
+
+    manual_mode <- function() isTRUE(session$rootScope()$input$manual_roll_mode_enabled)
+
+    finish_roll <- function(sides, n, mod, mode, supplied_rolls = NULL) {
+      roll_once_or_use <- function(count) {
+        if (!is.null(supplied_rolls)) as.integer(supplied_rolls) else roll_once(sides, count)
+      }
     
-    observeEvent(input$roll, {
-      if (isTRUE(restoring())) return()
-      
-      sides <- as.integer(input$die %||% 20)
-      n     <- as.integer(input$n %||% 1)
-      mod   <- as.integer(input$mod %||% 0)
-      mode  <- as.character(input$mode %||% "Normal")
-      
-      n <- max(1, min(50, n))
-      sides <- max(2, sides)
-      
-      # roll
       if (mode %in% c("Advantage", "Disadvantage") && n == 1 && sides == 20) {
-        a <- roll_once(20, 1)
-        b <- roll_once(20, 1)
+        pair <- roll_once_or_use(2L); a <- pair[[1L]]; b <- pair[[2L]]
         chosen <- if (mode == "Advantage") max(a, b) else min(a, b)
         total <- chosen + mod
         
@@ -146,7 +142,7 @@ diceTabServer <- function(id, state, restoring, add_log, char_rev) {
           detail = detail
         )
       } else {
-        rolls <- roll_once(sides, n)
+        rolls <- roll_once_or_use(n)
         subtotal <- sum(rolls)
         total <- subtotal + mod
         
@@ -184,8 +180,27 @@ diceTabServer <- function(id, state, restoring, add_log, char_rev) {
       
       # log to core (journal/toast)
       safe_log(paste0("🎲 ", res$expr, " → **", res$total, "** (", res$detail, ")"))
-      
+    }
+
+    observeEvent(input$roll, {
+      if (isTRUE(restoring())) return()
+      sides <- max(2L, as.integer(input$die %||% 20L)); n <- max(1L, min(50L, as.integer(input$n %||% 1L)))
+      mod <- as.integer(input$mod %||% 0L); mode <- as.character(input$mode %||% "Normal")
+      count <- if (mode %in% c("Advantage", "Disadvantage") && n == 1L && sides == 20L) 2L else n
+      if (!manual_mode()) return(finish_roll(sides, n, mod, mode))
+      pending_manual_roll(list(sides=sides,n=n,mod=mod,mode=mode,count=count))
+      showModal(modalDialog(title="Roll your physical dice",
+        p(sprintf("Roll %dd%d%s, then enter %s below.",count,sides,if(mode=="Normal")""else paste0(" for ",tolower(mode)),if(count==1L)"the natural result"else"the results separated by spaces or commas")),
+        textInput(session$ns("manual_dice_results"),"Natural dice result",placeholder=if(count==1L)paste0("1–",sides)else paste(rep(paste0("1–",sides),count),collapse=", ")),
+        footer=tagList(modalButton("Cancel"),actionButton(session$ns("confirm_manual_dice"),"Use Result",class="btn btn-primary")),easyClose=FALSE))
     }, ignoreInit = TRUE)
+
+    observeEvent(input$confirm_manual_dice, {
+      req <- pending_manual_roll(); if(is.null(req)) return()
+      values <- manual_dice_values(input$manual_dice_results,req$sides,req$count)
+      if(is.null(values)) return(showNotification(sprintf("Enter exactly %d result%s between 1 and %d.",req$count,if(req$count==1L)""else"s",req$sides),type="error"))
+      pending_manual_roll(NULL); removeModal(); finish_roll(req$sides,req$n,req$mod,req$mode,values)
+    },ignoreInit=TRUE)
     
     observeEvent(input$clear_hist, {
       hist(hist()[0, ])
@@ -207,6 +222,7 @@ diceTabServer <- function(id, state, restoring, add_log, char_rev) {
       }
       
       tags$div(
+        tags$div(class="dice-result-cards",lapply(seq_along(res$rolls),function(i)dice_result_card_ui(res$sides,res$rolls[[i]],!is.na(res$chosen)&&res$rolls[[i]]==res$chosen,if(!is.na(res$chosen))if(res$rolls[[i]]==res$chosen)"Used"else"Discarded"else NULL)),if(as.integer(res$mod%||%0L)!=0L)modifier_result_card_ui(res$mod)),
         tags$div(style="font-weight:900; font-size:18px;", paste0(res$total)),
         tags$div(style="opacity:.9;", res$expr),
         tags$div(style="margin-top:8px; font-family:monospace; white-space:pre-wrap;", res$detail)

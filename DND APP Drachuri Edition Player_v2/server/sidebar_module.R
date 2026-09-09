@@ -41,6 +41,18 @@ sidebarTabUI <- function(id) {
               tags$span(id = ns("master_volume_value"), "70%", style = "min-width:44px;font-weight:700;")
             ),
             tags$p(class = "help-block", "This setting is remembered on this computer."),
+            checkboxInput(
+              ns("card_hover_sound"),
+              "Play a card sound when hovering",
+              value = FALSE
+            ),
+            tags$p(class = "help-block", "Card sounds are disabled by default and remembered on this computer."),
+            checkboxInput(
+              ns("manual_roll_mode"),
+              "Manual dice mode",
+              value = FALSE
+            ),
+            tags$p(class = "help-block", "When enabled, the game asks you to roll physical dice and enter the natural result. Disabled by default and remembered on this computer."),
             tags$button(
               id = ns("browser_fullscreen"), type = "button",
               class = "btn btn-default",

@@ -69,6 +69,15 @@ stopifnot(resolve_camp_gather_request(decline_request$id[[1L]],"1004",FALSE,0L)$
 retry_request<-create_camp_gather_request(1L,50L,"1003","water",1L,NULL)
 stopifnot(is.data.frame(retry_request),nrow(retry_request)==1L)
 
+# Chests share one authoritative lock and stock across invited players.
+picker<-load_character_from_db("1001");pick<-enemy_loot_catalog()$lockpick;pick$id<-"qa_lockpick";picker$inventory$items<-inventory_normalize(rbind(inventory_normalize(picker$inventory$items),enemy_loot_to_inventory_row(pick,pick$id)));stopifnot(identical(save_character_to_db(picker,"1001"),"1001"))
+treasure<-enemy_loot_catalog()$healing_draught;treasure$qty<-1L
+qa_chest<-create_chest(1L,"QA Lockbox","hard",list(treasure),TRUE);stopifnot(is.data.frame(qa_chest),nrow(qa_chest)==1L)
+stopifnot(invite_players_to_chest(qa_chest$id[[1L]],c("1001","1002")))
+stopifnot(any(get_character_chests("1001",TRUE)$chest_id==qa_chest$id[[1L]]))
+qa_bundle<-get_chest_bundle(qa_chest$id[[1L]]);attempt<-chest_lockpick_attempt(qa_chest$id[[1L]],"1001",qa_bundle$chest$sweet_spot[[1L]],3,6);stopifnot(isTRUE(attempt$open))
+qa_bundle<-get_chest_bundle(qa_chest$id[[1L]]);taken<-take_chest_item(qa_chest$id[[1L]],qa_bundle$items$id[[1L]],"1001");stopifnot(is.list(taken),taken$item_name=="Healing Draught",nrow(get_chest_bundle(qa_chest$id[[1L]])$items)==0L)
+
 history_check<-create_party_skill_check(1L,"History","int","Ancient city walls","1001",3L,"party")
 stopifnot(is.data.frame(history_check),nrow(history_check)==1L)
 pending_checks<-get_pending_party_skill_checks(1L,"1002")

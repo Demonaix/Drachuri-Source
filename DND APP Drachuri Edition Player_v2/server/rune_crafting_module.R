@@ -33,9 +33,16 @@ runeCraftingServer <- function(id,state,char_rev,bump_char_rev=NULL) {
           span(class="glyph-pill",paste("HP",x$resources$hp$cur%||%0))
         ),
         p("Available ranks: ",paste(unlocked(),collapse=", ")),
-        p("Unlocked families: ",if(length(unlocked_types()))paste(tools::toTitleCase(unlocked_types()),collapse=", ")else"None — find or receive a Glyph Knot.")
+        p("Unlocked families: ",if(length(unlocked_types()))paste(tools::toTitleCase(unlocked_types()),collapse=", ")else"None — find or receive a Glyph Knot."),
+        if(glyph_mastery_level(x)<4L)actionButton(session$ns("level_up_glyph"),paste("Advance to glyph level",glyph_mastery_level(x)+1L),class="btn btn-warning")else tags$strong("Maximum glyph level reached.")
       )
     })
+    observeEvent(input$level_up_glyph,{
+      current<-glyph_mastery_level(current_char());if(current>=4L)return(showNotification("Glyph mastery is already at level 4.",type="message"));session$userData$pending_glyph_level<-current+1L;showModal(modalDialog(title="Advance glyph mastery?",p("Advance permanently from glyph level ",strong(current)," to ",strong(current+1L),"?"),p("This unlocks the next rank of glyph projects and cannot be undone from the player app."),footer=tagList(modalButton("Cancel"),actionButton(session$ns("confirm_glyph_level"),paste("Advance to level",current+1L),class="btn btn-danger")),easyClose=FALSE))
+    },ignoreInit=TRUE)
+    observeEvent(input$confirm_glyph_level,{
+      target<-as.integer(session$userData$pending_glyph_level%||%NA_integer_);x<-validate_character(state$char);current<-glyph_mastery_level(x);if(is.na(target)||target!=current+1L||target>4L){session$userData$pending_glyph_level<-NULL;removeModal();return(showNotification("Glyph level changed. Please review it again.",type="warning"))};x$magic<-x$magic%||%list();x$magic$glyph_level<-target;state$char<-validate_character(x);session$userData$pending_glyph_level<-NULL;removeModal();if(is.function(bump_char_rev))bump_char_rev();showNotification(paste("Glyph mastery advanced to level",target,"."),type="message")
+    },ignoreInit=TRUE)
     output$rule_summary<-renderUI({
       r<-preview_rule();req(r);type<-tolower(input$glyph_type);target_label<-names(inventory_choices())[match(input$target_item%||%"",unname(inventory_choices()))];if(!length(target_label)||is.na(target_label))target_label<-"Choose a weapon"
       item<-function(label,value)tags$li(tags$strong(paste0(label,": ")),value)

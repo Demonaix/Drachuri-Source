@@ -9,13 +9,14 @@ partyHudUI <- function(id) {
 #", root_id, "{
   position: fixed;
   top: 110px;
-  left: 16px;
-  width: calc(var(--party-hud-width, clamp(154px, 13.5vw, 360px)) - 16px);
+  left: max(16px, env(safe-area-inset-left));
+  width: var(--party-hud-width, clamp(154px, 13.5vw, 360px));
   z-index: 10000;
   pointer-events: none;
   max-height: calc(100vh - 125px);
   overflow-y: auto;
   overflow-x: hidden;
+  box-sizing: border-box;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
@@ -31,6 +32,8 @@ partyHudUI <- function(id) {
 
     #", root_id, " .partyhud-label{
       align-self: flex-end;
+      width: calc(100% - 12px);
+      box-sizing: border-box;
       margin-right: 2px;
       padding: 3px 8px;
       border-radius: 999px;
@@ -121,11 +124,11 @@ partyHudUI <- function(id) {
     }
 
     #", root_id, " .party-strip.deck-available{cursor:pointer;transition:transform .14s ease,filter .14s ease;}
-    #", root_id, " .party-strip.deck-available:hover,#", root_id, " .party-strip.deck-available:focus{transform:translateX(4px);filter:brightness(1.06);outline:2px solid rgba(215,185,109,.9);outline-offset:-2px;}
+    #", root_id, " .party-strip.deck-available:hover,#", root_id, " .party-strip.deck-available:focus{transform:translateY(-2px);filter:brightness(1.06);outline:2px solid rgba(215,185,109,.9);outline-offset:-2px;}
 
     @media (min-width:1800px){
       #", root_id, " .partyhud-shell{gap:11px}
-      #", root_id, " .partyhud-label{font-size:14px;padding:5px 12px}
+      #", root_id, " .partyhud-label{font-size:11px;padding:5px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
       #", root_id, " .party-row{width:calc(100% - 8px)}
       #", root_id, " .party-strip{min-height:132px;padding:10px 10px 10px 106px}
       #", root_id, " .party-portrait{left:6px;top:6px;width:91px;height:118px}
@@ -138,7 +141,7 @@ partyHudUI <- function(id) {
       #", root_id, " .party-bar{height:10px}
     }
 
-    .modal-dialog:has(.party-deck-modal){width:min(1120px,94vw)}
+    .modal-dialog:has(.party-deck-modal){position:fixed;left:var(--module-left-gutter,210px);right:var(--module-right-gutter,255px);top:90px;bottom:22px;width:auto;max-width:none;margin:0}.modal-dialog:has(.party-deck-modal) .modal-content{max-height:100%;overflow-y:auto}
     .party-deck-intro{margin:-4px 0 14px;color:#655238}
     .party-deck-section{margin:15px 0 22px}.party-deck-section h4{font-family:Cinzel,Georgia,serif;border-bottom:1px solid rgba(139,103,51,.45);padding-bottom:6px}
     .party-deck-grid{display:flex;flex-wrap:wrap;gap:13px;align-items:flex-start}
@@ -300,7 +303,8 @@ grid-template-columns: 10px 1fr;
 
 partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
                            char_rev = NULL, live_snapshot = NULL,
-                           portrait_base = "assets/player-posters") {
+                           portrait_base = "assets/player-posters",
+                           enemy_portrait_base = "assets/enemy-portraits") {
   moduleServer(id, function(input, output, session) {
     
     `%||%` <- get("%||%", inherits = TRUE)
@@ -323,6 +327,14 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
       )
       result <- unname(portraits[key])
       if (length(result) && !is.na(result)) result else ""
+    }
+    enemy_portrait_file <- function(enemy_type, name="") {
+      key<-tolower(paste(as.character(enemy_type%||%""),as.character(name%||%"")))
+      if(grepl("construct|servitor|sentinel|golem",key))return("construct.png")
+      if(grepl("undead|restless|dead|skeleton|zombie",key))return("undead.png")
+      if(grepl("animal|beast|wolf|bear|hound",key))return("beast.png")
+      if(grepl("sorcer|necroman|cythraul|magic|fae",key))return("sorcerer.png")
+      "humanoid.png"
     }
     
     log_safe <- function(msg, toast = FALSE, flash = "none") {
@@ -717,7 +729,8 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
         status_icons <- extra$status_icons %||% character(0)
         conditions <- strsplit(as.character(row$conditions[1] %||% ""), ",", fixed = TRUE)[[1L]]
         conditions <- conditions[nzchar(conditions)]
-        portrait_file <- if (identical(actor_type, "player")) party_portrait_file(nm) else if(identical(actor_type,"summon"))as.character(row$portrait_asset[1]%||%"summoned-beast.png")else ""
+        portrait_file <- if (identical(actor_type, "player")) party_portrait_file(nm) else if(identical(actor_type,"summon"))as.character(row$portrait_asset[1]%||%"summoned-beast.png")else enemy_portrait_file(row$enemy_type[1]%||%"",nm)
+        portrait_src <- if(identical(actor_type,"enemy"))paste0(sub("/$", "", enemy_portrait_base),"/",portrait_file)else paste0(sub("/$", "", portrait_base), "/", portrait_file)
         portrait_initial <- toupper(substr(trimws(nm), 1L, 1L))
         if (!nzchar(portrait_initial)) portrait_initial <- "?"
         
@@ -732,7 +745,7 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
             tags$div(
               class = paste("party-portrait", if (identical(actor_type, "enemy")) "enemy" else ""),
               if (nzchar(portrait_file)) {
-                tags$img(src = paste0(sub("/$", "", portrait_base), "/", portrait_file), alt = paste(nm, "portrait"))
+                tags$img(src = portrait_src, alt = paste(nm, "portrait"))
               } else {
                 tags$span(class = "party-portrait-initial", portrait_initial)
               }

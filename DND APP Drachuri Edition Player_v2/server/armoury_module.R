@@ -19,6 +19,7 @@ armouryTabUI <- function(id) {
         pfx, ".item-head{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;}\n",
         pfx, ".item-title{font-size:18px;font-weight:700;}\n",
         pfx, ".item-sub{font-size:13px;opacity:.9;line-height:1.3;margin-top:2px;}\n",
+        pfx, ".enchantment-status{display:inline-block;margin-top:8px;padding:5px 9px;border:1px solid #b58a35;border-radius:999px;background:#f4e4b6;color:#5b3b13;font-size:12px;font-weight:800;}\n",
         pfx, ".item-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;}\n",
         pfx, ".pill{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;border:1px solid rgba(150,120,70,0.35);background:rgba(255,255,245,0.8);font-size:12px;font-weight:700;}\n",
         pfx, ".pill-row{display:flex;gap:8px;flex-wrap:wrap;}\n",
@@ -267,7 +268,7 @@ armouryTabServer <- function(id, state, restoring, add_log, char_rev) {
       glyph_until <- suppressWarnings(as.integer(meta$glyph_active_until_day %||% NA_integer_))
       current_day <- suppressWarnings(as.integer(validate_character(state$char)$meta$day %||% 1L))
       glyph_active <- !is.na(glyph_until) && current_day <= glyph_until && nzchar(as.character(meta$glyph_damage %||% ""))
-      glyph_days_left<-if(!is.na(glyph_until))max(0L,glyph_until-current_day)else NA_integer_
+      glyph_days_left<-if(!is.na(glyph_until))max(0L,glyph_until-current_day+1L)else NA_integer_
       glyph_rank<-as.character(meta$glyph_rank%||%"Minor")
       glyph_line <- if (glyph_active) paste0(" • ✧ ",glyph_rank," ",meta$glyph_name%||%"Enhancement",": +",meta$glyph_damage," ",meta$glyph_damage_type," • ",glyph_days_left," day(s) remaining (through day ",glyph_until,")") else if (!is.na(glyph_until)) paste0(" • ✧ ",glyph_rank," enhancement DEPLETED — replenish in Glyphs") else ""
       displayed_damage2<-if(glyph_active)as.character(meta$glyph_damage)else as.character(meta$damage2)
@@ -336,7 +337,9 @@ armouryTabServer <- function(id, state, restoring, add_log, char_rev) {
               ),
               if (isTRUE(w$equipped[[1]]) && !isTRUE(w$in_bag[[1]])) tags$span(" • EQUIPPED"),
               if (nzchar(w$desc[[1]] %||% "")) tagList(tags$br(), w$desc[[1]])
-            )
+            ),
+            if(glyph_active)div(class="enchantment-status",paste0("✧ Enchantment: ",glyph_days_left," campaign day",if(glyph_days_left==1L)""else"s"," remaining · expires after day ",glyph_until))
+            else if(!is.na(glyph_until))div(class="enchantment-status","✧ Enchantment depleted — replenish it in Glyphs")
           ),
           div(
             class = "item-actions",
@@ -352,6 +355,7 @@ armouryTabServer <- function(id, state, restoring, add_log, char_rev) {
     armor_card <- function(a, mode = "active") {
       p <- paste0("itm_", a$id, "_")
       meta <- armor_meta_defaults_local(a$meta[[1]])
+      if (identical(meta$equipment_slot,"body") && grepl("helm|helmet|hood|veil|circlet|crown|head",tolower(as.character(a$name[[1]]%||%"")))) meta$equipment_slot <- "head"
       this_ac <- armor_item_ac(a)
       
       if (isTRUE(a$edit)) {
@@ -396,6 +400,7 @@ armouryTabServer <- function(id, state, restoring, add_log, char_rev) {
                 "AC: ", round(this_ac, 0),
                 " • Base AC: ", meta$base_ac,
                 " • Type: ", meta$type,
+                " • Slot: ", tools::toTitleCase(meta$equipment_slot),
                 if (nzchar(as.character(meta$material %||% ""))) paste0(" • ", meta$material, " / ", meta$build_quality %||% "Unrated") else "",
                 " • Qty: ", a$qty[[1]] %||% 1,
                 " • ", a$weight[[1]] %||% 0, " lbs",
@@ -515,10 +520,12 @@ armouryTabServer <- function(id, state, restoring, add_log, char_rev) {
             this_type <- as.character(r$type[[1]] %||% "")
             
             if (identical(this_type, "armor")) {
-              same_type_idx <- which(d$type == "armor")
-              if (length(same_type_idx)) {
-                d$equipped[same_type_idx] <- FALSE
-              }
+              meta <- armor_meta_defaults_local(r$meta[[1]])
+              if (identical(meta$equipment_slot,"body") && grepl("helm|helmet|hood|veil|circlet|crown|head",tolower(as.character(r$name[[1]]%||%"")))) meta$equipment_slot <- "head"
+              r$meta <- list(meta); d$meta[idx] <- list(meta)
+              slots <- vapply(d$meta,function(m)armor_meta_defaults_local(m)$equipment_slot,character(1))
+              same_type_idx <- which(d$type == "armor" & slots == meta$equipment_slot)
+              if (length(same_type_idx)) d$equipped[same_type_idx] <- FALSE
               d$equipped[idx] <- TRUE
               d$in_bag[idx] <- FALSE
               write_inventory(d)

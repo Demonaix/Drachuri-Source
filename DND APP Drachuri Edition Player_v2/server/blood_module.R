@@ -137,7 +137,7 @@ bloodTabUI <- function(id) {
         uiOutput(ns("blood_donation_summary")),
         fluidRow(
           column(6, numericInput(ns("blood_pints"), "Pints to bottle", value = 1, min = 1, max = 8, step = 1)),
-          column(6, br(), actionButton(ns("add_blood"), "Bottle Blood", class = "btn btn-danger"))
+          column(6, uiOutput(ns("bottle_blood_action")))
         ),
         tags$small("Stored blood is a normal inventory item and can be traded to another player.")
       ),
@@ -186,6 +186,7 @@ bloodTabServer <- function(
     char_rev = NULL
 ) {
   moduleServer(id, function(input, output, session) {
+    ns <- session$ns
     
     `%||%` <- get("%||%", inherits = TRUE)
     
@@ -484,6 +485,20 @@ bloodTabServer <- function(
       )
     })
 
+    output$bottle_blood_action <- renderUI({
+      x <- ensure_blood_state(state$char)
+      pints <- suppressWarnings(as.integer(input$blood_pints %||% 1L))
+      if (is.na(pints) || pints < 1L) pints <- 1L
+      cost <- blood_donor_sindre_cost_per_pint(x) * pints
+      current <- max(0, as.numeric(x$resources$sindre$cur %||% 0))
+      affordable <- current >= cost
+      tags$div(
+        style="padding-top:25px;",
+        actionButton(ns("add_blood"), "Bottle Blood", class="btn btn-danger", disabled=if(affordable)NULL else "disabled"),
+        if (!affordable) tags$p(class="help-block",paste0("Requires ",cost," current Sindre; you have ",current,"."))
+      )
+    })
+
     observeEvent(input$add_blood, {
       if (isTRUE(restoring())) return()
       x <- ensure_blood_state(state$char)
@@ -773,53 +788,27 @@ bloodTabServer <- function(
             if (is.na(cur)) cur <- 0
             if (is.na(tot)) tot <- 0
             
-            heart_result <- consume_heart_sindre(
-              cur, tot, x$resources$sindre$temp, sindre,
-              heart_eater = isTRUE(is_heart_eater())
-            )
-            x$resources$sindre$cur <- heart_result$current
-            x$resources$sindre$temp <- heart_result$temporary
-            
-            # reduce heart count
-            if (hearts <= 1) {
-              df <- df[-idx, , drop = FALSE]
-            } else {
-              df$qty[idx] <- hearts - 1
-            }
-            
-            # addiction: one heart = 10 pint equivalent
-            a <- x$resources$blood$addiction
-            a$current_day_intake <- as.numeric(a$current_day_intake %||% 0) + 10
-            x$resources$blood$addiction <- a
-            
-            x$inventory$items <- inventory_normalize(df)
-            x$status<-x$status%||%list();x$status$needs_hours<-x$status$needs_hours%||%list();x$status$needs_hours$blood<-0
-            write_core(x)
-            record_blood_consumption(state$char_id, state$active_session_id, x$meta$day,
-                                     "heart", source, 1, sindre)
-            
-            log_safe(
-              paste0(
-                "🫀 Consumed heart from ", source,
-                ": +", sindre, " Sindre",
-                if (isTRUE(is_heart_eater())) {
-                  paste0(" (fully restored; +", heart_result$temporary_gained, " temporary Sindre)")
-                } else if (heart_result$temporary_gained > 0) {
-                  paste0(" (+", heart_result$temporary_gained, " temporary Sindre)")
-                } else "",
-                " → ", x$resources$sindre$cur, "/", tot
-              ),
-              TRUE,
-              "gold"
-            )
-            
-            log_safe("🧠 Heart consumption surges your addiction (+10 intake).", TRUE)
+            preview<-consume_heart_sindre(cur,tot,x$resources$sindre$temp,sindre,heart_eater=isTRUE(is_heart_eater()))
+            session$userData$pending_heart_use<-list(id=this_id,source=source,sindre=sindre)
+            showModal(modalDialog(title="Consume this heart?",p("This permanently removes one heart from your inventory."),tags$ul(tags$li(strong(source)),tags$li("Restores ",strong(sindre," Sindre")," (subject to your normal and temporary limits)."),tags$li("Counts as ",strong("10 pints")," toward today's blood intake and resets the blood timer."),if(preview$temporary_gained>0)tags$li("Expected temporary Sindre: ",strong(preview$temporary_gained))),footer=tagList(modalButton("Cancel"),actionButton(session$ns("confirm_heart_use"),"Consume Heart",class="btn btn-danger")),easyClose=FALSE))
           }, ignoreInit = TRUE)
         })
       }
       
       heart_obs_ids(unique(c(heart_obs_ids(), new_ids)))
     }, ignoreInit = FALSE)
+
+    observeEvent(input$confirm_heart_use,{
+      pending<-session$userData$pending_heart_use;if(is.null(pending)||isTRUE(restoring()))return()
+      x<-ensure_blood_state(state$char);df<-inventory_normalize(x$inventory$items);idx<-which(df$id==pending$id&biological_item_kinds(df)=="heart")
+      if(length(idx)!=1L){session$userData$pending_heart_use<-NULL;removeModal();return(showNotification("That heart is no longer available.",type="error"))}
+      hearts<-as.numeric(df$qty[[idx]]%||%0);meta<-df$meta[[idx]]%||%list();sindre<-as.numeric(meta$sindre_per_unit%||%pending$sindre%||%0);source<-as.character(meta$source%||%pending$source%||%"Unknown source")
+      cur<-as.integer(x$resources$sindre$cur%||%0L);tot<-as.integer(x$resources$sindre$total%||%0L);result<-consume_heart_sindre(cur,tot,x$resources$sindre$temp,sindre,heart_eater=isTRUE(is_heart_eater()))
+      x$resources$sindre$cur<-result$current;x$resources$sindre$temp<-result$temporary;if(hearts<=1)df<-df[-idx,,drop=FALSE]else df$qty[idx]<-hearts-1
+      a<-x$resources$blood$addiction;a$current_day_intake<-as.numeric(a$current_day_intake%||%0)+10;x$resources$blood$addiction<-a;x$inventory$items<-inventory_normalize(df);x$status<-x$status%||%list();x$status$needs_hours<-x$status$needs_hours%||%list();x$status$needs_hours$blood<-0
+      write_core(x);record_blood_consumption(state$char_id,state$active_session_id,x$meta$day,"heart",source,1,sindre);session$userData$pending_heart_use<-NULL;removeModal()
+      log_safe(paste0("🫀 Consumed heart from ",source,": +",sindre," Sindre",if(result$temporary_gained>0)paste0(" (+",result$temporary_gained," temporary Sindre)")else""," → ",result$current,"/",tot,". Blood intake +10."),TRUE,"gold")
+    },ignoreInit=TRUE)
     
     # ------------------------------------------------------------
     # Addiction UI

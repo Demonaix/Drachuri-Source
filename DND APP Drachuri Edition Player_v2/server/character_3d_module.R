@@ -50,6 +50,21 @@ character3DTabUI <- function(id) {
       #%s .marker-aura{width:90px;height:112px;border-radius:50%%;position:relative;background:radial-gradient(ellipse,var(--aura-core) 0%%,var(--aura-fade) 34%%,transparent 72%%);filter:drop-shadow(0 0 10px var(--aura-core))}
       #%s .marker-aura.beacon{border:4px solid var(--aura-core);box-shadow:0 0 22px var(--aura-core),inset 0 0 18px var(--aura-core)} #%s .marker-aura.subtle{opacity:.48;filter:drop-shadow(0 0 5px var(--aura-core))}
     ", ns("marker_preview"),ns("marker_preview"),ns("marker_preview"),ns("marker_preview"),ns("marker_preview"),ns("marker_preview"),ns("marker_preview"),ns("marker_preview"),ns("marker_preview"),ns("marker_preview")))),
+    tags$script(HTML(sprintf("(function(){
+      function value(id,fallback){var el=document.getElementById(id);return el&&el.value?el.value:fallback;}
+      function syncMarkerPreview(){
+        var root=document.getElementById('%s');if(!root)return;
+        var token=root.querySelector('.marker-token'),aura=root.querySelector('.marker-aura');
+        if(token){token.style.background=value('%s','#4b91b5');token.className='marker-token '+value('%s','circle');var symbol=token.querySelector('span'),raw=value('%s','').trim();if(symbol)symbol.textContent=raw.substring(0,2)||symbol.textContent;}
+        if(aura){var colour=value('%s','#77ddff');aura.style.setProperty('--aura-core',colour);aura.style.setProperty('--aura-fade',colour+'66');aura.className='marker-aura '+value('%s','wisps');}
+      }
+      Shiny.addCustomMessageHandler('%s',function(x){
+        var root=document.getElementById('%s');if(!root)return;var token=root.querySelector('.marker-token'),aura=root.querySelector('.marker-aura');
+        if(token){token.style.background=x.tokenColour;token.className='marker-token '+x.shape;var symbol=token.querySelector('span');if(symbol)symbol.textContent=x.symbol;}
+        if(aura){aura.style.setProperty('--aura-core',x.auraColour);aura.style.setProperty('--aura-fade',x.auraColour+'66');aura.className='marker-aura '+x.aura;}
+      });
+      document.addEventListener('input',syncMarkerPreview,true);document.addEventListener('change',syncMarkerPreview,true);setInterval(syncMarkerPreview,250);
+    })();",ns("marker_preview"),ns("marker_2d_color"),ns("marker_2d_shape"),ns("marker_2d_symbol"),ns("marker_3d_color"),ns("marker_3d_style"),ns("marker_preview_update"),ns("marker_preview")))),
     div(
       class = "magic-card",
       style = "margin-bottom:12px;",
@@ -236,6 +251,10 @@ character3DTabServer <- function(id, state, restoring, add_log, char_rev = NULL)
         tags$div(class="marker-demo", tags$div(class=paste("marker-token",shape),style=paste0("background:",token_colour,";"),tags$span(symbol)), tags$span("2D token")),
         tags$div(class="marker-demo", tags$div(class=paste("marker-aura",aura),style=paste0("--aura-core:",aura_colour,";--aura-fade:",aura_colour,"66;")), tags$span("3D aura"))
       )
+    })
+    observe({
+      name<-as.character(state$char$meta$name%||%"?");symbol<-substr(trimws(as.character(input$marker_2d_symbol%||%"")),1L,2L);if(!nzchar(symbol))symbol<-substr(toupper(name),1L,1L)
+      session$sendCustomMessage(ns("marker_preview_update"),list(tokenColour=as.character(input$marker_2d_color%||%"#4b91b5"),shape=as.character(input$marker_2d_shape%||%"circle"),symbol=symbol,auraColour=as.character(input$marker_3d_color%||%"#77ddff"),aura=as.character(input$marker_3d_style%||%"wisps")))
     })
     
     send_preview <- function(

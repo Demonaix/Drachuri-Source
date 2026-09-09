@@ -19,6 +19,7 @@ source("server/camp_module.R")
 source("server/landing_module.R")
 source("server/private_notes_module.R")
 source("server/merchant_module.R")
+source("server/chest_module.R")
 source("server/story_module.R")
 source("server/dice_module.R")
 source("server/magic_module.R")
@@ -97,6 +98,7 @@ document.addEventListener('click', function(e){
   document.addEventListener('mouseover',function(event){
     var card=event.target.closest&&event.target.closest(selector);
     if(!card||card===lastCard||card.contains(event.relatedTarget))return;
+    if(!window.drachuriCardHoverSoundEnabled||!window.drachuriCardHoverSoundEnabled())return;
     var now=Date.now();if(now-lastPlayed<90)return;
     var audio=document.getElementById('drachuri-card-hover-audio');if(!audio)return;
     lastCard=card;lastPlayed=now;audio.pause();audio.currentTime=0;audio.volume=.10;
@@ -276,14 +278,15 @@ body.camp { background: #000 !important; }
 body.parchment {
   background: #000;
   --party-hud-width: clamp(154px, 13.5vw, 360px);
-  --module-left-gutter: calc(var(--party-hud-width) + 8px);
+  --module-left-gutter: calc(var(--party-hud-width) + 48px);
   --module-right-gutter: clamp(184px, 18vw, 255px);
 }
 
 /* -----------------------------
    CAMP TAB
    ----------------------------- */
-body.camp #app-panel .tab-content{
+body.camp #app-panel > .tab-content,
+body.camp #app-panel > .tabbable > .tab-content{
   height: 100vh;
   overflow: hidden;
   padding: 0 !important;
@@ -292,13 +295,15 @@ body.camp #app-panel .tab-content{
 /* -----------------------------
    NON-CAMP TABS
    ----------------------------- */
-body.parchment #app-panel .tab-content{
+body.parchment #app-panel > .tab-content,
+body.parchment #app-panel > .tabbable > .tab-content{
   height: 100vh;
   overflow: hidden;
   padding: 0 !important;
 }
 
-body.parchment #app-panel .tab-content > .tab-pane.active{
+body.parchment #app-panel > .tab-content > .tab-pane.active,
+body.parchment #app-panel > .tabbable > .tab-content > .tab-pane.active{
   position: absolute;
   left: var(--module-left-gutter);
   right: var(--module-right-gutter);
@@ -325,12 +330,14 @@ body.parchment #app-panel .tab-content > .tab-pane.active{
 }
 
 @media (min-width: 1800px){
-  body.parchment #app-panel .tab-content > .tab-pane.active{
+  body.parchment #app-panel > .tab-content > .tab-pane.active,
+  body.parchment #app-panel > .tabbable > .tab-content > .tab-pane.active{
     max-width:none;
   }
 }
 
-body.parchment #app-panel .tab-content > .tab-pane.active .container-fluid{
+body.parchment #app-panel > .tab-content > .tab-pane.active .container-fluid,
+body.parchment #app-panel > .tabbable > .tab-content > .tab-pane.active .container-fluid{
   padding-left: 10px !important;
   padding-right: 10px !important;
 }
@@ -724,6 +731,7 @@ window.showToast = function(message, timeoutMs = 2500) {
  partyHudUI("partyhud"),
  privateNotesUI("notes"),
  merchantUI("merchants"),
+ chestUI("chests"),
  storyPlayerUI("story"),
 
   # Landing overlay

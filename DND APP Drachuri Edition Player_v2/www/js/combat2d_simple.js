@@ -204,6 +204,15 @@ function injectCombat2DCSS() {
       touch-action:pan-x pan-y;
     }
 
+    body.combat-document-fullscreen .combat-2d-canvas{
+      cursor:grab;
+      overscroll-behavior:contain;
+    }
+    body.combat-document-fullscreen .combat-2d-canvas.is-panning{cursor:grabbing;user-select:none;}
+    body.combat-document-fullscreen .combat-2d-grid{
+      margin:240px 300px 180px 250px;
+    }
+
     .combat-2d-grid{
       --combat-cell-size:42px;
       position:relative;
@@ -847,6 +856,7 @@ function setupCombat2DResizeHandler() {
   if (state.resizeHandlerAttached) return;
 
   window.addEventListener("resize", () => {
+    if (document.body.classList.contains("combat-document-fullscreen")) fitFullscreen2DGrid();
     // CSS grid handles most resizing. This is mostly for fullscreen changes.
     setTimeout(() => scrollActiveTokenIntoView2D(), 100);
   });
@@ -858,9 +868,53 @@ function setupCombat2DResizeHandler() {
   state.resizeHandlerAttached = true;
 }
 
+function fitFullscreen2DGrid() {
+  const state = window.combat2dState;
+  const grid = state.containerId ? document.getElementById(state.containerId)?.querySelector(".combat-2d-grid") : null;
+  if (!grid) return;
+  const cols = Math.max(1, Number(grid.dataset.cols || 1));
+  const rows = Math.max(1, Number(grid.dataset.rows || 1));
+  const cellSize = Math.max(30, Math.min(96,
+    Math.floor((window.innerWidth - 36) / cols),
+    Math.floor((window.innerHeight - 120) / rows)
+  ));
+  grid.style.setProperty("--combat-cell-size", `${cellSize}px`);
+  grid.style.gridTemplateColumns = `repeat(${cols}, ${cellSize}px)`;
+  grid.style.gridTemplateRows = `repeat(${rows}, ${cellSize}px)`;
+  renderGlyphZones2D(state.currentZones);
+}
+
+function setupFullscreenMapPanning() {
+  if (window.combat2dState.panHandlerAttached) return;
+  let drag = null;
+  document.addEventListener("mousedown", (event) => {
+    if (!document.body.classList.contains("combat-document-fullscreen")) return;
+    const canvas = event.target.closest(".combat-2d-canvas");
+    if (!canvas || ![1, 2].includes(event.button)) return;
+    event.preventDefault();
+    drag = {canvas, x:event.clientX, y:event.clientY, left:canvas.scrollLeft, top:canvas.scrollTop};
+    canvas.classList.add("is-panning");
+  });
+  document.addEventListener("mousemove", (event) => {
+    if (!drag) return;
+    drag.canvas.scrollLeft = drag.left - (event.clientX - drag.x);
+    drag.canvas.scrollTop = drag.top - (event.clientY - drag.y);
+  });
+  document.addEventListener("mouseup", () => {
+    if (!drag) return;
+    drag.canvas.classList.remove("is-panning");
+    drag = null;
+  });
+  document.addEventListener("contextmenu", (event) => {
+    if (document.body.classList.contains("combat-document-fullscreen") && event.target.closest(".combat-2d-canvas")) event.preventDefault();
+  });
+  window.combat2dState.panHandlerAttached = true;
+}
+
 function setupFullscreen2DHandler() {
   const state = window.combat2dState;
   if (state.fullscreenHandlerAttached) return;
+  setupFullscreenMapPanning();
 
   function leaveMapFullscreen() {
     document.body.classList.remove("combat-document-fullscreen");
@@ -941,6 +995,14 @@ function setupFullscreen2DHandler() {
         document.body.appendChild(mapCard);
         document.body.classList.add("combat-document-fullscreen");
         btn.textContent = "Exit Fullscreen Map";
+        fitFullscreen2DGrid();
+        const canvas = shell.querySelector(".combat-2d-canvas");
+        if (canvas) setTimeout(() => {
+          canvas.scrollLeft = Math.max(0,(canvas.scrollWidth-canvas.clientWidth)/2);
+          canvas.scrollTop = Math.max(0,(canvas.scrollHeight-canvas.clientHeight)/2);
+        },40);
+        setTimeout(() => window.dispatchEvent(new CustomEvent("drachuri-combat3d-fit")), 90);
+        setTimeout(() => window.dispatchEvent(new CustomEvent("drachuri-combat3d-fit")), 320);
       } else {
         leaveMapFullscreen();
       }

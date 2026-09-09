@@ -29,7 +29,7 @@ CLASS_FEATURE_INTEGRATION <- list(
     status = "working", note = "Survival Expertise is derived automatically and Bloodthirsty is unlocked."
   ),
   "Hanianol Sorcerer::1::bloodthirsty" = list(
-    status = "partial", note = "The bite attack works in combat; recording blood intake and Sindre restoration remains manual."
+    status = "working", note = "A successful bite records half a pint, satisfies blood-addiction intake, and restores 5 Sindre at ordinary blood potency. Heart Eaters also recover health."
   ),
   "Na'Haran Sorcerer::1::desert_wild_magic" = list(
     status = "partial", note = "The wild-magic casting system works; the reduced rock and mineral difficulty is not yet automatic."
@@ -495,7 +495,7 @@ CLASS_FEATURE_MECHANICS <- list(
       action_type = "action",
       range_ft = 5L,
       damage = list(mode = "dice_plus_modifier", value = "1d8", stat = "str", type = "piercing"),
-      note = "Counts as drinking half a pint of blood. Blood restoration remains narrative/DM controlled."
+      note = "Counts as drinking half a pint of blood, restores 5 Sindre at ordinary blood potency, and counts toward blood-addiction intake. Heart Eaters also recover health."
     )
   ),
   "Na'Haran Sorcerer::1::water_channeler" = list(

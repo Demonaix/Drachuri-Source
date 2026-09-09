@@ -310,11 +310,13 @@ controlEncounterSetupServer <- function(
     generator_pool_catalogue <- function() {
       path<-file.path("control_app","data","npc_pools.rds")
       saved<-if(file.exists(path))tryCatch(readRDS(path),error=function(e)list())else list()
-      if(exists("merge_npc_pool_catalogue",mode="function"))merge_npc_pool_catalogue(saved)else if(exists("npc_default_pool_catalogue",mode="function"))c(npc_default_pool_catalogue(),saved)else saved
+      pools<-if(exists("merge_npc_pool_catalogue",mode="function"))merge_npc_pool_catalogue(saved)else if(exists("npc_default_pool_catalogue",mode="function"))c(npc_default_pool_catalogue(),saved)else saved
+      Filter(function(x)!identical(as.character(x$id%||%""),"custom"),pools)
     }
 
+    pool_choice_signature<-reactiveVal("")
     observe({
-      invalidateLater(1500,session)
+      invalidateLater(5000,session)
       pools <- generator_pool_catalogue()
       if (!length(pools)) {
         updateSelectInput(session,"generator_pool",choices=c("No NPC pools available"=""))
@@ -322,6 +324,9 @@ controlEncounterSetupServer <- function(
       }
       ids <- vapply(pools,function(x)as.character(x$id%||%""),character(1))
       labels <- vapply(pools,function(x)as.character(x$name%||%x$id%||%"NPC pool"),character(1))
+      signature<-paste(ids,labels,collapse="|")
+      if(identical(signature,pool_choice_signature()))return()
+      pool_choice_signature(signature)
       selected <- as.character(input$generator_pool%||%"")
       if (!selected%in%ids) selected<-ids[[1L]]
       updateSelectInput(session,"generator_pool",choices=stats::setNames(ids,labels),selected=selected)
@@ -413,20 +418,13 @@ controlEncounterSetupServer <- function(
       if(length(match))match[[1L]]else NULL
     }
 
-    generator_templates <- function(pool_id) {
-      df<-npc_templates_rv();if(!is.data.frame(df)||!nrow(df)||!"enemy_type"%in%names(df))return(data.frame())
-      pool<-generator_pool_info(pool_id);valid<-tolower(trimws(c(as.character(pool_id%||%""),as.character(pool$name%||%""),as.character(pool$base_type%||%""))))
-      df[tolower(trimws(as.character(df$enemy_type)))%in%valid,,drop=FALSE]
-    }
-
     build_generated_draft <- function() {
       players<-current_players();if("is_active"%in%names(players))players<-players[is.na(players$is_active)|as.logical(players$is_active),,drop=FALSE]
       pool_id<-as.character(input$generator_pool%||%"");pool<-generator_pool_info(pool_id)
       if(!nzchar(pool_id)||is.null(pool))stop("Choose an NPC pool.")
-      templates<-generator_templates(pool_id)
-      if(!nrow(templates))stop(paste0("No saved NPC templates belong to ",pool$name%||%pool_id,". Save at least one template from that pool first."))
       seed<-suppressWarnings(as.integer(input$generator_seed%||%1L));if(is.na(seed))seed<-1L
       danger<-as.character(input$generator_danger%||%"standard")
+      templates<-generate_encounter_pool_candidates(pool,18L,seed)
       draft<-compose_encounter_draft(players,templates,danger,seed)
       dims<-encounter_draft_dimensions(draft$party_size,nrow(draft$enemies));draft$width<-unname(dims[["width"]]);draft$height<-unname(dims[["height"]]);draft$terrain<-as.character(input$generator_terrain%||%"forest");draft$pool_id<-pool_id;draft$pool_name<-as.character(pool$name%||%pool_id);draft$players<-players;draft$signature<-paste(current_session_id(),pool_id,danger,seed,draft$terrain,sep="|");draft
     }

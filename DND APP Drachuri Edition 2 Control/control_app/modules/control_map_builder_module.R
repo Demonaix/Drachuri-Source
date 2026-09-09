@@ -15,19 +15,19 @@ generate_control_map_tiles <- function(map_id,width,height,preset="forest",seed=
   paint<-function(idx,terrain,light=NULL){tiles$terrain[idx]<<-terrain;props<-switch(terrain,
     wall=list(1,TRUE,TRUE),ravine=list(1,TRUE,FALSE),water=list(3,TRUE,FALSE),forest=list(2,FALSE,TRUE),swamp=list(2,FALSE,FALSE),sand=list(1.5,FALSE,FALSE),
     table=list(1,TRUE,FALSE),bar=list(1,TRUE,FALSE),crate=list(1,TRUE,FALSE),barrel=list(1,TRUE,FALSE),shelf=list(1,TRUE,TRUE),
-    chair=list(2,FALSE,FALSE),bench=list(2,FALSE,FALSE),bed=list(2,FALSE,FALSE),rubble=list(2,FALSE,FALSE),campfire=list(2,FALSE,FALSE),
+    chair=list(2,FALSE,FALSE),bench=list(2,FALSE,FALSE),bed=list(2,FALSE,FALSE),rubble=list(2,FALSE,FALSE),campfire=list(2,FALSE,FALSE),torch=list(1,FALSE,FALSE),brazier=list(2,FALSE,FALSE),
     list(1,FALSE,FALSE));tiles$move_cost[idx]<<-props[[1]];tiles$blocks_movement[idx]<<-props[[2]];tiles$blocks_vision[idx]<<-props[[3]];if(!is.null(light))tiles$light[idx]<<-light}
   perimeter<-function(){paint(at(c(1L,width),NULL)|at(NULL,c(1L,height)),"wall")}
   door<-function(x=ceiling(width/2),y=1L){paint(at(x,y),"stone",if(indoor)"dim"else"full")}
   sample_open<-function(prob){which(stats::runif(nrow(tiles))<prob & tiles$x>1L & tiles$x<width & tiles$y>1L & tiles$y<height & !as.logical(tiles$blocks_movement))}
   if(preset=="tavern"){
-    perimeter();door();if(width>=7L&&height>=6L){bar_y<-height-2L;paint(at(seq(max(3L,ceiling(width*.55)),width-2L),bar_y),"bar");for(x in seq(3L,width-2L,by=3L))for(y in seq(3L,max(3L,height-3L),by=3L))if(stats::runif(1)<density/100){paint(at(x,y),"table");if(x+1L<width)paint(at(x+1L,y),"chair")}}
+    perimeter();door();if(width>=7L&&height>=6L){bar_y<-height-2L;paint(at(seq(max(3L,ceiling(width*.55)),width-2L),bar_y),"bar");for(x in seq(3L,width-2L,by=3L))for(y in seq(3L,max(3L,height-3L),by=3L))if(stats::runif(1)<density/100){paint(at(x,y),"table");if(x+1L<width)paint(at(x+1L,y),"chair")};paint(at(2L,unique(pmax(2L,pmin(height-1L,c(3L,height-2L))))),"torch")}
   }else if(preset=="prison"){
     perimeter();door();if(width>=6L){for(x in seq(4L,width-2L,by=4L)){paint(at(x,seq(2L,height-1L)),"wall");for(y in unique(pmax(2L,pmin(height-1L,c(ceiling(height/3),ceiling(2*height/3))))))paint(at(x,y),"stone","dim");if(x>2L)paint(at(x-1L,height-1L),"bed")}}
   }else if(preset=="forest"){
     paint(sample_open(density/100),"forest");road_x<-pmax(1L,pmin(width,round(width/2+sin(seq_len(height)/2)*pmax(1,width/8))));for(y in seq_len(height))paint(at(unique(pmax(1L,pmin(width,c(road_x[y]-1L,road_x[y])))),y),"road")
   }else if(preset=="dungeon"){
-    perimeter();door();if(width>=7L)for(x in seq(5L,width-2L,by=5L)){paint(at(x,seq(2L,height-1L)),"wall");paint(at(x,max(2L,min(height-1L,sample(2:max(2L,height-1L),1)))),"stone","dim")};if(height>=7L)for(y in seq(5L,height-2L,by=5L)){paint(at(seq(2L,width-1L),y),"wall");paint(at(max(2L,min(width-1L,sample(2:max(2L,width-1L),1))),y),"stone","dim")};paint(sample_open(density/500),"barrel")
+    perimeter();door();if(width>=7L)for(x in seq(5L,width-2L,by=5L)){paint(at(x,seq(2L,height-1L)),"wall");paint(at(x,max(2L,min(height-1L,sample(2:max(2L,height-1L),1)))),"stone","dim")};if(height>=7L)for(y in seq(5L,height-2L,by=5L)){paint(at(seq(2L,width-1L),y),"wall");paint(at(max(2L,min(width-1L,sample(2:max(2L,width-1L),1))),y),"stone","dim")};paint(sample_open(density/500),"barrel");paint(sample_open(density/700),"brazier")
   }else if(preset=="cave"){
     paint(sample_open(density/130),"wall");paint(sample_open(density/300),"rubble");if(width>=8L&&height>=8L)paint(at(sample(2:(width-1L),max(1L,round(width/8))),sample(2:(height-1L),max(1L,round(height/8)))),"ravine")
   }else if(preset=="swamp"){
@@ -225,7 +225,7 @@ controlMapBuilderUI <- function(id) {
                 "Terrain",
                 choices = list(
                   "Ground"=c("Grass"="grass","Sand"="sand","Stone"="stone","Forest"="forest","Swamp"="swamp","Water"="water","Wall"="wall","Ravine"="ravine","Road"="road","Mandred convergence"="mandred_convergence"),
-                  "Common clutter"=c("Table"="table","Bar counter"="bar","Chair"="chair","Bench"="bench","Crate"="crate","Barrel"="barrel","Bed"="bed","Shelf"="shelf","Rubble"="rubble","Campfire"="campfire")
+                  "Common clutter"=c("Table"="table","Bar counter"="bar","Chair"="chair","Bench"="bench","Crate"="crate","Barrel"="barrel","Bed"="bed","Shelf"="shelf","Rubble"="rubble","Campfire"="campfire","Torch"="torch","Brazier"="brazier")
                 ),
                 selected = "grass",
                 width = "150px"
@@ -295,7 +295,7 @@ controlMapBuilderServer <- function(id, ctrl, session_tbl = NULL, players_tbl = 
     observeEvent(input$paint_terrain, {
       defaults <- list(
         ravine=c(1,1,0), table=c(1,1,0), bar=c(1,1,0), crate=c(1,1,0), barrel=c(1,1,0), shelf=c(1,1,1),
-        chair=c(2,0,0), bench=c(2,0,0), bed=c(2,0,0), rubble=c(2,0,0), campfire=c(2,0,0)
+        chair=c(2,0,0), bench=c(2,0,0), bed=c(2,0,0), rubble=c(2,0,0), campfire=c(2,0,0), torch=c(1,0,0), brazier=c(2,0,0)
       )
       d <- defaults[[as.character(input$paint_terrain %||% "")]]
       if (is.null(d)) return()

@@ -314,9 +314,8 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         damage <- max(0L,as.integer(damage))
         if (target_type=="player") damage_player_in_encounter(current_encounter_id(),target_id,damage)
         else damage_encounter_enemy(current_encounter_id(),target_id,damage)
-        addiction <- (char$resources$blood%||%list())$addiction%||%list()
-        addiction$current_day_intake <- as.numeric(addiction$current_day_intake%||%0)+0.5
-        char$resources$blood$addiction <- addiction
+        blood_result <- consume_blood_effects(char,0.5,10,isTRUE(is_heart_eater()))
+        char <- blood_result$character
         core$state$char <- char
       }
       log_game_event(current_encounter_id(),"bloodlust_bite","player",caster_id,target_id,
@@ -601,17 +600,19 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       passive<-if(nrow(enemies))max(vapply(as.character(enemies$actor_id),enemy_passive_perception,integer(1)),na.rm=TRUE)else 10L
       list(dc=combat_hide_dc(passive,terrain,light,adjacent_wall,any(los)),terrain=terrain,light=light,adjacent_wall=adjacent_wall,enemy_has_los=any(los),passive=passive)
     }
-    attempt_hide <- function(action_type=NULL,label="Hide",movement_recheck=FALSE,x=NULL,y=NULL) {
+    attempt_hide <- function(action_type=NULL,label="Hide",movement_recheck=FALSE,x=NULL,y=NULL,natural_roll=NULL) {
       if(!isTRUE(movement_recheck)&&!isTRUE(is_players_turn()))return(log_safe("Hide can only be attempted on your turn."))
+      if(isTRUE(session$rootScope()$input$manual_roll_mode_enabled)&&is.null(natural_roll)){session$userData$pending_manual_hide<-list(action_type=action_type,label=label,movement_recheck=movement_recheck,x=x,y=y);showModal(modalDialog(title=if(movement_recheck)"Recheck Stealth"else label,p("Roll one d20 for your Stealth check."),numericInput(session$ns("manual_hide_roll"),"Natural d20 result",10,min=1,max=20,step=1),footer=tagList(modalButton("Cancel"),actionButton(session$ns("confirm_manual_hide"),"Use Result",class="btn btn-primary")),easyClose=FALSE));return(invisible(FALSE))}
       context<-hide_context(x,y);if(is.null(context))return(log_safe("Your position could not be assessed for hiding."))
       if(!isTRUE(movement_recheck)&&!spend_action_safe(action_type,label))return(FALSE)
       char<-validate_character(core$state$char);dex_mod<-floor((as.integer(char$abilities$dex%||%10L)-10L)/2L);rank<-as.character(char$prof$skills$stealth%||%"None");pb<-character_proficiency_bonus(char);prof<-if(rank=="Expertise")2L*pb else if(rank=="Proficient")pb else 0L
-      roll<-sample.int(20L,1L);total<-roll+dex_mod+prof;cid<-as.character(core$state$char_id);end_encounter_condition(current_encounter_id(),cid,"hidden")
+      roll<-as.integer(natural_roll%||%sample.int(20L,1L));total<-roll+dex_mod+prof;cid<-as.character(core$state$char_id);end_encounter_condition(current_encounter_id(),cid,"hidden")
       success<-total>=context$dc
       if(success)apply_combat_condition("hidden",cid,"player",if(movement_recheck)"hidden_movement"else"hide",payload=list(stealth_total=total,hide_dc=context$dc,terrain=context$terrain,light=context$light))else bump_refresh()
       removeModal();log_game_event(current_encounter_id(),"hide_check","player",cid,payload=list(roll=roll,total=total,dc=context$dc,success=success,movement_recheck=movement_recheck,terrain=context$terrain,light=context$light,enemy_has_los=context$enemy_has_los))
       log_safe(paste0(if(success)"🥷 Hidden"else"👁️ Spotted",if(movement_recheck)" after moving"else"",": Stealth ",total," vs DC ",context$dc," (",context$terrain,", ",context$light," light)."));success
     }
+    observeEvent(input$confirm_manual_hide,{p<-session$userData$pending_manual_hide;if(is.null(p))return();roll<-as.integer(input$manual_hide_roll%||%NA_integer_);if(is.na(roll)||roll<1L||roll>20L)return(showNotification("Enter a d20 result from 1 to 20.",type="error"));session$userData$pending_manual_hide<-NULL;attempt_hide(p$action_type,p$label,p$movement_recheck,p$x,p$y,roll)},ignoreInit=TRUE)
 
     use_standard_action <- function(mode) {
       if (!isTRUE(is_players_turn())) {
@@ -678,7 +679,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       log_safe(paste0("🤝 ", get_actor_display_name(target_id), " is distracted; the next allied attack has advantage."))
     }, ignoreInit = TRUE)
 
-    observeEvent(input$standard_grapple, {
+    resolve_player_grapple<-function(attacker_roll){
       target_id <- as.character(selected_target_id() %||% "")
       target_type <- get_actor_type_by_id(target_id)
       actors <- encounter_actors_tbl()
@@ -690,7 +691,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         return()
       }
       if (!spend_attack_safe(core$state$char, "Grapple")) return()
-      char<-validate_character(core$state$char);attacker_roll<-sample.int(20L,1L);attacker_modifier<-character_skill_modifier(char,"Wrestling",SKILLS_LIST);grapple_cards<-character_skill_cards(char,"wrestling");card_result<-resolve_skill_card_roll(attacker_roll,attacker_modifier,character_proficiency_bonus(char),grapple_cards);attacker_total<-as.integer(card_result$total)
+      char<-validate_character(core$state$char);attacker_roll<-as.integer(attacker_roll%||%sample.int(20L,1L));attacker_modifier<-character_skill_modifier(char,"Wrestling",SKILLS_LIST);grapple_cards<-character_skill_cards(char,"wrestling");card_result<-resolve_skill_card_roll(attacker_roll,attacker_modifier,character_proficiency_bonus(char),grapple_cards);attacker_total<-as.integer(card_result$total)
       defender_roll<-sample.int(20L,1L);defender_modifier<-2L;defender_total<-defender_roll+defender_modifier
       success <- attacker_total >= defender_total
       if (success) apply_combat_condition("grappled", target_id, target_type, "grapple", ends_round = NULL,
@@ -700,9 +701,14 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
                       " (", attacker_total, " vs ", defender_total, ")."))
       grapple_art<-if(length(grapple_cards))lapply(grapple_cards,function(variant)combat_resolution_card(wrestling_card_src(variant),paste("Wrestling —",tools::toTitleCase(gsub("_"," ",variant))),paste0(attacker_roll," + ",attacker_modifier,if(card_result$card_bonus!=0L)paste0(" + cards ",card_result$card_bonus)else""," = ",attacker_total)))else list(combat_resolution_card(wrestling_card_src("reliable"),"Wrestling",paste0(attacker_roll," + ",attacker_modifier," = ",attacker_total)))
       showModal(modalDialog(title=if(success)"Grapple succeeds"else"Grapple resisted",div(class="combat-resolution-cards",tagList(grapple_art),div(class="combat-resolution-versus","VS"),combat_resolution_card(combat_ability_card_src("str",10L+2L*defender_modifier),paste(get_actor_display_name(target_id),"defence"),paste0(defender_roll," + ",defender_modifier," = ",defender_total))),div(class="combat-resolution-summary",if(success)"Your Wrestling cards overpower the target."else"The target resists your grapple."),footer=modalButton("Done"),size="l",easyClose=TRUE))
+    }
+    observeEvent(input$standard_grapple, {
+      if(isTRUE(session$rootScope()$input$manual_roll_mode_enabled))return(showModal(modalDialog(title="Grapple — Wrestling check",p("Roll one d20. Your Wrestling modifier and active skill cards are applied next."),numericInput(session$ns("manual_grapple_roll"),"Natural d20 result",10,min=1,max=20,step=1),footer=tagList(modalButton("Cancel"),actionButton(session$ns("confirm_manual_grapple"),"Use Result",class="btn btn-primary")),easyClose=FALSE)))
+      resolve_player_grapple(NULL)
     }, ignoreInit = TRUE)
+    observeEvent(input$confirm_manual_grapple,{roll<-as.integer(input$manual_grapple_roll%||%NA_integer_);if(is.na(roll)||roll<1L||roll>20L)return(showNotification("Enter a d20 result from 1 to 20.",type="error"));resolve_player_grapple(roll)},ignoreInit=TRUE)
 
-    observeEvent(input$standard_escape_grapple, {
+    resolve_escape_grapple<-function(natural_roll=NULL){
       cid <- as.character(core$state$char_id %||% "")
       if (!"grappled" %in% actor_conditions(cid)) {
         log_safe("⚠️ You are not grappled.")
@@ -711,14 +717,20 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       if (!spend_action_safe("action", "Escape Grapple")) return()
       str_mod <- floor((as.integer(core$state$char$abilities$str %||% 10L) - 10L) / 2L)
       dex_mod <- floor((as.integer(core$state$char$abilities$dex %||% 10L) - 10L) / 2L)
-      escape_total <- sample.int(20L, 1L) + max(str_mod, dex_mod) + character_proficiency_bonus(core$state$char)
+      player_roll<-as.integer(natural_roll%||%sample.int(20L,1L));escape_total <- player_roll + max(str_mod, dex_mod) + character_proficiency_bonus(core$state$char)
       hold_total <- sample.int(20L, 1L) + 2L
       escaped <- escape_total >= hold_total && end_encounter_condition(current_encounter_id(), cid, "grappled")
       removeModal()
       if (escaped) bump_refresh()
       log_safe(paste0(if (escaped) "🤼 You escape the grapple" else "⚠️ The grapple holds",
                       " (", escape_total, " vs ", hold_total, ")."))
+      showModal(modalDialog(title=if(escaped)"Grapple escaped"else"Grapple holds",div(class="combat-resolution-cards",dice_result_card_ui(20L,player_roll,TRUE,"Your roll"),div(class="combat-resolution-versus","VS"),dice_result_card_ui(20L,hold_total-2L,FALSE,"Grappler roll")),div(class="combat-resolution-summary",paste0(player_roll," + modifiers = ",escape_total," vs ",hold_total)),footer=modalButton("Done"),size="l",easyClose=TRUE))
+    }
+    observeEvent(input$standard_escape_grapple, {
+      if(isTRUE(session$rootScope()$input$manual_roll_mode_enabled))return(showModal(modalDialog(title="Escape Grapple",p("Roll one d20 for your Strength or Dexterity escape check."),numericInput(session$ns("manual_escape_roll"),"Natural d20 result",10,min=1,max=20,step=1),footer=tagList(modalButton("Cancel"),actionButton(session$ns("confirm_manual_escape"),"Use Result",class="btn btn-primary")),easyClose=FALSE)))
+      resolve_escape_grapple(NULL)
     }, ignoreInit = TRUE)
+    observeEvent(input$confirm_manual_escape,{roll<-as.integer(input$manual_escape_roll%||%NA_integer_);if(is.na(roll)||roll<1L||roll>20L)return(showNotification("Enter a d20 result from 1 to 20.",type="error"));resolve_escape_grapple(roll)},ignoreInit=TRUE)
 
     observeEvent(input$standard_ready, {
       showModal(modalDialog(
@@ -2272,7 +2284,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     
     build_attack_preview <- function(attacker_char, target_char, weapon_row, attacker_name, target_name,
                                      attacker_id, target_id, attacker_type = "player", target_type = NULL,
-                                     adv_override = NULL) {
+                                     adv_override = NULL, attack_rolls_override = NULL) {
       attacker_char <- validate_character(attacker_char)
       target_type <- as.character(target_type %||% get_actor_type_by_id(target_id) %||% "player")
       
@@ -2280,13 +2292,13 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       adv_norm <- tolower(as.character(adv %||% "normal"))
       
       if (adv_norm %in% c("advantage", "adv")) {
-        attack_rolls <- sample.int(20, 2)
+        attack_rolls <- if(is.null(attack_rolls_override))sample.int(20,2)else as.integer(attack_rolls_override)
         attack_roll <- max(attack_rolls)
       } else if (adv_norm %in% c("disadvantage", "dis")) {
-        attack_rolls <- sample.int(20, 2)
+        attack_rolls <- if(is.null(attack_rolls_override))sample.int(20,2)else as.integer(attack_rolls_override)
         attack_roll <- min(attack_rolls)
       } else {
-        attack_rolls <- sample.int(20, 1)
+        attack_rolls <- if(is.null(attack_rolls_override))sample.int(20,1)else as.integer(attack_rolls_override)[1L]
         attack_roll <- attack_rolls[1]
       }
       
@@ -2533,8 +2545,16 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
           div(class = "damage-part", span(lbl), span(rhs))
         })
       }
+      manual_damage_ui<-NULL
+      if(isTRUE(preview$is_hit)&&isTRUE(session$rootScope()$input$manual_roll_mode_enabled)){
+        fields<-lapply(seq_along(preview$base_parts%||%list()),function(i){part<-(preview$base_parts%||%list())[[i]];spec<-parse_dice_expr(part$expr%||%"");if(is.null(spec)||!length(part$rolls))return(NULL);needed<-spec$count*(if(isTRUE(preview$is_crit))2L else 1L);textInput(session$ns(paste0("manual_damage_part_",i)),paste0(part$source," — ",needed,"d",spec$sides),placeholder=paste(rep(paste0("1–",spec$sides),needed),collapse=", "))})
+        sneak_field<-NULL
+        if(isTRUE(preview$sneak_available)&&!isTRUE(sneak_attack_used())){spec<-parse_dice_expr(preview$sneak_part$expr%||%"");if(!is.null(spec)){needed<-spec$count*(if(isTRUE(preview$is_crit))2L else 1L);sneak_field<-textInput(session$ns("manual_sneak_damage"),paste0("Sneak Attack — ",needed,"d",spec$sides),placeholder="Enter each die, separated by commas")}}
+        manual_damage_ui<-div(class="confirm-box",div(class="combat-section-title","Physical damage dice"),p("Roll each listed die and enter every face value. Critical hits require twice the usual dice."),tagList(fields),sneak_field,tags$small("The app will still apply fixed bonuses, resistance, immunity and vulnerability."))
+      }
       
       tagList(
+        if(identical(as.character(preview$attacker_type%||%""),"player"))div(class="combat-resolution-cards",lapply(seq_along(preview$attack_rolls),function(i)div(style=paste0("position:relative;width:120px;aspect-ratio:4/5;overflow:hidden;border-radius:9px;box-shadow:0 4px 12px #2d1d0c66;",if(preview$attack_rolls[[i]]==preview$attack_roll)"outline:4px solid #b88b2d;transform:translateY(-3px);"else"opacity:.7;"),tags$img(src=dice_card_src(20L,preview$attack_rolls[[i]]),style="width:100%;height:100%;object-fit:cover;"))),modifier_result_card_ui(preview$attack_bonus,"Attack bonus")),
         if(identical(as.character(preview$attacker_type%||%""),"player"))div(class="combat-resolution-cards",combat_resolution_card(combat_ability_card_src(preview$attack_ability,preview$attack_ability_score),paste(combat_ability_labels[[preview$attack_ability]]%||%"Strength","weapon attack"),paste0("Natural ",preview$attack_roll," + ",preview$attack_bonus," = ",preview$attack_total))),
         div(
           class = "confirm-box",
@@ -2568,6 +2588,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         
         if (isTRUE(preview$is_hit)) {
           tagList(
+            manual_damage_ui,
             if (identical(as.character(preview$target_id %||% ""), as.character(core$state$char_id %||% "")) &&
                 player_has_feature("uncanny_dodge")) {
               div(
@@ -3777,6 +3798,9 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       feature <- actions[[idx]]
       action <- feature$action
       resource <- action$resource %||% list()
+      dice_expr<-if((action$damage$mode%||%"")%in%c("dice","dice_plus_modifier"))as.character(action$damage$value%||%"")else if((action$healing$mode%||%"")=="dice_plus_class_level")as.character(action$healing$value%||%"")else""
+      dice_spec<-parse_dice_expr(dice_expr)
+      needs_spell_attack<-identical(as.character(action$resolution$type%||%""),"spell_attack")
       div(
         class = "confirm-box",
         tags$strong(action$name %||% feature$name),
@@ -3791,7 +3815,9 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
             paste("Requires target condition:", tools::toTitleCase(action$required_target_condition))
           )
         },
-        if(!is.null(action$range_ft))tags$p(class="confirm-note",paste0("Range: ",action$range_ft," ft"))
+        if(!is.null(action$range_ft))tags$p(class="confirm-note",paste0("Range: ",action$range_ft," ft")),
+        if(isTRUE(session$rootScope()$input$manual_roll_mode_enabled)&&!is.null(dice_spec))tagList(div(class="alert alert-info",paste0("Roll ",dice_spec$count,"d",dice_spec$sides," for this ability.")),textInput(session$ns("manual_class_dice"),"Natural dice results",placeholder=paste(rep(paste0("1–",dice_spec$sides),dice_spec$count),collapse=", "))),
+        if(isTRUE(session$rootScope()$input$manual_roll_mode_enabled)&&needs_spell_attack)numericInput(session$ns("manual_class_attack"),"Natural d20 spell attack",10,min=1,max=20,step=1)
       )
     })
 
@@ -3818,6 +3844,15 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       }
       damage <- action$damage %||% list()
 
+      manual_roll_function<-roll_dice_expr
+      manual_spell_attack<-NULL
+      if(isTRUE(session$rootScope()$input$manual_roll_mode_enabled)){
+        dice_expr<-if((action$damage$mode%||%"")%in%c("dice","dice_plus_modifier"))as.character(action$damage$value%||%"")else if((action$healing$mode%||%"")=="dice_plus_class_level")as.character(action$healing$value%||%"")else""
+        spec<-parse_dice_expr(dice_expr)
+        if(!is.null(spec)){values<-manual_dice_values(input$manual_class_dice,spec$sides,spec$count);if(is.null(values))return(showNotification(paste0("Enter exactly ",spec$count," d",spec$sides," result(s)."),type="error"));manual_roll_function<-local({stored<-values;function(expr)roll_dice_expr_manual(expr,stored)})}
+        if(identical(as.character(action$resolution$type%||%""),"spell_attack")){manual_spell_attack<-suppressWarnings(as.integer(input$manual_class_attack%||%NA_integer_));if(is.na(manual_spell_attack)||manual_spell_attack<1L||manual_spell_attack>20L)return(showNotification("Enter a natural d20 spell attack result from 1 to 20.",type="error"))}
+      }
+
       char <- validate_character(core$state$char)
       if (!class_action_use_available(char, action)) {
         log_safe(paste0("⚠️ ", action$name %||% feature$name, " has already been used and needs a rest."))
@@ -3839,7 +3874,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       if (!spend_action_safe(action_type, action$name %||% feature$name)) return()
 
       if (identical(target_mode, "self") && is.list(action$healing)) {
-        healing <- resolve_class_action_healing(action, char)
+        healing <- resolve_class_action_healing(action, char,manual_roll_function)
         char <- mark_class_action_used(char, action)
         core$state$char <- char
         result <- apply_healing_to_state(core$state, healing)
@@ -3876,7 +3911,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
           if (is.na(distance) || distance > radius) next
           enemy_id <- as.character(row$actor_id[1])
           max_hp <- as.integer(row$hp_max[1] %||% row$max_hp[1] %||% 1L)
-          rolled <- resolve_class_action_damage(action, max_hp, char)
+          rolled <- resolve_class_action_damage(action, max_hp, char,manual_roll_function)
           amount <- rolled$amount
           ability <- as.character(action$resolution$ability %||% "con")
           enemy <- enemies[as.character(enemies$enemy_uuid %||% "") == enemy_id, , drop = FALSE]
@@ -3909,14 +3944,15 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       }
 
       max_hp <- suppressWarnings(as.integer(target_row$hp_max[1] %||% target_row$max_hp[1] %||% 1L))
-      resolved_damage <- resolve_class_action_damage(action, max_hp, char)
+      resolved_damage <- resolve_class_action_damage(action, max_hp, char,manual_roll_function)
       raw_damage <- resolved_damage$amount
 
       save_succeeded <- FALSE
       save_detail <- NULL
       resolution_type <- as.character(action$resolution$type %||% "")
       if (identical(resolution_type, "spell_attack")) {
-        spell_attack <- sample.int(20L, 1L) + character_proficiency_bonus(char) +
+        natural_spell_attack<-manual_spell_attack%||%sample.int(20L,1L)
+        spell_attack <- natural_spell_attack + character_proficiency_bonus(char) +
           floor((as.integer(char$abilities$bld_str %||% 10L) - 10L) / 2L)
         target_ac <- as.integer(target_row$ac[1] %||% 10L)
         if (spell_attack < target_ac) raw_damage <- 0L
@@ -3986,9 +4022,10 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         }
       }
 
-      core$state$char <- mark_class_action_used(char, action)
       ability_name <- as.character(action$name %||% feature$name)
       target_name <- get_actor_display_name(target_id, "enemy")
+      if(identical(as.character(feature$id%||%""),"bloodthirsty")&&final_damage>0L){blood_result<-consume_blood_effects(char,0.5,10,isTRUE(is_heart_eater()));char<-blood_result$character;record_blood_consumption(core$state$char_id,core$state$active_session_id,char$meta$day,"bite",target_name,0.5,blood_result$sindre_gained);log_safe(paste0("🩸 The bite provides half a pint: +",blood_result$sindre_gained," Sindre",if(blood_result$hp_gained>0L)paste0(" and +",blood_result$hp_gained," HP")else"","."),toast=TRUE,flash="gold")}
+      core$state$char <- mark_class_action_used(char, action)
       log_game_event(
         encounter_id = eid,
         event_type = "ability",
@@ -4454,6 +4491,10 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
             selected = "auto",
             inline = TRUE
           ),
+          if(isTRUE(session$rootScope()$input$manual_roll_mode_enabled))tagList(
+            tags$div(class="alert alert-info","Manual dice mode: roll the attack dice yourself. For Auto, enter two results if an effect may grant advantage or disadvantage."),
+            textInput(session$ns("manual_attack_rolls"),"Natural d20 result(s)",placeholder="e.g. 14 or 7, 14")
+          ),
           footer = tagList(
             modalButton("Cancel"),
             actionButton(session$ns("confirm_attack"), if (identical(attack_mode, "offhand")) "Roll Bonus Attack" else "Roll Attack", class = "btn btn-danger")
@@ -4621,8 +4662,6 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     
     
     observeEvent(input$confirm_attack, {
-      removeModal()
-      
       reaction_attack <- isTRUE(current_attack_is_opp()) || isTRUE(current_attack_is_ready())
       attacker_id <- if (isTRUE(reaction_attack)) {
         as.character(core$state$char_id %||% "")
@@ -4717,6 +4756,16 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         adv_mode <- "Advantage"
       }
       if (!is.null(attack_geometry) && !isTRUE(attack_geometry$normal_range)) adv_mode <- "Disadvantage"
+
+      manual_attack_rolls<-NULL
+      if(isTRUE(session$rootScope()$input$manual_roll_mode_enabled)){
+        needed<-if(tolower(adv_mode)%in%c("advantage","adv","disadvantage","dis"))2L else 1L
+        manual_attack_rolls<-manual_dice_values(input$manual_attack_rolls,20L,needed)
+        if(is.null(manual_attack_rolls)){
+          showNotification(paste("Manual dice mode needs",needed,"natural d20 result(s), each from 1 to 20."),type="error",duration=7)
+          return()
+        }
+      }
       
       preview <- build_attack_preview(
         attacker_char = attacker_char,
@@ -4726,7 +4775,8 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         target_name = target_name,
         attacker_id = attacker_id,
         target_id = target_id,
-        adv_override = adv_mode
+        adv_override = adv_mode,
+        attack_rolls_override = manual_attack_rolls
       )
 
       preview$attack_mode <- attack_mode
@@ -4777,6 +4827,16 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
         return()
       }
 
+      apply_sneak <- isTRUE(input$final_apply_sneak %||% FALSE)
+      if (isTRUE(sneak_attack_used())) apply_sneak <- FALSE
+      if(isTRUE(session$rootScope()$input$manual_roll_mode_enabled)&&isTRUE(preview$is_hit)&&identical(as.character(preview$attacker_type%||%"player"),"player")){
+        parts<-preview$base_parts%||%list()
+        for(i in seq_along(parts)){spec<-parse_dice_expr(parts[[i]]$expr%||%"");if(is.null(spec)||!length(parts[[i]]$rolls))next;needed<-spec$count*if(isTRUE(preview$is_crit))2L else 1L;values<-manual_dice_values(input[[paste0("manual_damage_part_",i)]],spec$sides,needed);if(is.null(values))return(showNotification(paste0(parts[[i]]$source,": enter exactly ",needed," d",spec$sides," result(s)."),type="error",duration=8));parts[[i]]$rolls<-values;parts[[i]]$total<-as.integer(sum(values)+spec$mod)}
+        preview$base_parts<-parts
+        if(isTRUE(apply_sneak)&&!is.null(preview$sneak_part)){spec<-parse_dice_expr(preview$sneak_part$expr%||%"");needed<-spec$count*if(isTRUE(preview$is_crit))2L else 1L;values<-manual_dice_values(input$manual_sneak_damage,spec$sides,needed);if(is.null(values))return(showNotification(paste0("Sneak Attack: enter exactly ",needed," d",spec$sides," result(s)."),type="error",duration=8));preview$sneak_part$rolls<-values;preview$sneak_part$total<-as.integer(sum(values)+spec$mod)}
+        pending_attack(preview)
+      }
+
       reaction_attack <- isTRUE(preview$is_opportunity_attack) || isTRUE(preview$is_readied_attack)
       if (isTRUE(reaction_attack)) {
         if (!isTRUE(player_reaction_available())) {
@@ -4805,11 +4865,9 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
 
       removeModal()
       
-      apply_sneak <- isTRUE(input$final_apply_sneak %||% FALSE)
-      if (isTRUE(sneak_attack_used())) apply_sneak <- FALSE
       manual_bonus <- suppressWarnings(as.integer(input$final_bonus_damage %||% 0))
       manual_type <- as.character(input$final_bonus_type %||% "same_as_primary")
-      final_damage <- suppressWarnings(as.integer(input$final_damage_override %||% 0))
+      final_damage <- if(isTRUE(session$rootScope()$input$manual_roll_mode_enabled)&&identical(as.character(preview$attacker_type%||%"player"),"player"))compute_final_attack(preview,apply_sneak,manual_bonus,manual_type)$adjusted$total else suppressWarnings(as.integer(input$final_damage_override %||% 0))
       if (is.na(final_damage) || final_damage < 0) final_damage <- 0L
       used_uncanny_dodge <- FALSE
       if (isTRUE(input$use_uncanny_dodge %||% FALSE) &&

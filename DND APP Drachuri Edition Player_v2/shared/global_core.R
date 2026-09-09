@@ -679,6 +679,47 @@ blood_donor_sindre_cost_per_pint <- function(char, body_pints = 8) {
   floor(max(0,as.numeric(s$total%||%0))/max(1,as.numeric(body_pints)))
 }
 
+# Apply blood as a single rules transaction. Unknown creature blood uses the
+# ordinary-world baseline of 10 Sindre per pint; authored bottles retain their
+# own stored concentration. Heart Eaters additionally recover 5 HP per pint.
+consume_blood_effects <- function(char, pints, sindre_per_pint = 10,
+                                  heart_eater = FALSE) {
+  char <- validate_character(char)
+  pints <- max(0, as.numeric(pints %||% 0))
+  potency <- max(0, as.numeric(sindre_per_pint %||% 10))
+  sindre_gain <- as.integer(round(pints * potency))
+
+  s <- char$resources$sindre %||% list()
+  current <- max(0L, as.integer(s$cur %||% 0L))
+  maximum <- max(0L, as.integer(s$total %||% 0L))
+  combined <- current + sindre_gain
+  overflow <- max(0L, combined - maximum)
+  char$resources$sindre$cur <- min(maximum, combined)
+  if (isTRUE(heart_eater) && overflow > 0L) {
+    char$resources$sindre$temp <- max(0L, as.integer(s$temp %||% 0L)) + overflow
+  }
+
+  hp_gained <- 0L
+  if (isTRUE(heart_eater)) {
+    hp <- char$resources$hp %||% list()
+    hp_before <- max(0L, as.integer(hp$cur %||% 0L))
+    hp_max <- max(hp_before, as.integer(hp$max %||% hp_before))
+    char$resources$hp$cur <- min(hp_max, hp_before + as.integer(round(5 * pints)))
+    hp_gained <- char$resources$hp$cur - hp_before
+  }
+
+  char$resources$blood <- char$resources$blood %||% list()
+  addiction <- char$resources$blood$addiction %||% list()
+  addiction$current_day_intake <- as.numeric(addiction$current_day_intake %||% 0) + pints
+  char$resources$blood$addiction <- addiction
+  char$status <- char$status %||% list()
+  char$status$needs_hours <- char$status$needs_hours %||% list()
+  char$status$needs_hours$blood <- 0
+
+  list(character = char, sindre_gained = sindre_gain,
+       hp_gained = hp_gained, overflow = if (isTRUE(heart_eater)) overflow else 0L)
+}
+
 blood_draw_result <- function(previous_pints, draw_pints, exhaustion = 0L, body_pints = 8L) {
   previous <- max(0, as.numeric(previous_pints %||% 0))
   drawn <- max(0, as.numeric(draw_pints %||% 0))
@@ -2280,22 +2321,70 @@ calc_auto_ac_for_char <- function(char) {
   as.integer(ac)
 }
 
+dice_card_supported_sides <- function() c(4L, 6L, 8L, 10L, 12L, 20L)
+
+dice_card_src <- function(sides, value) {
+  sides <- suppressWarnings(as.integer(sides)); value <- suppressWarnings(as.integer(value))
+  if (is.na(sides) || is.na(value) || !sides %in% dice_card_supported_sides() || value < 1L || value > sides) return(NA_character_)
+  sprintf("assets/dice-cards/d%d/d%d-%02d.png", sides, sides, value)
+}
+
+dice_result_card_ui <- function(sides, value, selected = FALSE, label = NULL) {
+  src <- dice_card_src(sides, value)
+  cls <- paste("dice-result-card", if (isTRUE(selected)) "is-selected" else "")
+  if (is.na(src)) return(shiny::div(class = paste(cls, "dice-result-fallback"), shiny::strong(value), shiny::span(paste0("d", sides))))
+  shiny::div(class = cls, shiny::tags$img(src = src, alt = paste0("d", sides, " result ", value)),
+             if (!is.null(label)) shiny::span(class = "dice-result-label", label))
+}
+
+modifier_result_card_ui <- function(value, label = "Modifier") {
+  value <- suppressWarnings(as.integer(value %||% 0L)); if (is.na(value)) value <- 0L
+  shiny::div(class="dice-modifier-card",
+    shiny::span(class="dice-modifier-sign",if(value>=0L)paste0("+",value)else as.character(value)),
+    shiny::span(class="dice-modifier-label",label))
+}
+
+manual_dice_values <- function(text, sides, count) {
+  bits <- strsplit(trimws(as.character(text %||% "")), "[,[:space:]]+")[[1L]]
+  bits <- bits[nzchar(bits)]
+  values <- suppressWarnings(as.integer(bits))
+  sides <- as.integer(sides); count <- as.integer(count)
+  if (length(values) != count || anyNA(values) || any(values < 1L | values > sides)) return(NULL)
+  values
+}
+
+parse_dice_expr <- function(expr) {
+  expr <- gsub("\\s+", "", as.character(expr %||% ""))
+  parts <- regmatches(expr, regexec("^([0-9]+)d([0-9]+)([+-][0-9]+)?$", expr))[[1L]]
+  if (!length(parts)) return(NULL)
+  list(count = as.integer(parts[[2L]]), sides = as.integer(parts[[3L]]),
+       mod = if (length(parts) >= 4L && nzchar(parts[[4L]])) as.integer(parts[[4L]]) else 0L,
+       expr = expr)
+}
+
+roll_dice_expr_manual <- function(expr, values) {
+  spec <- parse_dice_expr(expr)
+  if (is.null(spec)) return(list(total = 0L, rolls = integer(), mod = 0L, expr = as.character(expr %||% "")))
+  values <- as.integer(values)
+  if (length(values) != spec$count || anyNA(values) || any(values < 1L | values > spec$sides))
+    stop(sprintf("Enter exactly %d d%d result(s).", spec$count, spec$sides))
+  list(total = as.integer(sum(values) + spec$mod), rolls = values, mod = spec$mod, expr = spec$expr)
+}
+
 roll_dice_expr <- function(expr) {
   expr <- gsub("\\s+", "", as.character(expr %||% ""))
   if (!nzchar(expr)) {
     return(list(total = 0L, rolls = integer(0), mod = 0L, expr = expr))
   }
   
-  m <- regexec("^([0-9]+)d([0-9]+)([+-][0-9]+)?$", expr)
-  parts <- regmatches(expr, m)[[1]]
-  
-  if (length(parts) == 0) {
+  spec <- parse_dice_expr(expr)
+  if (is.null(spec)) {
     return(list(total = 0L, rolls = integer(0), mod = 0L, expr = expr))
   }
   
-  n <- as.integer(parts[2])
-  d <- as.integer(parts[3])
-  mod <- if (length(parts) >= 4 && nzchar(parts[4])) as.integer(parts[4]) else 0L
+  n <- spec$count
+  d <- spec$sides
+  mod <- spec$mod
   
   if (is.na(n) || is.na(d) || n <= 0 || d <= 0) {
     return(list(total = 0L, rolls = integer(0), mod = 0L, expr = expr))
@@ -3000,6 +3089,12 @@ resolve_skill_card_roll <- function(natural_roll, modifier, proficiency_bonus, c
     total = as.integer(natural_roll + modifier + card_bonus),
     effects = effects
   )
+}
+
+triggered_skill_cards <- function(result) {
+  if (is.null(result) || !length(result$effects %||% character())) return(character())
+  effects<-as.character(result$effects)
+  unique(c(if(any(startsWith(effects,"Reliable +")))"reliable",if(any(startsWith(effects,"Inspired +")))"inspired",if(any(grepl("^Wild Card (1|6):",effects)))"wild_card"))
 }
 
 party_skill_support_result <- function(leader_total, helper_totals = numeric(), support_cap = 2L) {

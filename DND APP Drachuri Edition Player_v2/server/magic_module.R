@@ -182,7 +182,7 @@ magicTabServer <- function(
     output$magic_types_ui <- renderUI({
       x <- validate_character(state$char)
       
-      selected <- character_magic_types(x)
+      selected <- unique(tools::toTitleCase(tolower(character_magic_types(x))))
       all_types <- MAGIC_TYPES
       
       manual <- intersect(as.character(x$magic$types %||% character()), GLYPH_DAMAGE_TYPES)

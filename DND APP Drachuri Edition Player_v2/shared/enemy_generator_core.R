@@ -76,6 +76,8 @@ enemy_loot_catalog <- function() list(
   splint_armor=list(name="Splint Armour",type="armor",desc="Vertical metal strips over padding.",value=200,weight=60,qty=1,meta=list(base_ac=17,type="Heavy",custom_max_dex=0,proficient=TRUE)),
   plate_armor=list(name="Plate Armour",type="armor",desc="A complete fitted suit of plate.",value=1500,weight=65,qty=1,meta=list(base_ac=18,type="Heavy",custom_max_dex=0,proficient=TRUE)),
   shield=list(name="Shield",type="armor",desc="A sturdy shield granting +2 AC.",value=10,weight=6,qty=1,meta=list(base_ac=2,type="Shield",custom_max_dex=0,proficient=TRUE)),
+  lockpick=list(name="Lockpick",type="item",desc="A slender disposable iron pick used to work mechanical locks. It may snap under strain.",value=2,weight=.05,qty=1,meta=list(category="tool")),
+  thieves_tools=list(name="Thieves' Tools",type="item",desc="A tool roll containing tension bars, fine tools and ten replaceable lockpicks.",value=25,weight=1,qty=1,meta=list(category="tool",lockpicks_remaining=10L,lockpicks_max=10L)),
   animal_pelt=list(name="Animal Pelt",type="item",desc="A usable hide taken from an animal.",value=4,weight=5,qty=1,meta=list()),
   bear_pelt=list(name="Bear Pelt",type="item",desc="A thick and valuable bear pelt.",value=12,weight=12,qty=1,meta=list()),
   fae_dust=list(name="Fae Dust",type="item",desc="Faintly luminous residue from a fae creature.",value=25,weight=.1,qty=1,meta=list()),

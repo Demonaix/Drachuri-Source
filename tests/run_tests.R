@@ -50,21 +50,21 @@ load_functions <- function(path, names) {
 load_functions(global_file, c(
   "character_save_payload", "restore_sindre", "reset_class_uses_for_rest",
   "armor_meta_defaults_global", "calc_auto_ac_for_char", "get_effective_max_hp", "get_weapon_hit_bonus",
-  "starting_character_hp", "camp_gathering_yield", "consume_heart_sindre", "blood_sindre_per_pint", "blood_donor_sindre_cost_per_pint", "blood_draw_result",
+  "starting_character_hp", "camp_gathering_yield", "consume_heart_sindre", "consume_blood_effects", "blood_sindre_per_pint", "blood_donor_sindre_cost_per_pint", "blood_draw_result",
   "character_subclass_names", "magical_identity_labels", "skill_identity_labels",
   "character_magic_types", "bloodlust_bite_required", "merchant_pricing_multiplier",
   "merchant_item_stock_weight", "merchant_haggle_terms",
   "food_item_meta", "food_rations_available", "consume_food_ration", "spoil_character_food",
   "camp_foraging_reward", "merchant_stock_category", "merchant_select_stock",
   "required_intake", "warmth_requirement_hours",
-  "character_skill_modifier", "skill_card_count_for_rank", "character_skill_cards", "resolve_skill_card_roll", "party_skill_support_result",
+  "character_skill_modifier", "skill_card_count_for_rank", "character_skill_cards", "resolve_skill_card_roll", "triggered_skill_cards", "party_skill_support_result",
   "status_condition_definitions", "active_character_conditions", "character_condition_status_cards", "encounter_condition_values", "exhaustion_effect_text", "character_roll_status",
   "equipped_magical_traits", "new_character", "validate_character", "inventory_empty", "inventory_normalize",
   "weapon_meta_defaults_global", "standard_spear_attack_modes",
   "upgrade_weapon_damage_die", "standard_weapon_attack_modes",
   "normalise_weapon_attack_modes", "merge_legacy_weapon_mode_items",
   "combat_grid_distance_ft", "combat_grid_shortest_path", "combat_line_tiles",
-  "combat_attack_geometry", "combat_hide_dc"
+  "combat_attack_geometry", "combat_hide_dc", "dice_card_supported_sides", "dice_card_src", "dice_result_card_ui", "modifier_result_card_ui", "manual_dice_values"
 ))
 load_functions(relational_inventory_file, c("equipment_material_is_eligible", "inventory_item_category", "equipment_adjusted_value"))
 load_functions(enemy_generator_file, c("enemy_special_attack", "enemy_attack_catalog", "enemy_loot_catalog", "resolve_layered_damage_traits", "enemy_is_animal", "roll_enemy_mundane_loot", "roll_enemy_food_loot", "npc_feature_definition", "npc_feature_catalogue", "npc_feature_effect_summary"))
@@ -168,6 +168,14 @@ test("skill card roll effects combine independently", {
   stopifnot(test_env$resolve_skill_card_roll(18L,0L,3L,"inspired")$card_bonus==3L)
 })
 
+test("skill result displays only cards that actually trigger", {
+  quiet<-test_env$resolve_skill_card_roll(11L,2L,3L,c("reliable","inspired","wild_card"),wild_roll=3L)
+  low<-test_env$resolve_skill_card_roll(3L,2L,3L,c("reliable","inspired"))
+  high<-test_env$resolve_skill_card_roll(19L,2L,3L,c("reliable","inspired"))
+  wild<-test_env$resolve_skill_card_roll(11L,2L,3L,"wild_card",wild_roll=6L)
+  stopifnot(!length(test_env$triggered_skill_cards(quiet)),identical(test_env$triggered_skill_cards(low),"reliable"),identical(test_env$triggered_skill_cards(high),"inspired"),identical(test_env$triggered_skill_cards(wild),"wild_card"))
+})
+
 test("required skill-card setup takes priority over opportunity prompts", {
   skills<-paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","skills_module.R"),warn=FALSE),collapse="\n")
   combat<-paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","debug_combat_module.R"),warn=FALSE),collapse="\n")
@@ -233,6 +241,27 @@ test("heart consumption grants predictable temporary Sindre", {
   stopifnot(identical(heart_eater$current, 100L))
   stopifnot(identical(heart_eater$temporary, 28L))
   stopifnot(identical(heart_eater$temporary_gained, 25L))
+})
+
+test("ordinary blood restores Sindre and Heart Eaters also heal", {
+  char <- test_env$validate_character(list(
+    resources = list(
+      hp = list(cur = 10L, max = 20L),
+      sindre = list(cur = 20L, total = 100L, temp = 0L),
+      blood = list(addiction = list(current_day_intake = 0))
+    ),
+    status = list(needs_hours = list(blood = 18))
+  ))
+  ordinary <- test_env$consume_blood_effects(char, 0.5)
+  stopifnot(ordinary$sindre_gained == 5L)
+  stopifnot(ordinary$character$resources$sindre$cur == 25L)
+  stopifnot(ordinary$character$resources$hp$cur == 10L)
+  stopifnot(ordinary$character$resources$blood$addiction$current_day_intake == 0.5)
+  stopifnot(ordinary$character$status$needs_hours$blood == 0)
+
+  eater <- test_env$consume_blood_effects(char, 0.5, heart_eater = TRUE)
+  stopifnot(eater$sindre_gained == 5L, eater$hp_gained == 2L)
+  stopifnot(eater$character$resources$hp$cur == 12L)
 })
 
 test("bottled blood transfers capacity, usable Sindre and exhaustion separately", {
@@ -1648,7 +1677,7 @@ test("manual magic types use the same damage vocabulary as glyphs", {
 })
 
 test("map autogenerator creates deterministic editable terrain presets", {
-  presets<-unname(test_env$control_map_presets());clutter<-c("table","bar","chair","bench","crate","barrel","bed","shelf","rubble","campfire");allowed<-c("grass","sand","stone","forest","swamp","water","wall","ravine","road","mandred_convergence",clutter)
+  presets<-unname(test_env$control_map_presets());clutter<-c("table","bar","chair","bench","crate","barrel","bed","shelf","rubble","campfire","torch","brazier");allowed<-c("grass","sand","stone","forest","swamp","water","wall","ravine","road","mandred_convergence",clutter)
   maps<-setNames(lapply(presets,function(p)test_env$generate_control_map_tiles(42L,16L,12L,p,seed=77L,density=40)),presets)
   stopifnot(all(vapply(maps,nrow,integer(1))==192L),all(vapply(maps,function(x)all(x$terrain%in%allowed),logical(1))))
   stopifnot(identical(maps$forest,test_env$generate_control_map_tiles(42L,16L,12L,"forest",77L,40)))
@@ -1675,6 +1704,9 @@ test("improvised encounter drafts are deterministic, party-aware and editable", 
   stopifnot(grepl("Generate Improvised Encounter",setup_source,fixed=TRUE),grepl("create_generated_encounter",setup_source,fixed=TRUE))
   stopifnot(grepl('create_encounter(sid,encounter_name,map_id,"setup")',setup_source,fixed=TRUE),grepl("set_shared_map_tiles(ctrl,map_id,tiles)",setup_source,fixed=TRUE))
   stopifnot(grepl("merge_npc_pool_catalogue",setup_source,fixed=TRUE),grepl("Review it before starting combat",setup_source,fixed=TRUE))
+  stopifnot(grepl("generate_encounter_pool_candidates(pool,18L,seed)",setup_source,fixed=TRUE),!grepl("generator_templates <-",setup_source,fixed=TRUE))
+  generator_source<-paste(readLines(encounter_generator_file,warn=FALSE),collapse="\n")
+  stopifnot(grepl("authored creatures must never leak",generator_source,fixed=TRUE),grepl('identical(as.character(pool$id), "custom")',generator_source,fixed=TRUE))
 })
 
 test("lean 3D renderer keeps costly features optional", {
@@ -1683,7 +1715,7 @@ test("lean 3D renderer keeps costly features optional", {
   stopifnot(grepl("InstancedMesh", js, fixed = TRUE))
   stopifnot(grepl("buildSurfaceGeometry", js, fixed = TRUE))
   stopifnot(grepl("buildTabletop", js, fixed = TRUE))
-  stopifnot(grepl("tableWidth", js, fixed = TRUE), grepl("wallH=20", js, fixed = TRUE), grepl("roofRise=10", js, fixed = TRUE))
+  stopifnot(grepl("tableWidth", js, fixed = TRUE), grepl("wallH=24", js, fixed = TRUE), grepl("roofRise=12", js, fixed = TRUE))
   stopifnot(grepl("controls.maxPolarAngle=Math.PI*.47", js, fixed = TRUE))
   stopifnot(grepl('ravine:{color:0x17151a,tex:"ravine.jpg",h:-2.65}', js, fixed = TRUE))
   stopifnot(grepl('const height=name==="wall"?1.65', js, fixed = TRUE))
@@ -1704,7 +1736,7 @@ test("lean 3D renderer keeps costly features optional", {
   stopifnot(!grepl("function animate", js, fixed = TRUE))
 })
 
-test("lean 3D renderer pins live combatant posters to the tavern wall", {
+test("lean 3D renderer pins player posters to the tavern wall", {
   js <- paste(readLines(file.path("DND APP Drachuri Edition Player_v2", "www", "js", "combat3d_lean.js"), warn = FALSE), collapse = "\n")
   stopifnot(grepl("posterCanvas", js, fixed = TRUE))
   stopifnot(grepl("updateWallPosters", js, fixed = TRUE))
@@ -1713,7 +1745,7 @@ test("lean 3D renderer pins live combatant posters to the tavern wall", {
   stopifnot(grepl("canvas.width=640", js, fixed = TRUE))
   stopifnot(grepl("state.roomDepth/2", js, fixed = TRUE))
   stopifnot(grepl("addCards(players,6.25", js, fixed = TRUE))
-  stopifnot(grepl("addCards(enemies,2.5", js, fixed = TRUE))
+  stopifnot(!grepl("addCards(enemies,2.5", js, fixed = TRUE))
   stopifnot(grepl('eman:"eman.png"', js, fixed = TRUE))
   stopifnot(grepl('dewydd_troell:"dewydd-troell.png"', js, fixed = TRUE))
   stopifnot(grepl('eleri:"eleri.png"', js, fixed = TRUE))
@@ -2129,7 +2161,7 @@ test("combat fullscreen expands only the map beneath persistent HUDs", {
   stopifnot(grepl("[id$='status_card_dock']",combat_css,fixed=TRUE))
   stopifnot(grepl("body.combat-document-fullscreen .modal",combat_css,fixed=TRUE))
   stopifnot(grepl("background:rgba(255,255,245,.48)",combat_css,fixed=TRUE))
-  stopifnot(grepl("left:16px!important",combat_css,fixed=TRUE))
+  stopifnot(grepl("left:max(16px, env(safe-area-inset-left))!important",combat_css,fixed=TRUE))
   stopifnot(grepl("close_actions_menu",combat_server,fixed=TRUE))
   stopifnot(grepl("Natural Magic can be cast on your turn",combat_server,fixed=TRUE))
   stopifnot(grepl('combat.css?v=',combat_server,fixed=TRUE))
@@ -2144,6 +2176,23 @@ test("complete dice result card library is shipped", {
   }), use.names = FALSE)
   stopifnot(length(expected) == 60L)
   stopifnot(all(file.exists(expected)))
+})
+
+test("dice cards and opt-in manual rolls share the normal resolution paths", {
+  core <- test_env
+  stopifnot(identical(core$dice_card_src(20L, 1L), "assets/dice-cards/d20/d20-01.png"))
+  stopifnot(identical(core$manual_dice_values("4, 17", 20L, 2L), c(4L, 17L)))
+  stopifnot(is.null(core$manual_dice_values("0, 21", 20L, 2L)))
+  settings <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","www","settings.js"),warn=FALSE),collapse="\n")
+  sidebar <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","sidebar_module.R"),warn=FALSE),collapse="\n")
+  dice <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","dice_module.R"),warn=FALSE),collapse="\n")
+  skills <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","skills_module.R"),warn=FALSE),collapse="\n")
+  combat <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","debug_combat_module.R"),warn=FALSE),collapse="\n")
+  stopifnot(grepl("manual_roll_mode",sidebar,fixed=TRUE),grepl("drachuri.manualRollMode",settings,fixed=TRUE))
+  stopifnot(grepl("finish_roll(req$sides",dice,fixed=TRUE),grepl("roll(req$mode,values)",skills,fixed=TRUE))
+  stopifnot(grepl("attack_rolls_override = manual_attack_rolls",combat,fixed=TRUE))
+  stopifnot(grepl("dice_result_card_ui",dice,fixed=TRUE),grepl("dice_result_card_ui",skills,fixed=TRUE),grepl("dice_card_src(20L",combat,fixed=TRUE))
+  stopifnot(grepl("modifier_result_card_ui",dice,fixed=TRUE),grepl("modifier_result_card_ui",skills,fixed=TRUE),grepl("modifier_result_card_ui(preview$attack_bonus",combat,fixed=TRUE))
 })
 
 test("blood inventory actions initialise and large-screen player UI remains usable", {
@@ -2162,6 +2211,49 @@ test("blood inventory actions initialise and large-screen player UI remains usab
   stopifnot(grepl('@media (min-width:1800px)', party_hud, fixed = TRUE))
   stopifnot(grepl('@media (min-width: 1800px)', player_ui, fixed = TRUE))
   stopifnot(grepl('max-width:none', player_ui, fixed = TRUE))
+})
+
+test("blood stock, card sound preference and nested module sizing remain player friendly", {
+  blood <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition Player_v2", "server", "blood_module.R"), warn = FALSE), collapse = "\n")
+  control_inventory <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition 2 Control", "control_app", "modules", "control_inventory_module.R"), warn = FALSE), collapse = "\n")
+  player_inventory <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition Player_v2", "server", "inventory_module.R"), warn = FALSE), collapse = "\n")
+  player_ui <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition Player_v2", "ui.R"), warn = FALSE), collapse = "\n")
+  settings <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition Player_v2", "www", "settings.js"), warn = FALSE), collapse = "\n")
+  sidebar <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition Player_v2", "server", "sidebar_module.R"), warn = FALSE), collapse = "\n")
+  marker <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition Player_v2", "server", "character_3d_module.R"), warn = FALSE), collapse = "\n")
+  stopifnot(grepl('concentrations <- c(Diluted=10L,Standard=25L,Potent=50L,Concentrated=100L)', control_inventory, fixed = TRUE))
+  stopifnot(grepl('cat_biological', control_inventory, fixed = TRUE))
+  stopifnot(grepl('current < donor_cost', blood, fixed = TRUE))
+  stopifnot(grepl('disabled=if(affordable)NULL else "disabled"', blood, fixed = TRUE))
+  stopifnot(grepl('card_hover_sound', sidebar, fixed = TRUE))
+  stopifnot(grepl('drachuri.cardHoverSound', settings, fixed = TRUE))
+  stopifnot(grepl('drachuriCardHoverSoundEnabled()', player_ui, fixed = TRUE))
+  stopifnot(grepl('#app-panel > .tab-content > .tab-pane.active', player_ui, fixed = TRUE))
+  stopifnot(grepl('> .tabbable > .tab-content > .tab-pane{width:100%', player_inventory, fixed = TRUE))
+  stopifnot(grepl('setInterval(syncMarkerPreview,250)', marker, fixed = TRUE))
+})
+
+test("shared chests use a persistent Sleight of Hand lockpicking flow", {
+  migration<-paste(readLines(file.path(project_dir,"database","migrations","048_chests_and_lockpicking.sql"),warn=FALSE),collapse="\n")
+  shared<-paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","shared","session_db_core.R"),warn=FALSE),collapse="\n")
+  chest<-paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","chest_module.R"),warn=FALSE),collapse="\n")
+  control<-paste(readLines(file.path(project_dir,"DND APP Drachuri Edition 2 Control","control_app","modules","control_merchants_module.R"),warn=FALSE),collapse="\n")
+  player_ui<-paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","ui.R"),warn=FALSE),collapse="\n")
+  player_server<-paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server.R"),warn=FALSE),collapse="\n")
+  stopifnot(grepl("CREATE TABLE chests",migration,fixed=TRUE),grepl("CREATE TABLE chest_items",migration,fixed=TRUE),grepl("CREATE TABLE chest_invitations",migration,fixed=TRUE))
+  stopifnot(grepl("chest_lockpick_attempt",shared,fixed=TRUE),grepl("FOR UPDATE",shared,fixed=TRUE),grepl("take_chest_item",shared,fixed=TRUE))
+  stopifnot(grepl("character_skill_cards(char,\"sleight of hand\")",chest,fixed=TRUE),grepl("tolerance_bonus",chest,fixed=TRUE),grepl("lockpicks_remaining",shared,fixed=TRUE),grepl("no usable lockpicks",shared,fixed=TRUE))
+  stopifnot(grepl("Chest Generator",control,fixed=TRUE),grepl("Reveal Chest",control,fixed=TRUE))
+  stopifnot(grepl("remaining<=0L",shared,fixed=TRUE),grepl("confirm_remove_chest",control,fixed=TRUE),grepl("confirm_close_merchant",control,fixed=TRUE))
+  stopifnot(grepl('source("server/chest_module.R")',player_ui,fixed=TRUE),grepl('chestUI("chests")',player_ui,fixed=TRUE),grepl('chestServer("chests",core$state)',player_server,fixed=TRUE))
+})
+
+test("enemy pools provide parchment portraits in the combat HUD", {
+  hud<-paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","party_hud_module.R"),warn=FALSE),collapse="\n")
+  snapshot<-paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","shared","session_db_core.R"),warn=FALSE),collapse="\n")
+  assets<-file.path(project_dir,"DND APP Drachuri Edition Player_v2","www","assets","enemy-portraits",paste0(c("humanoid","sorcerer","undead","beast","construct"),".png"))
+  control_server<-paste(readLines(file.path(project_dir,"DND APP Drachuri Edition 2 Control","server.R"),warn=FALSE),collapse="\n")
+  stopifnot(all(file.exists(assets)),grepl("enemy_portrait_file",hud,fixed=TRUE),grepl("enemy_portrait_base",hud,fixed=TRUE),grepl("player-assets/assets/enemy-portraits",control_server,fixed=TRUE),grepl("enemy_type = as.character(enemies$enemy_type",snapshot,fixed=TRUE))
 })
 
 cat("\n", tests_run, " tests passed.\n", sep = "")

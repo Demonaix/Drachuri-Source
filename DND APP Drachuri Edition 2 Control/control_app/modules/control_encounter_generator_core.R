@@ -37,6 +37,55 @@ encounter_party_budget <- function(players, danger = "standard") {
   max(10, sum(hp) * multiplier)
 }
 
+encounter_roll_pool_rules <- function(rules) {
+  rules <- rules %||% list()
+  independent <- Filter(function(x) !nzchar(as.character(x$group %||% "")), rules)
+  selected <- vapply(Filter(function(x) runif(1) * 100 <= as.numeric(x$chance %||% 0), independent), function(x) as.character(x$item_id), character(1))
+  grouped <- Filter(function(x) nzchar(as.character(x$group %||% "")), rules)
+  if (length(grouped)) for (set in split(grouped, vapply(grouped, function(x) as.character(x$group), character(1)))) {
+    weights <- vapply(set, function(x) as.numeric(x$chance %||% 0), numeric(1))
+    required <- any(vapply(set, function(x) isTRUE(x$required), logical(1)))
+    if (sum(weights) > 0 && (required || runif(1) * 100 <= min(100, sum(weights))))
+      selected <- c(selected, sample(vapply(set, function(x) as.character(x$item_id), character(1)), 1L, prob=weights))
+  }
+  unique(selected)
+}
+
+# Produce disposable encounter candidates directly from a pool. Saved templates are
+# deliberately not consulted: authored creatures must never leak into random encounters.
+generate_encounter_pool_candidates <- function(pool, count=18L, seed=1L) {
+  if (is.null(pool) || !nzchar(as.character(pool$id %||% ""))) stop("Choose an NPC pool.")
+  if (identical(as.character(pool$id), "custom")) stop("The Custom Enemy pool is for authored creatures and cannot be randomly generated.")
+  set.seed(as.integer(seed %||% 1L))
+  attacks_catalog <- enemy_attack_catalog()
+  loot_catalog <- enemy_loot_catalog()
+  feature_catalog <- if (exists("merge_npc_feature_catalogue", mode="function")) merge_npc_feature_catalogue(list()) else list()
+  feature_names <- setNames(vapply(feature_catalog, function(x) as.character(x$name %||% x$id %||% ""), character(1)), vapply(feature_catalog, function(x) as.character(x$id %||% ""), character(1)))
+  make_one <- function(i) {
+    b <- resolve_enemy_blueprint(as.character(pool$base_type %||% "Custom"), character())
+    if (length(pool$abilities %||% list())) b$abilities <- pool$abilities
+    for (field in c("hp_max","ac","movement_speed")) if (!is.null(pool[[field]])) b[[field]] <- as.integer(pool[[field]])
+    if (!is.null(pool$gold)) b$gold <- as.integer(pool$gold)
+    features <- unique(c(as.character(pool$features %||% character()), encounter_roll_pool_rules(pool$feature_rules %||% list())))
+    loot_ids <- unique(c(as.character(b$loot_ids %||% character()), encounter_roll_pool_rules(pool$rules %||% list())))
+    attack_ids <- unique(c(as.character(pool$attack_ids %||% b$attack_ids %||% character()), encounter_roll_pool_rules(pool$attack_rules %||% list())))
+    attacks <- unname(attacks_catalog[intersect(attack_ids, names(attacks_catalog))])
+    weapon_attacks <- Filter(function(a) nzchar(as.character(a$loot_id %||% "")) && as.character(a$loot_id) %in% loot_ids, attacks_catalog)
+    attacks <- c(attacks, weapon_attacks)
+    if (!length(attacks)) attacks <- list(list(name="Attack",hit=2L,dmg="1d4",type="bludgeoning"))
+    attacks <- attacks[!duplicated(vapply(attacks, function(a) paste(a$name %||% "", a$dmg %||% "", sep="|"), character(1)))]
+    loot <- unname(loot_catalog[intersect(loot_ids, names(loot_catalog))])
+    if (exists("roll_loot_equipment_provenance", mode="function") && length(loot)) loot <- roll_loot_equipment_provenance(loot, as.character(pool$base_type %||% "Custom"), features)
+    primary <- attacks[[1L]]
+    descriptors <- unname(feature_names[intersect(features, names(feature_names))]); descriptors <- descriptors[nzchar(descriptors)]
+    display <- paste(c(as.character(pool$name %||% "Enemy"), head(descriptors, 1L)), collapse=" ")
+    gold <- as.integer(b$gold %||% c(0L,0L)); if (!length(gold)) gold <- c(0L,0L); if (length(gold)==1L) gold <- rep(gold,2L)
+    data.frame(npc_id=paste0("generated_",pool$id,"_",seed,"_",i),name=display,enemy_type=as.character(pool$name %||% pool$id),hp_max=as.integer(b$hp_max %||% 10L),ac=as.integer(b$ac %||% 12L),movement_speed=as.integer(b$movement_speed %||% 30L),attack_name=as.character(primary$name %||% "Attack"),attack_bonus=as.integer(primary$hit %||% 2L),damage_expr=as.character(primary$dmg %||% "1d4"),damage_type=as.character(primary$type %||% "bludgeoning"),attacks_json=as.character(enemy_json(attacks)),gold_min=min(gold),gold_max=max(gold),stringsAsFactors=FALSE,
+      characteristics=I(list(as.list(features))),abilities=I(list(b$abilities %||% list())),attacks=I(list(attacks)),loot=I(list(loot)),resistances=I(list(unique(c(b$resistances %||% character(),pool$resistances %||% character())))),immunities=I(list(unique(c(b$immunities %||% character(),pool$immunities %||% character())))),vulnerabilities=I(list(unique(c(b$vulnerabilities %||% character(),pool$vulnerabilities %||% character())))),condition_immunities=I(list(unique(c(b$condition_immunities %||% character(),pool$condition_immunities %||% character())))))
+  }
+  do.call(rbind, lapply(seq_len(max(1L,as.integer(count))), make_one))
+}
+
 compose_encounter_draft <- function(players, templates, danger = "standard", seed = 1L, max_enemies = 12L) {
   if (!is.data.frame(players) || !nrow(players)) stop("The selected session has no active players.")
   if (!is.data.frame(templates) || !nrow(templates)) stop("This NPC pool has no saved templates.")
@@ -76,7 +125,7 @@ encounter_draft_dimensions <- function(party_size, enemy_count) {
 }
 
 encounter_draft_positions <- function(tiles, player_ids, enemy_ids, seed = 1L) {
-  clutter <- c("table","bar","chair","bench","crate","barrel","bed","shelf","rubble","campfire")
+  clutter <- c("table","bar","chair","bench","crate","barrel","bed","shelf","rubble","campfire","torch","brazier")
   open <- tiles[!as.logical(tiles$blocks_movement) & !tolower(as.character(tiles$terrain)) %in% clutter,,drop=FALSE]
   needed <- length(player_ids) + length(enemy_ids)
   if (nrow(open) < needed) stop("The generated map does not contain enough open deployment tiles.")

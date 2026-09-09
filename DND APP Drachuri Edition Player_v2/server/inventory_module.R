@@ -19,8 +19,9 @@ inventoryTabUI <- function(id) {
         pfx, ".item-sub{font-size:13px;opacity:.9;margin-top:4px;line-height:1.35;}\n",
         pfx, ".item-actions{display:flex;gap:6px;flex-wrap:wrap;}\n",
         pfx, ".status-bar{display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;}\n",
-        pfx, ".status-pill{padding:6px 10px;border-radius:999px;border:1px solid rgba(150,120,70,0.4);background:rgba(255,255,245,0.8);}\n",
-        pfx, ".nav-tabs{display:flex!important;visibility:visible!important;margin-bottom:12px;}\n"
+        pfx, ".status-pill{padding:6px 2px;border:0;border-radius:0;background:transparent;}\n",
+        pfx, ".nav-tabs{display:flex!important;visibility:visible!important;margin-bottom:12px;}\n",
+        "#", root, ",#", root, " > .tabbable,#", root, " > .tabbable > .tab-content,#", root, " > .tabbable > .tab-content > .tab-pane{width:100%;max-width:none;box-sizing:border-box;}\n"
       )
     })),
     
