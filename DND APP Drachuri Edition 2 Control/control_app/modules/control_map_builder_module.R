@@ -448,6 +448,7 @@ controlMapBuilderServer <- function(id, ctrl, session_tbl = NULL, players_tbl = 
     }
     
     loaded_map_id <- reactiveVal(NA_integer_)
+    map_choice_signature <- reactiveVal(NULL)
 
     current_map_id <- reactive({
       mid <- suppressWarnings(as.integer(loaded_map_id()))
@@ -474,7 +475,10 @@ observe({
   maps <- maps_rv()
   
   if (!is.data.frame(maps) || nrow(maps) == 0) {
-    updateSelectInput(session, "map_select", choices = c("No maps yet" = ""))
+    if (!identical(map_choice_signature(), "")) {
+      map_choice_signature("")
+      updateSelectInput(session, "map_select", choices = c("No maps yet" = ""))
+    }
     return()
   }
   
@@ -493,7 +497,10 @@ observe({
     maps$tile_count,
     " tiles"
   )
-  selected <- as.character(ctrl$map_id %||% input$map_select %||% "")
+  signature <- paste(ids, labels, collapse = "|")
+  if (identical(signature, map_choice_signature())) return()
+  map_choice_signature(signature)
+  selected <- as.character(isolate(input$map_select) %||% ctrl$map_id %||% "")
   if (!nzchar(selected) || !selected %in% ids) {
     selected <- ids[1]
   }

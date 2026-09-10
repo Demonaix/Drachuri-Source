@@ -182,6 +182,9 @@ controlEncounterSetupServer <- function(
     enemy_obs_ids <- reactiveVal(character())
     npc_templates_rv <- reactiveVal(data.frame())
     generated_draft <- reactiveVal(NULL)
+    session_choice_signature <- reactiveVal(NULL)
+    encounter_choice_signature <- reactiveVal(NULL)
+    encounter_map_choice_signature <- reactiveVal(NULL)
 
     list_encounter_maps <- function() {
       con <- get_db_connection()
@@ -271,6 +274,8 @@ controlEncounterSetupServer <- function(
       if (!is.data.frame(df)) df <- data.frame()
       npc_templates_rv(df)
     }
+
+    npc_template_choice_signature <- reactiveVal(NULL)
     
     observeEvent(TRUE, {
       load_npc_templates()
@@ -284,7 +289,10 @@ controlEncounterSetupServer <- function(
       df <- npc_templates_rv()
       
       if (!is.data.frame(df) || nrow(df) == 0 || !"npc_id" %in% names(df) || !"name" %in% names(df)) {
-        updateSelectInput(session, "npc_template_id", choices = c("No NPC templates found" = ""))
+        if (!identical(npc_template_choice_signature(), "")) {
+          npc_template_choice_signature("")
+          updateSelectInput(session, "npc_template_id", choices = c("No NPC templates found" = ""))
+        }
         return()
       }
       
@@ -295,7 +303,10 @@ controlEncounterSetupServer <- function(
       )
       
       ids <- as.character(df$npc_id)
-      selected_id <- as.character(input$npc_template_id %||% "")
+      signature <- paste(ids, labels, collapse = "|")
+      if (identical(signature, npc_template_choice_signature())) return()
+      npc_template_choice_signature(signature)
+      selected_id <- as.character(isolate(input$npc_template_id) %||% "")
       
       if (!nzchar(selected_id) || !selected_id %in% ids) {
         selected_id <- ids[1]
@@ -316,12 +327,15 @@ controlEncounterSetupServer <- function(
       Filter(function(x)!identical(as.character(x$id%||%""),"custom"),pools)
     }
 
-    pool_choice_signature<-reactiveVal("")
+    pool_choice_signature<-reactiveVal(NULL)
     observe({
       invalidateLater(5000,session)
       pools <- generator_pool_catalogue()
       if (!length(pools)) {
-        updateSelectInput(session,"generator_pool",choices=c("No NPC pools available"=""))
+        if (!identical(pool_choice_signature(), "")) {
+          pool_choice_signature("")
+          updateSelectInput(session,"generator_pool",choices=c("No NPC pools available"=""))
+        }
         return()
       }
       ids <- vapply(pools,function(x)as.character(x$id%||%""),character(1))
@@ -329,7 +343,7 @@ controlEncounterSetupServer <- function(
       signature<-paste(ids,labels,collapse="|")
       if(identical(signature,pool_choice_signature()))return()
       pool_choice_signature(signature)
-      selected <- as.character(input$generator_pool%||%"")
+      selected <- as.character(isolate(input$generator_pool)%||%"")
       if (!selected%in%ids) selected<-ids[[1L]]
       updateSelectInput(session,"generator_pool",choices=stats::setNames(ids,labels),selected=selected)
     })
@@ -337,14 +351,17 @@ controlEncounterSetupServer <- function(
 
     
     current_session_id <- reactive({
-      sid <- suppressWarnings(as.integer(ctrl$session_id %||% input$session_id %||% NA))
+      # A choice made in this module must win immediately.  Reading ctrl first
+      # lets the previous shared value rewrite the browser input before its
+      # observeEvent has a chance to publish the new selection.
+      sid <- suppressWarnings(as.integer(input$session_id %||% ctrl$session_id %||% NA))
       if (is.na(sid) || sid < 1) return(NA_integer_)
       sid
     })
     
     current_encounter_id <- reactive({
-      eid <- suppressWarnings(as.integer(ctrl$encounter_id %||% NA))
-      if (is.na(eid) || eid < 1) eid <- suppressWarnings(as.integer(input$encounter_id %||% NA))
+      eid <- suppressWarnings(as.integer(input$encounter_id %||% NA))
+      if (is.na(eid) || eid < 1) eid <- suppressWarnings(as.integer(ctrl$encounter_id %||% NA))
       if (is.na(eid) || eid < 1) return(NA_integer_)
       eid
     })
@@ -375,13 +392,19 @@ controlEncounterSetupServer <- function(
     observe({
       maps <- encounter_maps()
       if (!nrow(maps)) {
-        updateSelectInput(session, "map_id", choices = c())
+        if (!identical(encounter_map_choice_signature(), "")) {
+          encounter_map_choice_signature("")
+          updateSelectInput(session, "map_id", choices = c())
+        }
         return()
       }
       ids <- as.character(maps$map_id)
       dimensions <- if (all(c("width", "height") %in% names(maps))) paste0(" • ", maps$width, "×", maps$height) else ""
       labels <- paste0(maps$map_name, " (#", ids, ")", dimensions)
-      selected <- as.character(ctrl$map_id %||% input$map_id %||% "")
+      signature <- paste(ids, labels, collapse = "|")
+      if (identical(signature, encounter_map_choice_signature())) return()
+      encounter_map_choice_signature(signature)
+      selected <- as.character(isolate(input$map_id) %||% ctrl$map_id %||% "")
       if (!selected %in% ids) selected <- ids[[1L]]
       updateSelectInput(session, "map_id", choices = stats::setNames(ids, labels), selected = selected)
     })
@@ -646,21 +669,30 @@ controlEncounterSetupServer <- function(
       )
       
       if (!is.data.frame(sess) || nrow(sess) == 0) {
-        updateSelectInput(session, "session_id", choices = c())
+        if (!identical(session_choice_signature(), "")) {
+          session_choice_signature("")
+          updateSelectInput(session, "session_id", choices = c())
+        }
         return()
       }
       
       id_col <- if ("session_id" %in% names(sess)) "session_id" else if ("id" %in% names(sess)) "id" else NULL
       if (is.null(id_col) || !"name" %in% names(sess)) {
-        updateSelectInput(session, "session_id", choices = c())
+        if (!identical(session_choice_signature(), "")) {
+          session_choice_signature("")
+          updateSelectInput(session, "session_id", choices = c())
+        }
         return()
       }
       
       ids <- as.character(sess[[id_col]])
       labels <- paste0(sess$name, " (#", ids, ")")
       choices <- stats::setNames(ids, labels)
+      signature <- paste(ids, labels, collapse = "|")
+      if (identical(signature, session_choice_signature())) return()
+      session_choice_signature(signature)
       
-      selected_id <- as.character(ctrl$session_id %||% input$session_id %||% "")
+      selected_id <- as.character(isolate(input$session_id) %||% ctrl$session_id %||% "")
       if (!nzchar(selected_id) || !selected_id %in% ids) {
         selected_id <- ids[1]
       }
@@ -683,13 +715,19 @@ controlEncounterSetupServer <- function(
       sid <- current_session_id()
       
       if (is.na(sid)) {
-        updateSelectInput(session, "encounter_id", choices = c())
+        if (!identical(encounter_choice_signature(), "")) {
+          encounter_choice_signature("")
+          updateSelectInput(session, "encounter_id", choices = c())
+        }
         return()
       }
       
       enc <- current_encounters()
       if (!is.data.frame(enc) || nrow(enc) == 0) {
-        updateSelectInput(session, "encounter_id", choices = c())
+        if (!identical(encounter_choice_signature(), "")) {
+          encounter_choice_signature("")
+          updateSelectInput(session, "encounter_id", choices = c())
+        }
         return()
       }
       
@@ -697,7 +735,10 @@ controlEncounterSetupServer <- function(
       name_col <- if ("name" %in% names(enc)) "name" else NULL
       
       if (is.null(id_col) || is.null(name_col)) {
-        updateSelectInput(session, "encounter_id", choices = c())
+        if (!identical(encounter_choice_signature(), "")) {
+          encounter_choice_signature("")
+          updateSelectInput(session, "encounter_id", choices = c())
+        }
         return()
       }
       
@@ -705,8 +746,11 @@ controlEncounterSetupServer <- function(
       map_labels <- if ("map_name" %in% names(enc)) ifelse(is.na(enc$map_name) | !nzchar(as.character(enc$map_name)), "No map", as.character(enc$map_name)) else paste0("Map #", enc$map_id)
       labels <- paste0(enc[[name_col]], " • ", map_labels, " (#", ids, ")")
       choices <- stats::setNames(ids, labels)
+      signature <- paste(ids, labels, collapse = "|")
+      if (identical(signature, encounter_choice_signature())) return()
+      encounter_choice_signature(signature)
       
-      selected_id <- as.character(ctrl$encounter_id %||% input$encounter_id %||% "")
+      selected_id <- as.character(isolate(input$encounter_id) %||% ctrl$encounter_id %||% "")
       
       if (!nzchar(selected_id) || !selected_id %in% ids) {
         selected_id <- ids[1]

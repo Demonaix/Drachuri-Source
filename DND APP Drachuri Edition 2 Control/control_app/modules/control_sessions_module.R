@@ -70,6 +70,7 @@ controlSessionsServer <- function(id, ctrl, session_tbl, players_tbl, bump_refre
     # Load sessions list
     # ------------------------------------------
     sessions_rv <- reactiveVal(data.frame())
+    session_choice_signature <- reactiveVal(NULL)
     
     load_sessions <- function() {
       df <- tryCatch(
@@ -110,7 +111,10 @@ controlSessionsServer <- function(id, ctrl, session_tbl, players_tbl, bump_refre
       df <- sessions_rv()
       
       if (is.null(df) || !is.data.frame(df) || nrow(df) == 0) {
-        updateSelectInput(session, "session_select", choices = c())
+        if (!identical(session_choice_signature(), "")) {
+          session_choice_signature("")
+          updateSelectInput(session, "session_select", choices = c())
+        }
         return()
       }
       
@@ -120,14 +124,20 @@ controlSessionsServer <- function(id, ctrl, session_tbl, players_tbl, bump_refre
       
       if (is.null(id_col) || is.null(name_col)) {
         warning("⚠️ get_all_sessions missing required columns")
-        updateSelectInput(session, "session_select", choices = c())
+        if (!identical(session_choice_signature(), "")) {
+          session_choice_signature("")
+          updateSelectInput(session, "session_select", choices = c())
+        }
         return()
       }
       
       ids <- as.character(df[[id_col]])
       labels <- paste0(as.character(df[[name_col]]), " (", ids, ")")
+      signature <- paste(ids, labels, collapse = "|")
+      if (identical(signature, session_choice_signature())) return()
+      session_choice_signature(signature)
       
-      selected_id <- as.character(ctrl$session_id %||% input$session_select %||% "")
+      selected_id <- as.character(isolate(input$session_select) %||% ctrl$session_id %||% "")
       
       if (!nzchar(selected_id) || !selected_id %in% ids) {
         selected_id <- ids[1]

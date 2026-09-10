@@ -495,6 +495,10 @@ controlLiveCombatServer <- function(
     observeEvent(input$close_control_turn, { shinyjs::hide("control_turn_panel") }, ignoreInit = TRUE)
     observeEvent(input$refresh_combat, { bump_live() }, ignoreInit = TRUE)
     reinforce_templates_rv <- reactiveVal(data.frame())
+    reinforce_template_choice_signature <- reactiveVal(NULL)
+    admin_target_choice_signature <- reactiveVal(NULL)
+    attack_target_choice_signature <- reactiveVal(NULL)
+    reinforcement_enemy_choice_signature <- reactiveVal(NULL)
     audit_key <- reactiveVal(0L)
     audit_log_path <- file.path(Sys.getenv("DRACHURI_LOG_DIR", unset = "logs"), "control-audit.log")
     if (!dir.exists(dirname(audit_log_path))) dir.create(dirname(audit_log_path), recursive = TRUE, showWarnings = FALSE)
@@ -578,14 +582,20 @@ limit 1
       df <- reinforce_templates_rv()
       
       if (!is.data.frame(df) || nrow(df) == 0 || !"npc_id" %in% names(df) || !"name" %in% names(df)) {
-        updateSelectInput(session, "reinforce_npc_template_id", choices = c("No NPC templates found" = ""))
+        if (!identical(reinforce_template_choice_signature(), "")) {
+          reinforce_template_choice_signature("")
+          updateSelectInput(session, "reinforce_npc_template_id", choices = c("No NPC templates found" = ""))
+        }
         return()
       }
       
       ids <- as.character(df$npc_id)
       labels <- paste0(df$name, " • HP ", df$hp_max, " • AC ", df$ac)
+      signature <- paste(ids, labels, collapse = "|")
+      if (identical(signature, reinforce_template_choice_signature())) return()
+      reinforce_template_choice_signature(signature)
       
-      selected_id <- as.character(input$reinforce_npc_template_id %||% "")
+      selected_id <- as.character(isolate(input$reinforce_npc_template_id) %||% "")
       if (!nzchar(selected_id) || !selected_id %in% ids) {
         selected_id <- ids[1]
       }
@@ -773,16 +783,24 @@ limit 1
       eid
     })
 
+    live_encounter_choice_signature <- reactiveVal(NULL)
+
     observe({
       ctrl$refresh_key
       sid <- current_session_id()
       if (is.na(sid)) {
-        updateSelectInput(session, "encounter_select", choices = c())
+        if (!identical(live_encounter_choice_signature(), "")) {
+          live_encounter_choice_signature("")
+          updateSelectInput(session, "encounter_select", choices = c())
+        }
         return()
       }
       encounters <- tryCatch(get_session_encounters(sid), error = function(e) data.frame())
       if (!is.data.frame(encounters) || !nrow(encounters)) {
-        updateSelectInput(session, "encounter_select", choices = c())
+        if (!identical(live_encounter_choice_signature(), "")) {
+          live_encounter_choice_signature("")
+          updateSelectInput(session, "encounter_select", choices = c())
+        }
         return()
       }
       id_col <- if ("encounter_id" %in% names(encounters)) "encounter_id" else if ("id" %in% names(encounters)) "id" else NULL
@@ -793,7 +811,10 @@ limit 1
       names[is.na(names) | !nzchar(names)] <- paste("Encounter", ids[is.na(names) | !nzchar(names)])
       status[is.na(status)] <- ""
       labels <- paste0(names, " (#", ids, ")", ifelse(nzchar(status), paste0(" • ", status), ""))
-      selected <- as.character(input$encounter_select %||% current_encounter_id() %||% "")
+      signature <- paste(ids, labels, collapse = "|")
+      if (identical(signature, live_encounter_choice_signature())) return()
+      live_encounter_choice_signature(signature)
+      selected <- as.character(isolate(input$encounter_select) %||% current_encounter_id() %||% "")
       if (!selected %in% ids) selected <- if (as.character(current_encounter_id()) %in% ids) as.character(current_encounter_id()) else ids[[1L]]
       updateSelectInput(session, "encounter_select", choices = stats::setNames(ids, labels), selected = selected)
     })
@@ -911,8 +932,11 @@ limit 1
         choices <- stats::setNames(ids, labels)
       }
       
-      current_target <- as.character(input$admin_target_id %||% "")
       choice_values <- unname(choices)
+      signature <- paste(names(choices), choice_values, collapse = "|")
+      if (identical(signature, admin_target_choice_signature())) return()
+      admin_target_choice_signature(signature)
+      current_target <- as.character(isolate(input$admin_target_id) %||% "")
       
       selected_target <- if (nzchar(current_target) && current_target %in% choice_values) {
         current_target
@@ -2666,9 +2690,11 @@ limit 1
         }
       }
       
-      current_target <- as.character(input$target_id %||% "")
-      
       choice_values <- unname(choices)
+      signature <- paste(as.character(attacker_id %||% ""), paste(names(choices), choice_values, collapse = "|"), sep = "::")
+      if (identical(signature, attack_target_choice_signature())) return()
+      attack_target_choice_signature(signature)
+      current_target <- as.character(isolate(input$target_id) %||% "")
       
       selected_target <- if (nzchar(current_target) && current_target %in% choice_values) {
         current_target
@@ -2700,8 +2726,11 @@ limit 1
         choices <- stats::setNames(ids, labels)
       }
       
-      current <- as.character(input$selected_enemy_id %||% "")
       choice_values <- unname(choices)
+      signature <- paste(names(choices), choice_values, collapse = "|")
+      if (identical(signature, reinforcement_enemy_choice_signature())) return()
+      reinforcement_enemy_choice_signature(signature)
+      current <- as.character(isolate(input$selected_enemy_id) %||% "")
       
       selected <- if (nzchar(current) && current %in% choice_values) {
         current

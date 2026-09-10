@@ -22,9 +22,22 @@ controlGeographyClimateUI <- function(id) {
 
 controlGeographyClimateServer <- function(id,ctrl,bump_refresh=NULL) {
   moduleServer(id,function(input,output,session){
-    `%||%`<-get("%||%",inherits=TRUE);clock<-reactiveVal(NULL);phase<-reactiveVal(NULL)
+    `%||%`<-get("%||%",inherits=TRUE);clock<-reactiveVal(NULL);phase<-reactiveVal(NULL);clock_signature<-reactiveVal(NULL);phase_signature<-reactiveVal(NULL)
     sid<-reactive({x<-suppressWarnings(as.integer(ctrl$session_id%||%NA));if(is.na(x)||x<1L)NULL else x})
-    refresh<-function(){if(is.null(sid())){clock(NULL);phase(NULL)}else{clock(get_session_environment(sid()));phase(get_open_session_phase(sid()))}}
+    refresh<-function(){
+      active_sid<-sid()
+      if(is.null(active_sid)){
+        if(!identical(clock_signature(),"")){clock_signature("");clock(NULL)}
+        if(!identical(phase_signature(),"")){phase_signature("");phase(NULL)}
+        return()
+      }
+      next_clock<-get_session_environment(active_sid)
+      clock_sig<-if(is.data.frame(next_clock)&&nrow(next_clock))paste(active_sid,next_clock$day_number[[1L]],next_clock$time_of_day[[1L]],next_clock$geography[[1L]],next_clock$climate[[1L]],next_clock$weather[[1L]],sep="|")else paste0(active_sid,"|")
+      if(!identical(clock_sig,clock_signature())){clock_signature(clock_sig);clock(next_clock)}
+      next_phase<-get_open_session_phase(active_sid)
+      phase_sig<-if(is.data.frame(next_phase)&&nrow(next_phase))paste(active_sid,next_phase$id[[1L]],next_phase$phase_kind[[1L]],next_phase$duration_hours[[1L]],sep="|")else paste0(active_sid,"|")
+      if(!identical(phase_sig,phase_signature())){phase_signature(phase_sig);phase(next_phase)}
+    }
     observe({invalidateLater(2500,session);sid();refresh()})
     observeEvent(clock(),{x<-clock();if(is.null(x))return();updateNumericInput(session,"day_number",value=x$day_number[[1L]]);updateSelectInput(session,"time_of_day",selected=x$time_of_day[[1L]]);updateTextInput(session,"geography",value=x$geography[[1L]]);updateSelectInput(session,"climate",selected=x$climate[[1L]]);updateTextInput(session,"weather",value=x$weather[[1L]])},ignoreInit=FALSE)
     output$clock_summary<-renderUI({x<-clock();if(is.null(x))return(div(class="alert alert-warning","Select an active session first."));div(class="control-kpi-row",span(class="control-kpi",paste("Day",x$day_number[[1L]])),span(class="control-kpi",time_of_day_label(x$time_of_day[[1L]])),span(class="control-kpi",x$weather[[1L]]),span(class="control-kpi",x$climate[[1L]]))})

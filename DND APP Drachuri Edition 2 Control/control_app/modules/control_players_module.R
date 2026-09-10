@@ -51,6 +51,7 @@ controlPlayersServer <- function(id, ctrl, session_tbl, players_tbl, positions_t
     # Load sessions
     # --------------------------------
     characters_rv <- reactiveVal(data.frame())
+    remove_player_choice_signature <- reactiveVal(NULL)
     
     load_characters <- function() {
       chars <- tryCatch(
@@ -92,7 +93,24 @@ controlPlayersServer <- function(id, ctrl, session_tbl, players_tbl, positions_t
     
     
     output$players_summary<-renderUI({df<-players_tbl();if(!is.data.frame(df)||!nrow(df))return(p(class="control-mini","No players in the active session."));tags$ul(lapply(seq_len(nrow(df)),function(i){nm<-as.character(df$display_name[[i]]%||%df$char_name[[i]]%||%df$character_id[[i]]);hp<-as.integer(df$current_hp[[i]]%||%0L);tags$li(strong(nm),paste0(" — ",hp," HP",if("is_active"%in%names(df)&&!isTRUE(df$is_active[[i]]))" · inactive"else""))}))})
-    observe({df<-players_tbl();if(!is.data.frame(df)||!nrow(df))return(updateSelectInput(session,"remove_character_id",choices=character()));ids<-as.character(df$character_id);labels<-as.character(df$display_name%||%df$char_name%||%ids);updateSelectInput(session,"remove_character_id",choices=setNames(ids,labels),selected=isolate(input$remove_character_id%||%ids[[1L]]))})
+    observe({
+      df <- players_tbl()
+      if (!is.data.frame(df) || !nrow(df)) {
+        if (!identical(remove_player_choice_signature(), "")) {
+          remove_player_choice_signature("")
+          updateSelectInput(session, "remove_character_id", choices = character())
+        }
+        return()
+      }
+      ids <- as.character(df$character_id)
+      labels <- as.character(df$display_name %||% df$char_name %||% ids)
+      signature <- paste(ids, labels, collapse = "|")
+      if (identical(signature, remove_player_choice_signature())) return()
+      remove_player_choice_signature(signature)
+      selected <- as.character(isolate(input$remove_character_id) %||% ids[[1L]])
+      if (!selected %in% ids) selected <- ids[[1L]]
+      updateSelectInput(session, "remove_character_id", choices = setNames(ids, labels), selected = selected)
+    })
     
 
     observeEvent(input$refresh_characters, {

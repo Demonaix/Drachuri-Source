@@ -1895,10 +1895,21 @@ get_session_environment <- function(session_id) {
   con <- get_db_connection(); if (is.null(con)) return(NULL)
   on.exit(release_db_connection(con), add = TRUE)
   sid <- suppressWarnings(as.integer(session_id)); if (is.na(sid) || sid < 1L) return(NULL)
-  tryCatch(DBI::dbGetQuery(con, paste(
-    "INSERT INTO session_environment_state(session_id) VALUES($1)",
-    "ON CONFLICT(session_id) DO UPDATE SET session_id=EXCLUDED.session_id RETURNING *"
-  ), params=list(sid))[1,,drop=FALSE], error=function(e){message("get_session_environment failed: ",e$message);NULL})
+  tryCatch({
+    row <- DBI::dbGetQuery(con,
+      "SELECT * FROM session_environment_state WHERE session_id=$1",
+      params=list(sid))
+    if (nrow(row)) return(row[1,,drop=FALSE])
+
+    row <- DBI::dbGetQuery(con, paste(
+      "INSERT INTO session_environment_state(session_id) VALUES($1)",
+      "ON CONFLICT(session_id) DO NOTHING RETURNING *"
+    ), params=list(sid))
+    if (!nrow(row)) row <- DBI::dbGetQuery(con,
+      "SELECT * FROM session_environment_state WHERE session_id=$1",
+      params=list(sid))
+    if (nrow(row)) row[1,,drop=FALSE] else NULL
+  }, error=function(e){message("get_session_environment failed: ",e$message);NULL})
 }
 
 set_session_environment <- function(session_id, day_number=NULL, time_of_day=NULL,
@@ -2048,7 +2059,18 @@ set_session_fire <- function(session_id,lit=TRUE,defaults=list()) {
 get_session_supplies <- function(session_id,defaults=list()) {
   con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE)
   value<-function(name,fallback){x<-suppressWarnings(as.integer(defaults[[name]]%||%fallback));if(is.na(x)||x<0L)fallback else x}
-  tryCatch(DBI::dbGetQuery(con,paste("INSERT INTO session_supplies(session_id,wood,wood_max,water,water_max,rations,rations_max)","VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(session_id) DO UPDATE SET session_id=EXCLUDED.session_id RETURNING *"),params=list(as.integer(session_id),value("wood",3L),value("wood_max",10L),value("water",3L),value("water_max",5L),value("rations",3L),value("rations_max",5L)))[1,,drop=FALSE],error=function(e){message("get_session_supplies failed: ",e$message);NULL})
+  sid<-suppressWarnings(as.integer(session_id));if(is.na(sid)||sid<1L)return(NULL)
+  tryCatch({
+    row<-DBI::dbGetQuery(con,"SELECT * FROM session_supplies WHERE session_id=$1",params=list(sid))
+    if(nrow(row))return(row[1,,drop=FALSE])
+
+    row<-DBI::dbGetQuery(con,paste(
+      "INSERT INTO session_supplies(session_id,wood,wood_max,water,water_max,rations,rations_max)",
+      "VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(session_id) DO NOTHING RETURNING *"
+    ),params=list(sid,value("wood",3L),value("wood_max",10L),value("water",3L),value("water_max",5L),value("rations",3L),value("rations_max",5L)))
+    if(!nrow(row))row<-DBI::dbGetQuery(con,"SELECT * FROM session_supplies WHERE session_id=$1",params=list(sid))
+    if(nrow(row))row[1,,drop=FALSE]else NULL
+  },error=function(e){message("get_session_supplies failed: ",e$message);NULL})
 }
 
 adjust_session_supply <- function(session_id,resource,amount=0L,fill=FALSE,defaults=list()) {

@@ -46,6 +46,8 @@ controlInventoryServer <- function(id, ctrl, players_tbl = NULL, bump_refresh = 
       db_items<-get_control_catalogue_definitions();existing<-vapply(saved,function(x)as.character(x$id%||%""),character(1));merged<-c(saved,Filter(function(x)!as.character(x$id%||%"")%in%existing,db_items));existing<-vapply(merged,function(x)as.character(x$id%||%""),character(1))
       c(merged,Filter(function(x)!x$id%in%existing,seed))
     })
+    item_choice_signature <- reactiveVal(NULL)
+    player_choice_signature <- reactiveVal(NULL)
     save_store <- function(x) tryCatch({ saveRDS(x, store_path); TRUE }, error=function(e) FALSE)
     item_category<-function(x){if(identical(x$type,"weapon"))"weapon"else if((x$type%||%"")%in%c("armor","armour"))"armor"else if(identical(x$type,"animal"))"animal"else as.character(x$meta$category%||%if(identical(x$type,"consumable"))"consumable"else"mundane_loot")}
     table_items<-function(key){items<-catalogue();Filter(function(x){magic<-isTRUE((x$meta%||%list())$is_magical)||item_category(x)=="magical_item";switch(key,all=TRUE,weapons=item_category(x)=="weapon",armour=item_category(x)=="armor",animals=item_category(x)=="animal",food=item_category(x)=="food",magical=magic,mundane=item_category(x)=="mundane_loot"&&!magic,crafting=item_category(x)=="crafting",consumable=item_category(x)=="consumable",biological=item_category(x)%in%c("blood","heart"),tool=item_category(x)=="tool",special=item_category(x)%in%c("treasure","quest"),FALSE)},items)}
@@ -62,8 +64,8 @@ controlInventoryServer <- function(id, ctrl, players_tbl = NULL, bump_refresh = 
     observeEvent(input$edit_selected,{if(is.null(selected()))return(showNotification("Select an item row first.",type="warning"));shinyjs::show("editor_panel")},ignoreInit=TRUE)
     observeEvent(input$new_item,{shinyjs::show("editor_panel");updateTextInput(session,"name",value="New Item");updateSelectInput(session,"type",selected="mundane_loot");updateTextInput(session,"desc",value="");updateTextInput(session,"pools",value="");updateNumericInput(session,"value",value=0);updateNumericInput(session,"weight",value=0)},ignoreInit=TRUE)
     observe({
-      items<-catalogue();vals<-vapply(items,`[[`,"","id");keep<-input$item_id%||%""
-      updateSelectInput(session,"item_id",choices=setNames(vals,vapply(items,`[[`,"","name")),selected=if(keep%in%vals)keep else character())
+      items<-catalogue();vals<-vapply(items,`[[`,"","id");labels<-vapply(items,`[[`,"","name");sig<-paste(vals,labels,collapse="|");if(identical(sig,item_choice_signature()))return();item_choice_signature(sig);keep<-isolate(input$item_id)%||%""
+      updateSelectInput(session,"item_id",choices=setNames(vals,labels),selected=if(keep%in%vals)keep else character())
     })
     selected <- reactive({ found<-Filter(function(x) identical(x$id, input$item_id %||% ""), catalogue()); if(length(found)) found[[1]] else NULL })
     output$item_preview <- renderUI({ x<-selected();if(is.null(x))return(NULL);catg<-item_category(x);pool_text<-if(catg%in%c("mundane_loot","food"))"Automatic random loot for non-animal NPCs"else paste(x$pools%||%"none",collapse=", ");food_text<-if(catg=="food")paste0(" • ",x$meta$ration_value%||%1," ration(s) • fresh ",x$meta$shelf_life_days%||%3," day(s)")else"";tagList(h4(x$name),p(x$desc),tags$strong(paste0(gsub("_"," ",catg)," • ",x$value," gold • ",x$weight," lb",food_text)),p(paste("Pools:",pool_text))) })
@@ -71,9 +73,10 @@ controlInventoryServer <- function(id, ctrl, players_tbl = NULL, bump_refresh = 
     observe({
       ctrl$refresh_key; sid<-suppressWarnings(as.integer(ctrl$session_id%||%NA))
       p <- if(!is.na(sid))tryCatch(get_session_players(sid),error=function(e)data.frame()) else if (is.reactive(players_tbl)) players_tbl() else data.frame()
-      if(!is.data.frame(p)||!nrow(p)) return(updateSelectInput(session,"player_id",choices=character()))
+      if(!is.data.frame(p)||!nrow(p)){if(!identical(player_choice_signature(),"")){player_choice_signature("");updateSelectInput(session,"player_id",choices=character())};return()}
       ids<-as.character(p$character_id%||%p$id); names<-as.character(p$char_name%||%p$name%||%ids)
       labels<-as.character(p$display_name%||%names);labels[is.na(labels)|!nzchar(labels)]<-names[is.na(labels)|!nzchar(labels)]
+      sig<-paste(ids,labels,collapse="|");if(identical(sig,player_choice_signature()))return();player_choice_signature(sig)
       keep<-isolate(input$player_id%||%"");updateSelectInput(session,"player_id",choices=setNames(ids,labels),selected=if(keep%in%ids)keep else ids[[1L]])
     })
     observeEvent(input$save_item, {
