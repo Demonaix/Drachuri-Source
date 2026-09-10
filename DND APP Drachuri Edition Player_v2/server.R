@@ -391,6 +391,7 @@ server_player <- function(input, output, session) {
   source("calls/debug_combat_call.R", local=TRUE)
   source("calls/party_hud_call.R", local=TRUE)
   privateNotesServer("notes", core$state)
+  questPlayerServer("quests", core$state)
   merchantServer("merchants",core$state)
   chestServer("chests",core$state)
   storyPlayerServer("story",core$state)

@@ -35,6 +35,21 @@ claim_defeated_enemy_loot <- function(encounter_id, enemy_uuid, character_id) {
   }),error=function(e){message("claim_defeated_enemy_loot failed: ",e$message);NULL}); out
 }
 
+prepare_defeated_enemy_loot <- function(encounter_id, enemy_uuid) {
+  enc <- tryCatch(get_encounter(encounter_id), error=function(e)data.frame())
+  if(!is.data.frame(enc)||!nrow(enc))return(NULL)
+  result <- claim_defeated_enemy_loot(encounter_id, enemy_uuid, "shared")
+  if(is.null(result))return(NULL)
+  items <- result$loot %||% list()
+  gold <- max(0L,as.integer(result$gold %||% 0L))
+  if(gold>0L)items <- c(items,list(list(id=paste0("coin_purse_",enemy_uuid),name=paste0("Coin Purse (",gold," gold)"),type="currency",qty=1L,weight=0,value=gold,desc="Coins recovered from the defeated enemy.",meta=list(currency_gold=gold))))
+  chest <- create_chest(as.integer(enc$session_id[[1L]]),paste0("Remains of ",result$name),"standard",items,locked=FALSE,lock_kind="chest")
+  if(is.null(chest))return(NULL)
+  players <- tryCatch(get_session_players(as.integer(enc$session_id[[1L]])),error=function(e)data.frame())
+  if(is.data.frame(players)&&nrow(players))invite_players_to_chest(chest$id[[1L]],as.character(players$character_id))
+  list(chest_id=as.integer(chest$id[[1L]]),name=result$name,item_count=length(result$loot),gold=gold)
+}
+
 create_trade_offer <- function(session_id,sender_id,recipient_id,kind,item_id=NULL,gold_amount=0L) {
   con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE)
   tryCatch(DBI::dbWithTransaction(con,{
@@ -78,13 +93,75 @@ send_private_note <- function(session_id,sender_id,recipient_id,body,reply_to_id
 get_private_notes <- function(character_id,unread_only=FALSE) {
   con<-get_db_connection();if(is.null(con))return(data.frame());on.exit(release_db_connection(con),add=TRUE)
   extra<-if(isTRUE(unread_only))" AND n.status='sent'" else ""
-  tryCatch(DBI::dbGetQuery(con,paste0("SELECT n.*,s.char_name AS sender_name,r.char_name AS recipient_name FROM private_notes n LEFT JOIN character_blobs s ON s.id::text=n.sender_character_id LEFT JOIN character_blobs r ON r.id::text=n.recipient_character_id WHERE n.recipient_character_id=$1",extra," ORDER BY n.created_at DESC LIMIT 50"),params=list(as.character(character_id))),error=function(e)data.frame())
+  tryCatch(DBI::dbGetQuery(con,paste0("SELECT n.*,CASE WHEN n.sender_character_id='__dm__' THEN 'Game Master' ELSE COALESCE(s.char_name,'Unknown player') END AS sender_name,CASE WHEN n.recipient_character_id='__dm__' THEN 'Game Master' ELSE COALESCE(r.char_name,'Unknown player') END AS recipient_name FROM private_notes n LEFT JOIN character_blobs s ON s.id::text=n.sender_character_id LEFT JOIN character_blobs r ON r.id::text=n.recipient_character_id WHERE n.recipient_character_id=$1",extra," ORDER BY n.created_at DESC LIMIT 50"),params=list(as.character(character_id))),error=function(e)data.frame())
+}
+
+get_session_private_notes <- function(session_id, limit = 100L) {
+  con<-get_db_connection();if(is.null(con))return(data.frame());on.exit(release_db_connection(con),add=TRUE)
+  tryCatch(DBI::dbGetQuery(con,paste(
+    "SELECT n.*,CASE WHEN n.sender_character_id='__dm__' THEN 'Game Master' ELSE COALESCE(s.char_name,'Unknown player') END AS sender_name,CASE WHEN n.recipient_character_id='__dm__' THEN 'Game Master' ELSE COALESCE(r.char_name,'Unknown player') END AS recipient_name",
+    "FROM private_notes n",
+    "LEFT JOIN character_blobs s ON s.id::text=n.sender_character_id",
+    "LEFT JOIN character_blobs r ON r.id::text=n.recipient_character_id",
+    "WHERE n.session_id=$1 ORDER BY n.created_at DESC LIMIT $2"
+  ),params=list(as.integer(session_id),max(1L,as.integer(limit)))),error=function(e)data.frame())
+}
+
+claim_private_note_acknowledgements <- function(sender_id) {
+  con<-get_db_connection();if(is.null(con))return(data.frame());on.exit(release_db_connection(con),add=TRUE)
+  tryCatch(DBI::dbWithTransaction(con,{
+    rows<-DBI::dbGetQuery(con,paste(
+      "SELECT n.id,n.body,n.recipient_character_id,CASE WHEN n.recipient_character_id='__dm__' THEN 'Game Master' ELSE COALESCE(r.char_name,'Unknown player') END AS recipient_name,n.acknowledged_at",
+      "FROM private_notes n LEFT JOIN character_blobs r ON r.id::text=n.recipient_character_id",
+      "WHERE n.sender_character_id=$1 AND n.status='acknowledged' AND n.sender_notified_at IS NULL",
+      "ORDER BY n.acknowledged_at"
+    ),params=list(as.character(sender_id)))
+    if(nrow(rows))for(note_id in as.integer(rows$id))DBI::dbExecute(con,"UPDATE private_notes SET sender_notified_at=now() WHERE id=$1",params=list(note_id))
+    rows
+  }),error=function(e){message("claim_private_note_acknowledgements failed: ",e$message);data.frame()})
 }
 
 mark_private_note <- function(note_id,recipient_id,status=c("read","acknowledged")) {
   status<-match.arg(status);con<-get_db_connection();if(is.null(con))return(FALSE);on.exit(release_db_connection(con),add=TRUE)
   set_sql<-if(status=="read")"status=$3,read_at=COALESCE(read_at,now())" else "status=$3,acknowledged_at=now(),read_at=COALESCE(read_at,now())"
   tryCatch({DBI::dbExecute(con,paste0("UPDATE private_notes SET ",set_sql," WHERE id=$1 AND recipient_character_id=$2"),params=list(as.integer(note_id),as.character(recipient_id),status));TRUE},error=function(e){message("mark_private_note failed: ",e$message);FALSE})
+}
+
+list_party_quests <- function(session_id, include_hidden = FALSE) {
+  sid<-suppressWarnings(as.integer(session_id%||%NA));if(is.na(sid))return(data.frame())
+  con<-get_db_connection();if(is.null(con))return(data.frame());on.exit(release_db_connection(con),add=TRUE)
+  where<-if(isTRUE(include_hidden))""else" AND q.status<>'hidden'"
+  tryCatch(DBI::dbGetQuery(con,paste0("SELECT q.*,COUNT(o.id)::integer AS objective_count,COUNT(o.id) FILTER (WHERE o.is_complete)::integer AS completed_count FROM party_quests q LEFT JOIN party_quest_objectives o ON o.quest_id=q.id WHERE q.session_id=$1",where," GROUP BY q.id ORDER BY CASE q.status WHEN 'active' THEN 0 WHEN 'completed' THEN 1 WHEN 'failed' THEN 2 ELSE 3 END,q.sort_order,q.id"),params=list(sid)),error=function(e){message("list_party_quests failed: ",e$message);data.frame()})
+}
+
+get_party_quest <- function(quest_id) {
+  qid<-suppressWarnings(as.integer(quest_id%||%NA));if(is.na(qid))return(NULL)
+  con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE)
+  tryCatch({quest<-DBI::dbGetQuery(con,"SELECT * FROM party_quests WHERE id=$1",params=list(qid));if(!nrow(quest))return(NULL);objectives<-DBI::dbGetQuery(con,"SELECT * FROM party_quest_objectives WHERE quest_id=$1 ORDER BY sort_order,id",params=list(qid));list(quest=quest[1,,drop=FALSE],objectives=objectives)},error=function(e){message("get_party_quest failed: ",e$message);NULL})
+}
+
+save_party_quest <- function(session_id,title,description="",status="active",quest_id=NULL) {
+  sid<-suppressWarnings(as.integer(session_id%||%NA));qid<-suppressWarnings(as.integer(quest_id%||%NA));title<-trimws(as.character(title%||%""));description<-trimws(as.character(description%||%""));status<-match.arg(as.character(status),c("active","completed","failed","hidden"));if(is.na(sid)||!nzchar(title)||nchar(title)>160L||nchar(description)>8000L)return(NULL)
+  con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE)
+  tryCatch(if(is.na(qid))DBI::dbGetQuery(con,"INSERT INTO party_quests(session_id,title,description,status) VALUES($1,$2,$3,$4) RETURNING *",params=list(sid,title,description,status)) else DBI::dbGetQuery(con,"UPDATE party_quests SET title=$2,description=$3,status=$4,updated_at=now() WHERE id=$1 AND session_id=$5 RETURNING *",params=list(qid,title,description,status,sid)),error=function(e){message("save_party_quest failed: ",e$message);NULL})
+}
+
+add_party_quest_objective <- function(quest_id,text) {
+  qid<-suppressWarnings(as.integer(quest_id%||%NA));text<-trimws(as.character(text%||%""));if(is.na(qid)||!nzchar(text)||nchar(text)>500L)return(NULL)
+  con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE)
+  tryCatch(DBI::dbGetQuery(con,"INSERT INTO party_quest_objectives(quest_id,objective_text,sort_order) VALUES($1,$2,COALESCE((SELECT MAX(sort_order)+1 FROM party_quest_objectives WHERE quest_id=$1),0)) RETURNING *",params=list(qid,text)),error=function(e){message("add_party_quest_objective failed: ",e$message);NULL})
+}
+
+set_party_quest_objective <- function(objective_id,is_complete) {
+  oid<-suppressWarnings(as.integer(objective_id%||%NA));if(is.na(oid))return(FALSE)
+  con<-get_db_connection();if(is.null(con))return(FALSE);on.exit(release_db_connection(con),add=TRUE)
+  tryCatch(DBI::dbExecute(con,"UPDATE party_quest_objectives SET is_complete=$2,updated_at=now() WHERE id=$1",params=list(oid,isTRUE(is_complete)))>0L,error=function(e)FALSE)
+}
+
+remove_party_quest_objective <- function(objective_id) {
+  oid<-suppressWarnings(as.integer(objective_id%||%NA));if(is.na(oid))return(FALSE)
+  con<-get_db_connection();if(is.null(con))return(FALSE);on.exit(release_db_connection(con),add=TRUE)
+  tryCatch(DBI::dbExecute(con,"DELETE FROM party_quest_objectives WHERE id=$1",params=list(oid))>0L,error=function(e)FALSE)
 }
 
 create_merchant <- function(session_id,name,wealth_class="moderate",specialty="general",temperament="fair",gold=50,stock=list(),pricing_style="standard") {
@@ -121,15 +198,19 @@ merchant_error_message <- function(result,fallback="The merchant action could no
 }
 merchant_action_failed <- function(result) is.null(result)||!is.null(attr(result,"error",exact=TRUE))
 
-create_chest<-function(session_id,name,difficulty="standard",items=list(),locked=TRUE){
+create_chest<-function(session_id,name,difficulty="standard",items=list(),locked=TRUE,lock_kind="chest"){
   con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE);difficulty<-match.arg(as.character(difficulty),c("easy","standard","hard","master"))
-  tryCatch(DBI::dbWithTransaction(con,{ch<-DBI::dbGetQuery(con,"INSERT INTO chests(session_id,name,difficulty,sweet_spot,locked) VALUES($1,$2,$3,$4,$5) RETURNING *",params=list(as.integer(session_id),trimws(as.character(name)),difficulty,runif(1,-82,82),isTRUE(locked)));for(item in items)DBI::dbExecute(con,"INSERT INTO chest_items(chest_id,catalogue_id,item_json,quantity) VALUES($1,$2,$3::jsonb,$4)",params=list(ch$id[[1L]],as.character(item$catalogue_id%||%item$id%||%""),enemy_json(item),max(1L,as.integer(item$qty%||%1L))));ch[1,,drop=FALSE]}),error=function(e){message("create_chest failed: ",e$message);NULL})
+  lock_kind<-match.arg(as.character(lock_kind),c("chest","door","gate"));tryCatch(DBI::dbWithTransaction(con,{ch<-DBI::dbGetQuery(con,"INSERT INTO chests(session_id,name,difficulty,sweet_spot,locked,lock_kind) VALUES($1,$2,$3,$4,$5,$6) RETURNING *",params=list(as.integer(session_id),trimws(as.character(name)),difficulty,runif(1,-82,82),isTRUE(locked),lock_kind));for(item in items)DBI::dbExecute(con,"INSERT INTO chest_items(chest_id,catalogue_id,item_json,quantity) VALUES($1,$2,$3::jsonb,$4)",params=list(ch$id[[1L]],as.character(item$catalogue_id%||%item$id%||%""),enemy_json(item),max(1L,as.integer(item$qty%||%1L))));ch[1,,drop=FALSE]}),error=function(e){message("create_chest failed: ",e$message);NULL})
 }
-list_session_chests<-function(session_id,available_only=FALSE){con<-get_db_connection();if(is.null(con))return(data.frame());on.exit(release_db_connection(con),add=TRUE);extra<-if(isTRUE(available_only))" AND status='available'"else"";tryCatch(DBI::dbGetQuery(con,paste0("SELECT * FROM chests WHERE session_id=$1",extra," ORDER BY created_at DESC"),params=list(as.integer(session_id))),error=function(e)data.frame())}
+list_session_chests<-function(session_id,available_only=FALSE,portable_only=FALSE){con<-get_db_connection();if(is.null(con))return(data.frame());on.exit(release_db_connection(con),add=TRUE);extra<-if(isTRUE(available_only))" AND status='available'"else"";portable<-if(isTRUE(portable_only))" AND COALESCE(lock_kind,'chest')='chest'"else"";tryCatch(DBI::dbGetQuery(con,paste0("SELECT * FROM chests WHERE session_id=$1",extra,portable," ORDER BY created_at DESC"),params=list(as.integer(session_id))),error=function(e)data.frame())}
 get_chest_bundle<-function(chest_id){con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE);tryCatch({ch<-DBI::dbGetQuery(con,"SELECT * FROM chests WHERE id=$1",params=list(as.integer(chest_id)));if(!nrow(ch))return(NULL);items<-DBI::dbGetQuery(con,"SELECT * FROM chest_items WHERE chest_id=$1 AND quantity>0 ORDER BY id",params=list(as.integer(chest_id)));list(chest=ch[1,,drop=FALSE],items=items)},error=function(e)NULL)}
 invite_players_to_chest<-function(chest_id,character_ids){con<-get_db_connection();if(is.null(con))return(FALSE);on.exit(release_db_connection(con),add=TRUE);ids<-unique(as.character(character_ids));ids<-ids[nzchar(ids)];if(!length(ids))return(FALSE);tryCatch({for(cid in ids)DBI::dbExecute(con,"INSERT INTO chest_invitations(chest_id,character_id,status,pick_damage) VALUES($1,$2,'pending',0) ON CONFLICT(chest_id,character_id) DO UPDATE SET status='pending',pick_damage=0,updated_at=now()",params=list(as.integer(chest_id),cid));TRUE},error=function(e){message("invite_players_to_chest failed: ",e$message);FALSE})}
 get_character_chests<-function(character_id,pending_only=FALSE){con<-get_db_connection();if(is.null(con))return(data.frame());on.exit(release_db_connection(con),add=TRUE);extra<-if(pending_only)" AND i.status='pending'"else"";tryCatch(DBI::dbGetQuery(con,paste0("SELECT i.*,c.name,c.difficulty,c.locked,c.jammed,c.status AS chest_status FROM chest_invitations i JOIN chests c ON c.id=i.chest_id WHERE i.character_id=$1 AND c.status='available'",extra," ORDER BY i.created_at"),params=list(as.character(character_id))),error=function(e)data.frame())}
 mark_chest_invitation<-function(chest_id,character_id,status=c("opened","dismissed")){status<-match.arg(status);con<-get_db_connection();if(is.null(con))return(FALSE);on.exit(release_db_connection(con),add=TRUE);tryCatch(DBI::dbExecute(con,"UPDATE chest_invitations SET status=$3,updated_at=now() WHERE chest_id=$1 AND character_id=$2",params=list(as.integer(chest_id),as.character(character_id),status))>0,error=function(e)FALSE)}
+
+list_map_objects<-function(map_id){con<-get_db_connection();if(is.null(con))return(data.frame());on.exit(release_db_connection(con),add=TRUE);tryCatch(DBI::dbGetQuery(con,"SELECT o.*,c.name,c.difficulty,c.locked,c.status AS chest_status FROM map_objects o LEFT JOIN chests c ON c.id=o.chest_id WHERE o.map_id=$1 ORDER BY o.y,o.x",params=list(as.integer(map_id))),error=function(e)data.frame())}
+place_map_object<-function(map_id,x,y,object_type,chest_id){object_type<-match.arg(as.character(object_type),c("door","gate","chest"));con<-get_db_connection();if(is.null(con))return(FALSE);on.exit(release_db_connection(con),add=TRUE);tryCatch(DBI::dbExecute(con,"INSERT INTO map_objects(map_id,x,y,object_type,chest_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT(map_id,x,y) DO UPDATE SET object_type=EXCLUDED.object_type,chest_id=EXCLUDED.chest_id,updated_at=now()",params=list(as.integer(map_id),as.integer(x),as.integer(y),object_type,as.integer(chest_id)))>0,error=function(e){message("place_map_object failed: ",conditionMessage(e));FALSE})}
+remove_map_object<-function(map_id,x,y){con<-get_db_connection();if(is.null(con))return(FALSE);on.exit(release_db_connection(con),add=TRUE);tryCatch(DBI::dbExecute(con,"DELETE FROM map_objects WHERE map_id=$1 AND x=$2 AND y=$3",params=list(as.integer(map_id),as.integer(x),as.integer(y)))>0,error=function(e)FALSE)}
 
 chest_lockpick_attempt<-function(chest_id,character_id,angle,tolerance,feedback_range){
   con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE)
@@ -138,7 +219,7 @@ chest_lockpick_attempt<-function(chest_id,character_id,angle,tolerance,feedback_
 
 take_chest_item<-function(chest_id,item_id,character_id){
   con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE)
-  tryCatch(DBI::dbWithTransaction(con,{ch<-DBI::dbGetQuery(con,"SELECT * FROM chests WHERE id=$1 AND locked=FALSE AND status='available' FOR UPDATE",params=list(as.integer(chest_id)));if(!nrow(ch))stop("The chest is locked or unavailable.");stock<-DBI::dbGetQuery(con,"SELECT * FROM chest_items WHERE id=$1 AND chest_id=$2 AND quantity>0 FOR UPDATE",params=list(as.integer(item_id),as.integer(chest_id)));if(!nrow(stock))stop("Someone has already taken that item.");row<-DBI::dbGetQuery(con,"SELECT state_blob FROM character_blobs WHERE id::text=$1 FOR UPDATE",params=list(as.character(character_id)));if(!nrow(row))stop("Character not found.");char<-validate_character(unserialize(row$state_blob[[1L]]));char<-hydrate_character_inventory_relational(con,char,as.character(character_id));item<-enemy_db_json(stock$item_json[[1L]],list());item$id<-paste0("chest_",chest_id,"_",stock$id[[1L]],"_",sample(1000:9999,1));item$qty<-1L;item$equipped<-FALSE;item$edit<-FALSE;char$inventory$items<-inventory_normalize(rbind(inventory_normalize(char$inventory$items),enemy_loot_to_inventory_row(item,id=item$id)));DBI::dbExecute(con,"UPDATE chest_items SET quantity=quantity-1 WHERE id=$1",params=list(as.integer(item_id)));remaining<-as.integer(DBI::dbGetQuery(con,"SELECT COALESCE(SUM(quantity),0) AS n FROM chest_items WHERE chest_id=$1",params=list(as.integer(chest_id)))$n[[1L]]);if(remaining<=0L)DBI::dbExecute(con,"UPDATE chests SET status='closed',updated_at=now() WHERE id=$1",params=list(as.integer(chest_id)));DBI::dbExecute(con,"UPDATE character_blobs SET state_blob=$1,char_name=$2,updated_at=now() WHERE id::text=$3",params=list(list(serialize(char,NULL)),char$meta$name,as.character(character_id)));sync_character_inventory_relational(con,char,as.character(character_id));list(character=char,item_name=as.character(item$name%||%"Item"),chest_empty=remaining<=0L)}),error=function(e)structure(list(),error=e$message))
+  tryCatch(DBI::dbWithTransaction(con,{ch<-DBI::dbGetQuery(con,"SELECT * FROM chests WHERE id=$1 AND locked=FALSE AND status='available' FOR UPDATE",params=list(as.integer(chest_id)));if(!nrow(ch))stop("The chest is locked or unavailable.");stock<-DBI::dbGetQuery(con,"SELECT * FROM chest_items WHERE id=$1 AND chest_id=$2 AND quantity>0 FOR UPDATE",params=list(as.integer(item_id),as.integer(chest_id)));if(!nrow(stock))stop("Someone has already taken that item.");row<-DBI::dbGetQuery(con,"SELECT state_blob FROM character_blobs WHERE id::text=$1 FOR UPDATE",params=list(as.character(character_id)));if(!nrow(row))stop("Character not found.");char<-validate_character(unserialize(row$state_blob[[1L]]));char<-hydrate_character_inventory_relational(con,char,as.character(character_id));item<-enemy_db_json(stock$item_json[[1L]],list());currency_gold<-max(0L,as.integer((item$meta%||%list())$currency_gold%||%0L));if(currency_gold>0L){char$inventory$gold<-as.numeric(char$inventory$gold%||%0)+currency_gold}else{item$id<-paste0("chest_",chest_id,"_",stock$id[[1L]],"_",sample(1000:9999,1));item$qty<-1L;item$equipped<-FALSE;item$edit<-FALSE;char$inventory$items<-inventory_normalize(rbind(inventory_normalize(char$inventory$items),enemy_loot_to_inventory_row(item,id=item$id)))};DBI::dbExecute(con,"UPDATE chest_items SET quantity=quantity-1 WHERE id=$1",params=list(as.integer(item_id)));remaining<-as.integer(DBI::dbGetQuery(con,"SELECT COALESCE(SUM(quantity),0) AS n FROM chest_items WHERE chest_id=$1",params=list(as.integer(chest_id)))$n[[1L]]);if(remaining<=0L)DBI::dbExecute(con,"UPDATE chests SET status='closed',updated_at=now() WHERE id=$1",params=list(as.integer(chest_id)));DBI::dbGetQuery(con,"SELECT pg_advisory_xact_lock(hashtext($1))",params=list(as.character(character_id)));DBI::dbExecute(con,"UPDATE character_blobs SET state_blob=$1,char_name=$2,updated_at=now() WHERE id::text=$3",params=list(list(serialize(char,NULL)),char$meta$name,as.character(character_id)));sync_character_inventory_relational(con,char,as.character(character_id));list(character=char,item_name=as.character(item$name%||%"Item"),chest_empty=remaining<=0L)}),error=function(e)structure(list(),error=e$message))
 }
 
 invite_players_to_merchant <- function(merchant_id,character_ids) {
@@ -879,6 +960,25 @@ remove_encounter_enemy <- function(enemy_uuid) {
   })
 }
 
+delete_encounter <- function(encounter_id) {
+  encounter_id <- suppressWarnings(as.integer(encounter_id))
+  if (is.na(encounter_id) || encounter_id < 1L) return(FALSE)
+  con <- get_db_connection()
+  if (is.null(con)) return(FALSE)
+  on.exit(release_db_connection(con), add = TRUE)
+  tryCatch({
+    removed <- DBI::dbWithTransaction(con, {
+      DBI::dbExecute(con, "UPDATE game_sessions SET active_encounter_id = NULL WHERE active_encounter_id = $1", params = list(encounter_id))
+      DBI::dbExecute(con, "DELETE FROM encounter_positions WHERE encounter_id = $1", params = list(encounter_id))
+      DBI::dbExecute(con, "DELETE FROM encounters WHERE id = $1", params = list(encounter_id))
+    })
+    isTRUE(as.integer(removed) > 0L)
+  }, error = function(e) {
+    message("delete_encounter failed: ", conditionMessage(e))
+    FALSE
+  })
+}
+
 
 get_session_encounters <- function(session_id) {
   session_id <- suppressWarnings(as.integer(session_id))
@@ -893,16 +993,18 @@ get_session_encounters <- function(session_id) {
       con,
       "
       SELECT
-        id AS encounter_id,
-        session_id,
-        name,
-        map_id,
-        status,
-        created_at,
-        updated_at
-      FROM encounters
-      WHERE session_id = $1
-      ORDER BY updated_at DESC NULLS LAST, id DESC
+        e.id AS encounter_id,
+        e.session_id,
+        e.name,
+        e.map_id,
+        m.name AS map_name,
+        e.status,
+        e.created_at,
+        e.updated_at
+      FROM encounters e
+      LEFT JOIN maps m ON m.id = e.map_id
+      WHERE e.session_id = $1
+      ORDER BY e.updated_at DESC NULLS LAST, e.id DESC
       ",
       params = list(session_id)
     ),

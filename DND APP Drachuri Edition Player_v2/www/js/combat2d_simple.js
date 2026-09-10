@@ -301,6 +301,7 @@ function injectCombat2DCSS() {
       opacity:0;
       z-index:99999;
     }
+    .combat-map-object{position:absolute;inset:3px;z-index:8;display:flex;align-items:center;justify-content:center;font-size:23px;text-shadow:0 2px 3px #0008;pointer-events:none}.combat-map-object.unlocked{opacity:.58}
 
     .combat-2d-tile:hover::after{
       opacity:1;
@@ -653,6 +654,8 @@ function buildTileElement2D(tile) {
   label.className = "combat-2d-terrain-label";
   label.textContent = terrainEmoji2D(tile.terrain);
   tileEl.appendChild(label);
+  const objectType=safeText2D(tile.object_type,"").toLowerCase();
+  if(["door","gate","chest"].includes(objectType)){const marker=document.createElement("div");marker.className=`combat-map-object ${isTruthy2D(tile.object_locked)?"locked":"unlocked"}`;marker.textContent=objectType==="door"?"🚪":objectType==="gate"?"▥":"▣";tileEl.appendChild(marker);}
   if (isTruthy2D(tile.is_pending_move) && Number(tile.move_path_step) > 0) {
     const step = document.createElement("span");
     step.className = "combat-path-step";
@@ -665,6 +668,7 @@ function buildTileElement2D(tile) {
     if (e.target.closest(".combat-2d-token")) return;
 
     const state = window.combat2dState;
+    if(tile.object_id&&state.inputIds?.object){Shiny.setInputValue(state.inputIds.object,{object_id:Number(tile.object_id),chest_id:Number(tile.object_chest_id),object_type:String(tile.object_type||""),x:Number(tile.x),y:Number(tile.y),nonce:Math.random()},{priority:"event"});return;}
     if (!state.inputIds || !state.inputIds.move) return;
 
     Shiny.setInputValue(state.inputIds.move, {
@@ -719,6 +723,7 @@ function updateTileClasses2D(tileEl, tile) {
 
   const label = tileEl.querySelector(".combat-2d-terrain-label");
   if (label) label.textContent = terrainEmoji2D(tile.terrain);
+  const oldObject=tileEl.querySelector(".combat-map-object");if(oldObject)oldObject.remove();const objectType=safeText2D(tile.object_type,"").toLowerCase();if(["door","gate","chest"].includes(objectType)){const marker=document.createElement("div");marker.className=`combat-map-object ${isTruthy2D(tile.object_locked)?"locked":"unlocked"}`;marker.textContent=objectType==="door"?"🚪":objectType==="gate"?"▥":"▣";tileEl.appendChild(marker);}
 }
 
 function placeOrUpdateToken2D(tile) {

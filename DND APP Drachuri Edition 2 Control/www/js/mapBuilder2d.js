@@ -103,6 +103,10 @@ function applyTileStyle(cell, tile) {
     "--map-builder-overlay",
     overlayStyle(tile.light, tile.fog)
   );
+  cell.classList.remove("object-door","object-gate","object-chest","object-unlocked");
+  const objectType=String(tile.object_type||"").toLowerCase();
+  if(["door","gate","chest"].includes(objectType))cell.classList.add(`object-${objectType}`);
+  if(objectType&&!isBlocked(tile.object_locked))cell.classList.add("object-unlocked");
 }
 
 function createCell(tile) {
@@ -134,6 +138,7 @@ function getGridState(containerId) {
       pendingPaint: [],
       paintFlushTimer: null,
       inputIds: {}
+      ,toolMode: "select"
     };
   }
 
@@ -212,16 +217,16 @@ function attachGridEvents(state, containerId) {
 
     e.preventDefault();
 
-    state.mouseDown = true;
+    state.mouseDown = state.toolMode === "paint";
     state.lastPaintKey = null;
 
     const tile = state.tileData.get(cell.dataset.key);
     sendClick(state, tile);
-    paintCell(state, cell);
+    if (state.toolMode === "paint") paintCell(state, cell);
   });
 
   state.grid.addEventListener("mouseover", e => {
-    if (!state.mouseDown) return;
+    if (!state.mouseDown || state.toolMode !== "paint") return;
 
     const cell = e.target.closest(".map-builder-cell");
     if (!cell || !state.grid.contains(cell)) return;
@@ -264,6 +269,7 @@ Shiny.addCustomMessageHandler("mapbuilder2d-render", function(message) {
 
   const state = getGridState(message.containerId);
   state.inputIds = inputIds;
+  state.toolMode = String(message.toolMode || "select");
 
   const xs = tiles.map(t => Number(t.x));
   const ys = tiles.map(t => Number(t.y));
@@ -328,7 +334,10 @@ const sameShape =
         oldTile.terrain !== tile.terrain ||
         oldTile.light !== tile.light ||
         Number(oldTile.fog || 0) !== Number(tile.fog || 0) ||
-        String(oldTile.blocks_movement) !== String(tile.blocks_movement)
+        String(oldTile.blocks_movement) !== String(tile.blocks_movement) ||
+        String(oldTile.object_id || "") !== String(tile.object_id || "") ||
+        String(oldTile.object_type || "") !== String(tile.object_type || "") ||
+        String(oldTile.object_locked || "") !== String(tile.object_locked || "")
       ) {
         applyTileStyle(cell, tile);
       }

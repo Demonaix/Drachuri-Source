@@ -28,6 +28,12 @@ test-env/.campaign-snapshot-loaded
 **/launcher/logs/
 **/launcher/.restored-lock-md5
 
+# Local authoring/runtime material, not application source.
+generated-assets/
+Downloaded_Resources/
+**/storyboards/
+Issue:error log.rtf
+
 # Large third-party 3D assets are kept locally but not versioned here.
 # Remove this rule later if Git LFS is introduced for these files.
 **/www/models/

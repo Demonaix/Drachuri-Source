@@ -2,6 +2,11 @@ library(shiny)
 
 controlLiveCombatUI <- function(id) {
   ns <- NS(id)
+  asset_version <- function(path) {
+    stamp <- suppressWarnings(as.numeric(file.info(file.path("www", path))$mtime))
+    if (is.na(stamp)) stamp <- as.numeric(Sys.time())
+    as.integer(stamp)
+  }
   
   tagList(
     tags$style(HTML("
@@ -130,6 +135,15 @@ controlLiveCombatUI <- function(id) {
   .live-combat-actions .form-group{
     margin-bottom:0;
   }
+
+  .control-combat-command-bar{margin-top:12px;}
+  .control-combat-primary-controls{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;}
+  .control-combat-main-command{width:100%;font-weight:900;text-transform:uppercase;background:linear-gradient(#f8e6b7,#dcb66d);border:1px solid #99712f;color:#3e2b16;box-shadow:0 3px 7px rgba(49,31,12,.25);}
+  .control-combat-command-menus{margin-top:8px;}
+  .control-combat-action-panel{display:flex;align-items:flex-end;flex-wrap:wrap;gap:8px;padding:9px;border:1px solid rgba(191,167,111,.6);border-radius:10px;background:rgba(255,252,235,.88);}
+  .control-combat-action-panel .form-group{margin:0;}
+  .control-combat-action-label{font-size:11px;font-weight:900;text-transform:uppercase;color:#765528;align-self:center;}
+  @media(max-width:850px){.control-combat-primary-controls{grid-template-columns:repeat(2,minmax(0,1fr));}}
 
   .initiative-list{
     display:flex;
@@ -331,8 +345,8 @@ controlLiveCombatUI <- function(id) {
   }
 ")),
     
-    tags$link(rel = "stylesheet", type = "text/css", href = "css/combat.css"),
-    tags$script(src = paste0("js/combat2d_simple.js?v=", as.integer(Sys.time()))),
+    tags$link(rel = "stylesheet", type = "text/css", href = paste0("css/combat.css?v=",asset_version("css/combat.css"))),
+    tags$script(src = paste0("js/combat2d_simple.js?v=",asset_version("js/combat2d_simple.js"))),
     
     div(
       class = "control-card",
@@ -351,11 +365,23 @@ controlLiveCombatUI <- function(id) {
             actionButton(ns("bind_encounter"), "Set Active Encounter", class = "btn btn-default"),
             actionButton(ns("reveal_map"), "Reveal Map", class = "btn btn-info"),
             actionButton(ns("start_combat"), "Start Combat", class = "btn btn-primary"),
-            actionButton(ns("open_combat_actions"), "Combat Actions", class = "btn btn-default"),
-            actionButton(ns("end_turn"), "End Turn", class = "btn btn-warning"),
             actionButton(ns("end_combat"), "End Combat", class = "btn btn-danger"),
-            selectInput(ns("target_id"), "Target", choices = c(), width = "220px"),
-            actionButton(ns("attack_btn"), "Attack", class = "btn btn-danger")
+            actionButton(ns("refresh_combat"), "Refresh", class = "btn btn-default")
+          ),
+          div(
+            class="control-combat-command-bar",
+            div(class="control-combat-primary-controls",
+              actionButton(ns("toggle_control_movement"), "↟ Movement", class="btn control-combat-main-command"),
+              actionButton(ns("toggle_control_actions"), "⚔ Actions", class="btn control-combat-main-command"),
+              actionButton(ns("toggle_control_glyphs"), "✦ Glyphs", class="btn control-combat-main-command"),
+              actionButton(ns("toggle_control_turn"), "◆ Turn", class="btn control-combat-main-command")
+            ),
+            div(class="control-combat-command-menus",
+              shinyjs::hidden(div(id=ns("control_movement_panel"),class="control-combat-action-panel",span(class="control-combat-action-label","Movement"),actionButton(ns("control_dash_action"),"Dash",class="btn btn-default"),actionButton(ns("control_disengage_action"),"Disengage",class="btn btn-default"),span("Choose a destination on the map to move."),actionButton(ns("close_control_movement"),"× Close",class="btn btn-default"))),
+              shinyjs::hidden(div(id=ns("control_actions_panel"),class="control-combat-action-panel",span(class="control-combat-action-label","Actions"),selectInput(ns("target_id"),"Target",choices=c(),width="240px"),actionButton(ns("attack_btn"),"Attack",class="btn btn-danger"),actionButton(ns("open_combat_actions"),"Other Actions",class="btn btn-default"),actionButton(ns("close_control_actions"),"× Close",class="btn btn-default"))),
+              shinyjs::hidden(div(id=ns("control_glyphs_panel"),class="control-combat-action-panel",span(class="control-combat-action-label","Glyphs"),span("Player glyph actions are resolved from the owning Player app."),actionButton(ns("close_control_glyphs"),"× Close",class="btn btn-default"))),
+              shinyjs::hidden(div(id=ns("control_turn_panel"),class="control-combat-action-panel",span(class="control-combat-action-label","Turn"),actionButton(ns("end_turn"),"End Turn",class="btn btn-warning"),actionButton(ns("close_control_turn"),"× Close",class="btn btn-default")))
+            )
           )
         ),
         div(
@@ -414,7 +440,7 @@ controlLiveCombatUI <- function(id) {
           class = "live-combat-grid",
           div(class = "live-combat-card", uiOutput(ns("initiative_ui"))),
           div(
-            class = "live-combat-card",
+            class = "live-combat-card combat-map-card",
             uiOutput(ns("battlefield_ui")),
             uiOutput(ns("map_ui"))
           ),
@@ -448,9 +474,26 @@ controlLiveCombatServer <- function(
     `%||%` <- get("%||%", inherits = TRUE)
     
     pending_attack <- reactiveVal(NULL)
+    opportunity_attack_context <- reactiveVal(NULL)
+    prompted_opportunity_events <- reactiveVal(integer())
+    opportunity_events_initialised <- reactiveVal(FALSE)
     turn_move_ft <- reactiveVal(0L)
     control_dash <- reactiveVal(FALSE)
     control_disengage <- reactiveVal(FALSE)
+    control_command_panels <- c("control_movement_panel", "control_actions_panel", "control_glyphs_panel", "control_turn_panel")
+    toggle_control_command_panel <- function(target) {
+      for (panel in setdiff(control_command_panels, target)) shinyjs::hide(id = panel)
+      shinyjs::toggle(id = target)
+    }
+    observeEvent(input$toggle_control_movement, { toggle_control_command_panel("control_movement_panel") }, ignoreInit = TRUE)
+    observeEvent(input$toggle_control_actions, { toggle_control_command_panel("control_actions_panel") }, ignoreInit = TRUE)
+    observeEvent(input$toggle_control_glyphs, { toggle_control_command_panel("control_glyphs_panel") }, ignoreInit = TRUE)
+    observeEvent(input$toggle_control_turn, { toggle_control_command_panel("control_turn_panel") }, ignoreInit = TRUE)
+    observeEvent(input$close_control_movement, { shinyjs::hide("control_movement_panel") }, ignoreInit = TRUE)
+    observeEvent(input$close_control_actions, { shinyjs::hide("control_actions_panel") }, ignoreInit = TRUE)
+    observeEvent(input$close_control_glyphs, { shinyjs::hide("control_glyphs_panel") }, ignoreInit = TRUE)
+    observeEvent(input$close_control_turn, { shinyjs::hide("control_turn_panel") }, ignoreInit = TRUE)
+    observeEvent(input$refresh_combat, { bump_live() }, ignoreInit = TRUE)
     reinforce_templates_rv <- reactiveVal(data.frame())
     audit_key <- reactiveVal(0L)
     audit_log_path <- file.path(Sys.getenv("DRACHURI_LOG_DIR", unset = "logs"), "control-audit.log")
@@ -612,7 +655,7 @@ limit 1
       tiles <- tryCatch(map_tiles_r(), error = function(e) data.frame())
       positions <- tryCatch(get_encounter_positions(encounter_id), error = function(e) data.frame())
       if (!is.data.frame(actors) || !nrow(actors) || !is.data.frame(tiles) || !nrow(tiles)) return(0L)
-      blocked <- tolower(as.character(tiles$terrain %||% "grass")) %in% c("wall", "ravine", "pit", "water")
+      blocked <- tolower(as.character(tiles$terrain %||% "grass")) %in% c("wall", "ravine", "pit")
       if ("blocks_movement" %in% names(tiles)) blocked <- blocked | (!is.na(tiles$blocks_movement) & as.logical(tiles$blocks_movement))
       available <- tiles[!blocked, c("x", "y"), drop = FALSE]
       if (!nrow(available)) return(0L)
@@ -2432,7 +2475,7 @@ limit 1
           radioButtons(session$ns("map_render_mode"), NULL, c("2D" = "2d", "Lean 3D" = "3d"), selected = mode, inline = TRUE),
           if (!identical(mode, "3d")) actionButton(session$ns("map_zoom_out"), "− Zoom", class = "btn btn-default"),
           if (!identical(mode, "3d")) actionButton(session$ns("map_zoom_in"), "+ Zoom", class = "btn btn-default"),
-          if (identical(mode, "3d")) selectInput(session$ns("map_3d_quality"), NULL, c("Low" = "low", "Balanced" = "balanced", "Decorative" = "decorative"), selected = input$map_3d_quality %||% "balanced", width = "135px"),
+          if (identical(mode, "3d")) selectInput(session$ns("map_3d_quality"), NULL, c("Low" = "low", "Balanced" = "balanced", "Decorative" = "decorative"), selected = isolate(input$map_3d_quality %||% "balanced"), width = "135px"),
           actionButton(session$ns("map_3d_fullscreen"), "Fullscreen Map", class = "btn btn-default")
         ),
         
@@ -3228,6 +3271,8 @@ limit 1
       if (!nzchar(actor_id)) return()
       if (identical(actor_id, as.character(active_actor_id() %||% ""))) return()
       updateSelectInput(session, "target_id", selected = actor_id)
+      for (panel in setdiff(control_command_panels, "control_actions_panel")) shinyjs::hide(id = panel)
+      shinyjs::show("control_actions_panel")
       log_safe(paste0("Target selected: ", get_actor_display_name(actor_id)))
     }, ignoreInit = TRUE)
     
@@ -3324,6 +3369,42 @@ limit 1
     # --------------------------------------------------
     # Attack flow
     # --------------------------------------------------
+    observe({
+      events <- encounter_events_r()
+      if (!is.data.frame(events)) return()
+      candidates <- if(nrow(events)&&"event_type"%in%names(events))events[as.character(events$event_type) == "opportunity_available",,drop=FALSE]else data.frame()
+      if (!isTRUE(opportunity_events_initialised())) {
+        prompted_opportunity_events(if(nrow(candidates))as.integer(candidates$id)else integer())
+        opportunity_events_initialised(TRUE)
+        return()
+      }
+      if (!nrow(candidates)) return()
+      candidates <- candidates[!as.integer(candidates$id) %in% prompted_opportunity_events(),,drop=FALSE]
+      if (!nrow(candidates)) return()
+      row <- candidates[which.min(as.integer(candidates$id)),,drop=FALSE]
+      payload <- row$payload[[1L]] %||% list()
+      if (is.character(payload)) payload <- tryCatch(jsonlite::fromJSON(payload,simplifyVector=FALSE),error=function(e)list())
+      attacker_ids <- as.character(unlist(payload$attacker_ids %||% list()))
+      enemy_ids <- attacker_ids[vapply(attacker_ids,function(id){actor<-get_actor_row(id);nrow(actor)>0L&&identical(as.character(actor$actor_type[[1L]]%||%""),"enemy")},logical(1))]
+      prompted_opportunity_events(unique(c(prompted_opportunity_events(),as.integer(row$id[[1L]]))))
+      if (!length(enemy_ids)) return()
+      mover_id <- as.character(row$actor_id[[1L]] %||% "")
+      choices <- setNames(enemy_ids,vapply(enemy_ids,get_actor_display_name,character(1)))
+      session$userData$control_opportunity_target <- mover_id
+      showModal(modalDialog(title="NPC opportunity attack",p(paste0(get_actor_display_name(mover_id)," has left an NPC's melee reach without Disengaging.")),selectInput(session$ns("opportunity_enemy_id"),"NPC who may react",choices=choices),footer=tagList(actionButton(session$ns("decline_npc_opportunity"),"Decline",class="btn btn-default"),actionButton(session$ns("make_npc_opportunity"),"Make Opportunity Attack",class="btn btn-danger")),easyClose=FALSE))
+    })
+    observeEvent(input$decline_npc_opportunity,{session$userData$control_opportunity_target<-NULL;removeModal()},ignoreInit=TRUE)
+    observeEvent(input$make_npc_opportunity,{
+      attacker_id<-as.character(input$opportunity_enemy_id%||%"");target_id<-as.character(session$userData$control_opportunity_target%||%"");session$userData$control_opportunity_target<-NULL
+      attacker<-load_actor_for_combat(attacker_id,"enemy");if(is.null(attacker)||!nzchar(target_id)){removeModal();return(log_safe("The opportunity attack is no longer available.",type="warning"))}
+      attacks<-attacker$combat_profile$attacks%||%list();attacks<-Filter(function(a){range<-suppressWarnings(as.numeric(a$range_ft%||%5));is.na(range)||range<=5},attacks)
+      if(!length(attacks)){removeModal();return(log_safe("That NPC has no melee attack available for this reaction.",type="warning"))}
+      choices<-setNames(vapply(attacks,function(a)as.character(a$id%||%"default"),character(1)),vapply(attacks,function(a)paste0(a$name%||%"Attack"," • ",a$damage_expr%||%"1d4"),character(1)))
+      opportunity_attack_context(list(attacker_id=attacker_id,target_id=target_id))
+      showModal(modalDialog(title=paste0("Opportunity attack — ",get_actor_display_name(attacker_id)),radioButtons(session$ns("enemy_attack_id"),"Melee attack",choices=choices),footer=tagList(actionButton(session$ns("cancel_npc_opportunity_attack"),"Cancel",class="btn btn-default"),actionButton(session$ns("confirm_enemy_attack"),"Roll Attack",class="btn btn-danger")),easyClose=FALSE))
+    },ignoreInit=TRUE)
+    observeEvent(input$cancel_npc_opportunity_attack,{opportunity_attack_context(NULL);removeModal()},ignoreInit=TRUE)
+
     observe({
       active <- active_actor_row()
       
@@ -3532,10 +3613,12 @@ limit 1
     
     observeEvent(input$confirm_enemy_attack, {
       removeModal()
-      
-      attacker_id <- active_actor_id()
-      target_id <- as.character(input$target_id %||% "")
+
+      opportunity_context <- opportunity_attack_context()
+      attacker_id <- as.character(opportunity_context$attacker_id %||% active_actor_id() %||% "")
+      target_id <- as.character(opportunity_context$target_id %||% input$target_id %||% "")
       chosen_attack <- as.character(input$enemy_attack_id %||% "")
+      opportunity_attack_context(NULL)
       
       if (is.null(attacker_id) || !nzchar(as.character(attacker_id))) {
         log_safe("No active attacker.", type = "error")

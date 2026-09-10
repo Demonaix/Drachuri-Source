@@ -13,7 +13,7 @@ generate_control_map_tiles <- function(map_id,width,height,preset="forest",seed=
   tiles<-create_square_map_tiles(map_id,width,height,default_terrain=if(indoor)"stone"else if(preset=="cave")"stone"else"grass",default_light=if(preset%in%c("dungeon","cave"))"dark"else if(indoor)"dim"else"full")
   at<-function(x=NULL,y=NULL){keep<-rep(TRUE,nrow(tiles));if(!is.null(x))keep<-keep&tiles$x%in%x;if(!is.null(y))keep<-keep&tiles$y%in%y;keep}
   paint<-function(idx,terrain,light=NULL){tiles$terrain[idx]<<-terrain;props<-switch(terrain,
-    wall=list(1,TRUE,TRUE),ravine=list(1,TRUE,FALSE),water=list(3,TRUE,FALSE),forest=list(2,FALSE,TRUE),swamp=list(2,FALSE,FALSE),sand=list(1.5,FALSE,FALSE),
+    wall=list(1,TRUE,TRUE),ravine=list(1,TRUE,FALSE),water=list(2,FALSE,FALSE),forest=list(2,FALSE,TRUE),swamp=list(2,FALSE,FALSE),sand=list(1.5,FALSE,FALSE),
     table=list(1,TRUE,FALSE),bar=list(1,TRUE,FALSE),crate=list(1,TRUE,FALSE),barrel=list(1,TRUE,FALSE),shelf=list(1,TRUE,TRUE),
     chair=list(2,FALSE,FALSE),bench=list(2,FALSE,FALSE),bed=list(2,FALSE,FALSE),rubble=list(2,FALSE,FALSE),campfire=list(2,FALSE,FALSE),torch=list(1,FALSE,FALSE),brazier=list(2,FALSE,FALSE),
     list(1,FALSE,FALSE));tiles$move_cost[idx]<<-props[[1]];tiles$blocks_movement[idx]<<-props[[2]];tiles$blocks_vision[idx]<<-props[[3]];if(!is.null(light))tiles$light[idx]<<-light}
@@ -44,6 +44,19 @@ generate_control_map_tiles <- function(map_id,width,height,preset="forest",seed=
     shoreline<-round(width*.62+sin(seq_len(height)/2.6+seed)*pmax(1,width/14));for(y in seq_len(height)){edge<-max(2L,min(width-1L,shoreline[y]));paint(at(seq(max(1L,edge-1L),min(width,edge+1L)),y),"sand");if(edge+2L<=width)paint(at(seq(edge+2L,width),y),"water")};inland<-which(tiles$terrain=="grass"&stats::runif(nrow(tiles))<density/280);paint(inland,"forest")
   }
   tiles
+}
+
+place_generated_map_objects<-function(map_id,tiles,preset,session_id){
+  if(is.na(suppressWarnings(as.integer(session_id)))||!preset%in%c("prison","dungeon","tavern"))return(0L)
+  candidates<-data.frame()
+  if(preset%in%c("prison","dungeon")){
+    walls<-tiles[tolower(tiles$terrain)=="wall",,drop=FALSE];cols<-as.integer(names(which(table(walls$x)>=2L)))
+    for(x in cols)for(y in 2:(max(tiles$y)-1L)){here<-tiles[tiles$x==x&tiles$y==y,,drop=FALSE];up<-tiles[tiles$x==x&tiles$y==y-1L,,drop=FALSE];down<-tiles[tiles$x==x&tiles$y==y+1L,,drop=FALSE];if(nrow(here)&&tolower(here$terrain[[1L]])!="wall"&&nrow(up)&&nrow(down)&&tolower(up$terrain[[1L]])=="wall"&&tolower(down$terrain[[1L]])=="wall")candidates<-rbind(candidates,data.frame(x=x,y=y))}
+  }
+  if(!nrow(candidates)&&preset=="tavern"){edge<-tiles[tiles$y==min(tiles$y)&tolower(tiles$terrain)!="wall",,drop=FALSE];if(nrow(edge))candidates<-edge[1,c("x","y"),drop=FALSE]}
+  if(!nrow(candidates))return(0L);candidates<-unique(candidates);count<-0L
+  for(i in seq_len(nrow(candidates))){kind<-if(preset=="prison")"gate"else"door";difficulty<-if(preset=="tavern")"standard"else if(preset=="prison")"hard"else"standard";lock<-create_chest(session_id,paste(tools::toTitleCase(kind),paste0("(",candidates$x[[i]],", ",candidates$y[[i]],")")),difficulty,list(),preset!="tavern",lock_kind=kind);if(!is.null(lock)&&isTRUE(place_map_object(map_id,candidates$x[[i]],candidates$y[[i]],kind,lock$id[[1L]])))count<-count+1L}
+  count
 }
 
 controlMapBuilderUI <- function(id) {
@@ -175,6 +188,8 @@ controlMapBuilderUI <- function(id) {
   z-index: 1;
 
 }
+.map-builder-cell.object-door::before,.map-builder-cell.object-gate::before,.map-builder-cell.object-chest::before{position:absolute;inset:1px;z-index:4;display:flex;align-items:center;justify-content:center;font-size:15px;text-shadow:0 1px 2px #fff;pointer-events:none}
+.map-builder-cell.object-door::before{content:'🚪'}.map-builder-cell.object-gate::before{content:'▥'}.map-builder-cell.object-chest::before{content:'▣'}.map-builder-cell.object-unlocked::before{opacity:.55}
 ")),
     
     div(
@@ -217,6 +232,13 @@ controlMapBuilderUI <- function(id) {
           div(
             class = "control-card",
             div(class = "control-section-title", "Paint Tools"),
+            radioButtons(
+              ns("builder_tool_mode"),
+              "Active tool",
+              choices = c("Select tile" = "select", "Paint terrain" = "paint", "Place object" = "object"),
+              selected = "select",
+              inline = TRUE
+            ),
             
             div(
               class = "map-builder-toolbar",
@@ -251,6 +273,8 @@ controlMapBuilderUI <- function(id) {
             
             div(
               class = "map-builder-toolbar",
+              actionButton(ns("arm_paint_tool"), "Arm Paint Brush", class = "btn btn-warning"),
+              actionButton(ns("select_only_tool"), "Disarm Tools", class = "btn btn-default"),
               actionButton(ns("paint_mode_apply"), "Paint Selected Tile", class = "btn btn-success"),
               actionButton(ns("paint_mode_fill"), "Fill Whole Map", class = "btn btn-default"),
               actionButton(ns("save_map"), "Save Map", class = "btn btn-success")
@@ -259,7 +283,25 @@ controlMapBuilderUI <- function(id) {
             tags$hr(),
             
             div(class = "control-section-title", "Selected Tile"),
-            uiOutput(ns("selected_tile_ui"))
+            uiOutput(ns("selected_tile_ui")),
+            tags$hr(),
+            div(class="control-section-title","Map Object"),
+            div(class="map-builder-toolbar",
+              selectInput(ns("object_type"),"Object",c("Door"="door","Gate"="gate","Existing chest"="chest"),width="150px"),
+              conditionalPanel(
+                condition = "input.object_type !== 'chest'",
+                selectInput(ns("object_difficulty"),"New door/gate lock",c("Unlocked"="unlocked","Easy"="easy","Standard"="standard","Hard"="hard","Master"="master"),width="180px"),
+                ns = ns
+              ),
+              conditionalPanel(
+                condition = "input.object_type === 'chest'",
+                selectInput(ns("object_chest_id"),"Chest",choices=character(),width="210px"),
+                tags$small("This uses the lock already saved with the chest."),
+                ns = ns
+              ),
+              actionButton(ns("arm_object_tool"),"Arm Object Placement",class="btn btn-warning"),
+              actionButton(ns("place_object"),"Place on Selected Tile",class="btn btn-primary"),
+              actionButton(ns("remove_object"),"Remove Object",class="btn btn-danger"))
           ),
           
           div(
@@ -294,7 +336,7 @@ controlMapBuilderServer <- function(id, ctrl, session_tbl = NULL, players_tbl = 
   moduleServer(id, function(input, output, session) {
     observeEvent(input$paint_terrain, {
       defaults <- list(
-        ravine=c(1,1,0), table=c(1,1,0), bar=c(1,1,0), crate=c(1,1,0), barrel=c(1,1,0), shelf=c(1,1,1),
+        water=c(2,0,0), ravine=c(1,1,0), table=c(1,1,0), bar=c(1,1,0), crate=c(1,1,0), barrel=c(1,1,0), shelf=c(1,1,1),
         chair=c(2,0,0), bench=c(2,0,0), bed=c(2,0,0), rubble=c(2,0,0), campfire=c(2,0,0), torch=c(1,0,0), brazier=c(2,0,0)
       )
       d <- defaults[[as.character(input$paint_terrain %||% "")]]
@@ -388,6 +430,13 @@ controlMapBuilderServer <- function(id, ctrl, session_tbl = NULL, players_tbl = 
     bump_map_render <- function() {
       map_render_key(isolate(map_render_key()) + 1L)
     }
+
+    as_editor_tiles <- function(tiles) {
+      if (is.data.frame(tiles) && "terrain_blocks_movement" %in% names(tiles)) {
+        tiles$blocks_movement <- as.logical(tiles$terrain_blocks_movement)
+      }
+      tiles
+    }
     
 
   
@@ -398,8 +447,11 @@ controlMapBuilderServer <- function(id, ctrl, session_tbl = NULL, players_tbl = 
       maps_rv(maps)
     }
     
+    loaded_map_id <- reactiveVal(NA_integer_)
+
     current_map_id <- reactive({
-      mid <- suppressWarnings(as.integer(input$map_select %||% ctrl$map_id %||% NA))
+      mid <- suppressWarnings(as.integer(loaded_map_id()))
+      if (is.na(mid) || mid < 1) mid <- suppressWarnings(as.integer(input$map_select %||% ctrl$map_id %||% NA))
       if (is.na(mid) || mid < 1) return(NA_integer_)
       mid
     })
@@ -476,7 +528,8 @@ load_map_tiles <- function(mid) {
   if (!is.data.frame(tiles)) tiles <- data.frame()
   
   ctrl$map_id <- mid
-  tiles_cache(tiles)
+  loaded_map_id(mid)
+  tiles_cache(as_editor_tiles(tiles))
   bump_map_render()
   
   
@@ -614,8 +667,11 @@ observeEvent(input$load_selected_map, {
       mid<-create_map_record(map_name,w,h);if(is.na(mid)||mid<1L){showNotification("Failed to create generated map record.",type="error");return()}
       tiles<-tryCatch(generate_control_map_tiles(mid,w,h,preset,seed,input$generator_density%||%35),error=function(e){showNotification(paste("Map generation failed:",conditionMessage(e)),type="error",duration=12);data.frame()})
       if(!nrow(tiles)||!isTRUE(set_shared_map_tiles(ctrl,mid,tiles))){showNotification("The map record was created, but its generated tiles could not be saved.",type="error");return()}
-      selected_x(1L);selected_y(1L);ctrl$map_id<-mid;tiles_cache(tiles);bump_map_render();load_maps();updateSelectInput(session,"map_select",selected=as.character(mid));if(is.function(bump_refresh))bump_refresh()
-      showNotification(paste0("Generated ",label,": ",map_name," (#",mid,") using seed ",seed,"."),type="message",duration=8)
+      placed_objects<-place_generated_map_objects(mid,tiles,preset,suppressWarnings(as.integer(ctrl$session_id%||%ctrl$active_session_id%||%NA)))
+      refreshed_tiles<-tryCatch(as_editor_tiles(get_map_tiles(mid)),error=function(e)tiles)
+      if(!is.data.frame(refreshed_tiles)||!nrow(refreshed_tiles))refreshed_tiles<-tiles
+      selected_x(1L);selected_y(1L);ctrl$map_id<-mid;loaded_map_id(mid);tiles_cache(refreshed_tiles);bump_map_render();load_maps();updateSelectInput(session,"map_select",selected=as.character(mid));if(is.function(bump_refresh))bump_refresh()
+      showNotification(paste0("Generated ",label,": ",map_name," (#",mid,") using seed ",seed,if(placed_objects>0)paste0(" with ",placed_objects," contextual door/gate",if(placed_objects==1)""else"s")else"","."),type="message",duration=8)
     },ignoreInit=TRUE)
 
     
@@ -814,6 +870,53 @@ observeEvent(input$load_selected_map, {
         )
       )
     }, ignoreInit = TRUE)
+
+    chest_choice_signature <- reactiveVal(NULL)
+    observe({
+      sid<-suppressWarnings(as.integer(ctrl$session_id%||%ctrl$active_session_id%||%NA));rows<-if(is.na(sid))data.frame()else list_session_chests(sid,TRUE,portable_only=TRUE)
+      choices<-if(nrow(rows))setNames(as.character(rows$id),paste0(rows$name," · ",ifelse(rows$locked,tools::toTitleCase(rows$difficulty),"Unlocked")))else character()
+      signature<-paste(names(choices),choices,collapse="|")
+      if(identical(signature,chest_choice_signature()))return()
+      chest_choice_signature(signature)
+      selected<-as.character(isolate(input$object_chest_id)%||%"")
+      if(!selected%in%unname(choices))selected<-if(length(choices))unname(choices[[1L]])else character()
+      updateSelectInput(session,"object_chest_id",choices=choices,selected=selected)
+    })
+    observeEvent(input$arm_object_tool,{
+      updateRadioButtons(session,"builder_tool_mode",selected="object")
+      showNotification("Object placement armed. Click a tile, then place the selected object.",type="message")
+    },ignoreInit=TRUE)
+    observeEvent(input$arm_paint_tool,{
+      updateRadioButtons(session,"builder_tool_mode",selected="paint")
+      showNotification("Paint brush armed. Click or drag across the map to paint.",type="message")
+    },ignoreInit=TRUE)
+    observeEvent(input$select_only_tool,{
+      updateRadioButtons(session,"builder_tool_mode",selected="select")
+      showNotification("Map tools disarmed. Clicking now only selects tiles.",type="message")
+    },ignoreInit=TRUE)
+    refresh_current_map_tiles <- function(mid){
+      db_tiles<-tryCatch(get_map_tiles(mid),error=function(e){message("get_map_tiles refresh failed: ",conditionMessage(e));data.frame()})
+      current<-tiles_cache()
+      if(!is.data.frame(db_tiles)||!nrow(db_tiles)||!is.data.frame(current)||!nrow(current))return(FALSE)
+      object_cols<-intersect(c("object_type","object_id","object_chest_id","object_locked","object_name","effective_blocks_movement"),names(db_tiles))
+      keys<-paste(current$x,current$y,sep=",");db_keys<-paste(db_tiles$x,db_tiles$y,sep=",");idx<-match(keys,db_keys)
+      for(nm in object_cols){vals<-db_tiles[[nm]][idx];if(is.character(vals))vals[is.na(vals)]<-"";current[[nm]]<-vals}
+      tiles_cache(current);bump_map_render();invisible(TRUE)
+    }
+    observeEvent(input$place_object,{
+      if(!identical(as.character(input$builder_tool_mode%||%"select"),"object"))return(showNotification("Choose Place object as the active tool first.",type="warning"))
+      mid<-current_map_id();x<-selected_x();y<-selected_y();typ<-as.character(input$object_type%||%"door");sid<-suppressWarnings(as.integer(ctrl$session_id%||%ctrl$active_session_id%||%NA))
+      if(is.na(mid)||is.na(x)||is.na(y)||is.na(sid))return(showNotification("Select a session, map and tile first.",type="error"))
+      chest_id<-suppressWarnings(as.integer(input$object_chest_id%||%NA))
+      if(typ%in%c("door","gate")){
+        difficulty<-as.character(input$object_difficulty%||%"standard");lock<-create_chest(sid,paste(tools::toTitleCase(typ),paste0("(",x,", ",y,")")),if(difficulty=="unlocked")"standard"else difficulty,list(),difficulty!="unlocked",lock_kind=typ)
+        if(is.null(lock))return(showNotification("The lock record could not be created.",type="error"));chest_id<-as.integer(lock$id[[1L]])
+      }
+      if(is.na(chest_id))return(showNotification("Choose the specific chest to place.",type="error"))
+      if(!isTRUE(place_map_object(mid,x,y,typ,chest_id)))return(showNotification("Object could not be placed.",type="error"))
+      refresh_current_map_tiles(mid);showNotification(paste(tools::toTitleCase(typ),"placed."))
+    },ignoreInit=TRUE)
+    observeEvent(input$remove_object,{mid<-current_map_id();x<-selected_x();y<-selected_y();if(isTRUE(remove_map_object(mid,x,y))){refresh_current_map_tiles(mid);showNotification("Map object removed.")}else showNotification("There is no object on that tile.",type="warning")},ignoreInit=TRUE)
     
     
     observeEvent(input$map_builder_tile_paint, {
@@ -854,6 +957,7 @@ observeEvent(input$load_selected_map, {
     observe({
       req(input$preview_mode == "2d")
       map_render_key()
+      input$builder_tool_mode
       
       timer("2d render observer", {
         tiles <- isolate(current_tiles())
@@ -877,6 +981,7 @@ observeEvent(input$load_selected_map, {
               tileClick = session$ns("map_builder_tile_click"),
               tilePaint = session$ns("map_builder_tile_paint")
             ),
+            toolMode = isolate(as.character(input$builder_tool_mode %||% "select")),
             brush = isolate(list(
               terrain = as.character(input$paint_terrain %||% "grass"),
               light = as.character(input$paint_light %||% "full"),

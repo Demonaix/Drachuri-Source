@@ -147,6 +147,8 @@ controlEncounterSetupUI <- function(id) {
       div(
         class = "control-card",
         h4("Encounter Positions"),
+        selectInput(ns("placement_actor"), "Click-to-place actor", choices = character()),
+        p(class = "control-mini", "Choose an actor, then click its destination in the map preview."),
         uiOutput(ns("positions_ui"))
       ),
       
@@ -341,7 +343,8 @@ controlEncounterSetupServer <- function(
     })
     
     current_encounter_id <- reactive({
-      eid <- suppressWarnings(as.integer(ctrl$encounter_id %||% input$encounter_id %||% NA))
+      eid <- suppressWarnings(as.integer(ctrl$encounter_id %||% NA))
+      if (is.na(eid) || eid < 1) eid <- suppressWarnings(as.integer(input$encounter_id %||% NA))
       if (is.na(eid) || eid < 1) return(NA_integer_)
       eid
     })
@@ -378,7 +381,7 @@ controlEncounterSetupServer <- function(
       ids <- as.character(maps$map_id)
       dimensions <- if (all(c("width", "height") %in% names(maps))) paste0(" • ", maps$width, "×", maps$height) else ""
       labels <- paste0(maps$map_name, " (#", ids, ")", dimensions)
-      selected <- as.character(input$map_id %||% ctrl$map_id %||% "")
+      selected <- as.character(ctrl$map_id %||% input$map_id %||% "")
       if (!selected %in% ids) selected <- ids[[1L]]
       updateSelectInput(session, "map_id", choices = stats::setNames(ids, labels), selected = selected)
     })
@@ -430,7 +433,7 @@ controlEncounterSetupServer <- function(
     }
 
     observeEvent(input$preview_generated_encounter,{
-      draft<-tryCatch(build_generated_draft(),error=function(e){showNotification(conditionMessage(e),type="error",duration=10);NULL})
+      draft<-withProgress(message="Generating encounter draft…",value=.15,{incProgress(.35,detail="Assessing the party and enemy pool");result<-tryCatch(build_generated_draft(),error=function(e){showNotification(conditionMessage(e),type="error",duration=10);NULL});incProgress(.5,detail="Preparing the proposed encounter");result})
       generated_draft(draft)
     },ignoreInit=TRUE)
 
@@ -459,8 +462,10 @@ controlEncounterSetupServer <- function(
 
     spawn_generated_enemy <- function(eid,npc,name) {
       field<-function(nm,default=NULL){if(nm%in%names(npc))npc[[nm]][[1L]]%||%default else default}
+      attack_name <- as.character(field("attack_name", "Attack"))
+      damage_expr <- encounter_valid_damage_expr(field("damage_expr", ""), attack_name)
       add_encounter_enemy(encounter_id=eid,name=name,hp_max=as.integer(field("hp_max",10L)),ac=as.integer(field("ac",12L)),movement_speed=as.integer(field("movement_speed",30L)),
-        attack_name=as.character(field("attack_name","Attack")),attack_bonus=as.integer(field("attack_bonus",2L)),damage_expr=as.character(field("damage_expr","1d4")),damage_type=as.character(field("damage_type","bludgeoning")),attacks_json=as.character(field("attacks_json","")),
+        attack_name=attack_name,attack_bonus=as.integer(field("attack_bonus",2L)),damage_expr=damage_expr,damage_type=as.character(field("damage_type","bludgeoning")),attacks_json=as.character(field("attacks_json","")),
         template_key=as.character(field("npc_id","")),enemy_type=as.character(field("enemy_type","Custom")),characteristics=enemy_db_json(field("characteristics",list()),list()),abilities=enemy_db_json(field("abilities",list()),list()),attacks=enemy_db_json(field("attacks",list()),list()),loot=enemy_db_json(field("loot",list()),list()),
         resistances=enemy_db_values(field("resistances",character())),immunities=enemy_db_values(field("immunities",character())),vulnerabilities=enemy_db_values(field("vulnerabilities",character())),condition_immunities=enemy_db_values(field("condition_immunities",character())),gold_min=as.integer(field("gold_min",0L)),gold_max=as.integer(field("gold_max",0L)))
     }
@@ -472,18 +477,20 @@ controlEncounterSetupServer <- function(
       if(is.null(d))return()
       encounter_name<-trimws(as.character(input$generator_name%||%""));if(!nzchar(encounter_name))encounter_name<-paste(tools::toTitleCase(gsub("_"," ",d$terrain)),d$pool_name,"Encounter")
       map_id<-NA_integer_;eid<-NA_integer_
-      result<-tryCatch({
+      result<-withProgress(message="Creating encounter…",value=.1,{tryCatch({
+        incProgress(.15,detail="Creating the battlefield")
         map_id<-create_generated_map_record(paste0(encounter_name," Map"),d$width,d$height)
         tiles<-generate_control_map_tiles(map_id,d$width,d$height,d$terrain,d$seed,35)
         if(!isTRUE(set_shared_map_tiles(ctrl,map_id,tiles)))stop("Generated map tiles could not be saved.")
-        eid<-create_encounter(sid,encounter_name,map_id,"setup");if(is.null(eid))stop("The encounter record could not be created.")
+        place_generated_map_objects(map_id,tiles,d$terrain,sid)
+        incProgress(.25,detail="Building contextual doors and terrain");eid<-create_encounter(sid,encounter_name,map_id,"setup");if(is.null(eid))stop("The encounter record could not be created.")
         enemy_ids<-character();name_seen<-list()
         for(i in seq_len(nrow(d$enemies))){npc<-d$enemies[i,,drop=FALSE];base<-as.character(npc$name[[1L]]%||%"Enemy");name_seen[[base]]<-(name_seen[[base]]%||%0L)+1L;total<-sum(as.character(d$enemies$name)==base);display<-if(total>1L)paste(base,name_seen[[base]])else base;enemy_id<-spawn_generated_enemy(eid,npc,display);if(is.null(enemy_id)||!nzchar(enemy_id))stop(paste("Could not add",display));enemy_ids<-c(enemy_ids,enemy_id)}
-        player_ids<-as.character(d$players$character_id);positions<-encounter_draft_positions(tiles,player_ids,enemy_ids,d$seed)
+        incProgress(.3,detail="Placing combatants");player_ids<-as.character(d$players$character_id);positions<-encounter_draft_positions(tiles,player_ids,enemy_ids,d$seed)
         for(i in seq_len(nrow(positions)))if(!isTRUE(upsert_encounter_actor_position(eid,positions$actor_type[[i]],positions$actor_id[[i]],positions$x[[i]],positions$y[[i]])))stop("An actor could not be positioned on the generated map.")
         TRUE
-      },error=function(e){message("generated encounter failed: ",conditionMessage(e));showNotification(paste("Encounter generation failed:",conditionMessage(e)),type="error",duration=12);FALSE})
-      if(!isTRUE(result)){if(!is.na(eid))try(delete_encounter(eid),silent=TRUE);if(!is.na(map_id))delete_generated_map(map_id);return()}
+      },error=function(e){message("generated encounter failed: ",conditionMessage(e));showNotification(paste("Encounter generation failed:",conditionMessage(e)),type="error",duration=12);FALSE})})
+      if(!isTRUE(result)){if(!is.na(eid)&&exists("delete_encounter_record",inherits=FALSE))try(delete_encounter_record(eid),silent=TRUE);if(!is.na(map_id))delete_generated_map(map_id);return()}
       ctrl$session_id<-sid;ctrl$active_session_id<-sid;ctrl$encounter_id<-as.integer(eid);ctrl$map_id<-as.integer(map_id);enemy_obs_ids(character());bump_refresh();updateSelectInput(session,"encounter_id",selected=as.character(eid));updateSelectInput(session,"map_id",selected=as.character(map_id));showNotification(paste0("Generated editable encounter: ",encounter_name,". Review it before starting combat."),type="message",duration=10)
     },ignoreInit=TRUE)
     
@@ -506,6 +513,24 @@ controlEncounterSetupServer <- function(
     
   
     
+    delete_encounter_record <- function(eid) {
+      con <- get_db_connection()
+      if (is.null(con)) return(FALSE)
+      on.exit(release_db_connection(con), add = TRUE)
+      tryCatch({
+        DBI::dbWithTransaction(con, {
+          DBI::dbExecute(con, "UPDATE game_sessions SET active_encounter_id = NULL WHERE active_encounter_id = $1", params = list(as.integer(eid)))
+          DBI::dbExecute(con, "DELETE FROM encounter_positions WHERE encounter_id = $1", params = list(as.integer(eid)))
+          removed <- DBI::dbExecute(con, "DELETE FROM encounters WHERE id = $1", params = list(as.integer(eid)))
+          if (as.integer(removed) < 1L) stop("Encounter was not found.")
+        })
+        TRUE
+      }, error = function(e) {
+        message("delete encounter record failed: ", conditionMessage(e))
+        FALSE
+      })
+    }
+
     observeEvent(input$delete_encounter, {
       sid <- current_session_id()
       eid <- current_encounter_id()
@@ -515,24 +540,10 @@ controlEncounterSetupServer <- function(
         return()
       }
       
-      ok <- tryCatch(
-        {
-          if (exists("delete_encounter", mode = "function")) {
-            delete_encounter(eid)
-          } else if (exists("remove_encounter", mode = "function")) {
-            remove_encounter(eid)
-          } else {
-            stop("No delete_encounter/remove_encounter helper exists.")
-          }
-        },
-        error = function(e) {
-          message("delete encounter failed: ", e$message)
-          FALSE
-        }
-      )
+      ok <- delete_encounter_record(eid)
       
       if (!isTRUE(ok)) {
-        showNotification("Failed to delete encounter. Missing helper or DB error.", type = "error")
+        showNotification("Failed to delete encounter. Check the Control log for the database error.", type = "error")
         return()
       }
       
@@ -546,25 +557,21 @@ controlEncounterSetupServer <- function(
     
   
     
+    position_refresh <- reactiveVal(0L)
     current_positions <- reactive({
       ctrl$refresh_key
+      position_refresh()
       
       eid <- current_encounter_id()
       if (is.na(eid)) return(data.frame())
       
-      df <- NULL
-      
-      if (!is.null(positions_tbl) && is.reactive(positions_tbl)) {
-        df <- tryCatch(positions_tbl(), error = function(e) data.frame())
-      } else {
-        df <- tryCatch(
-          get_encounter_positions(eid),
-          error = function(e) {
-            message("get_encounter_positions failed: ", e$message)
-            data.frame()
-          }
-        )
-      }
+      df <- tryCatch(
+        get_encounter_positions(eid),
+        error = function(e) {
+          message("get_encounter_positions failed: ", e$message)
+          data.frame()
+        }
+      )
       
       if (!is.data.frame(df) || nrow(df) == 0) return(data.frame())
       
@@ -574,6 +581,36 @@ controlEncounterSetupServer <- function(
       
       if (!is.data.frame(df)) data.frame() else df
     })
+
+    placement_choice_signature <- reactiveVal(NULL)
+    observe({
+      players <- current_players(); enemies <- current_enemies()
+      values <- character(); labels <- character()
+      if (is.data.frame(players) && nrow(players)) {
+        ids <- as.character(players$character_id); names <- as.character(players$display_name %||% ids)
+        values <- c(values, paste("player", ids, sep = "|")); labels <- c(labels, paste0(names, " (Player)"))
+      }
+      if (is.data.frame(enemies) && nrow(enemies)) {
+        ids <- as.character(enemies$enemy_uuid); names <- as.character(enemies$name %||% ids)
+        values <- c(values, paste("enemy", ids, sep = "|")); labels <- c(labels, paste0(names, " (Enemy)"))
+      }
+      signature <- paste(values, labels, collapse="|")
+      if (identical(signature, placement_choice_signature())) return()
+      placement_choice_signature(signature)
+      selected <- as.character(input$placement_actor %||% "")
+      if (!selected %in% values && length(values)) selected <- values[[1L]]
+      updateSelectInput(session, "placement_actor", choices = stats::setNames(values, labels), selected = selected)
+    })
+
+    observeEvent(input$placement_tile, {
+      eid <- current_encounter_id(); chosen <- strsplit(as.character(input$placement_actor %||% ""), "|", fixed = TRUE)[[1L]]
+      x <- suppressWarnings(as.integer(input$placement_tile$x)); y <- suppressWarnings(as.integer(input$placement_tile$y))
+      if (is.na(eid) || length(chosen) != 2L || is.na(x) || is.na(y)) return()
+      ok <- tryCatch(upsert_encounter_actor_position(eid, chosen[[1L]], chosen[[2L]], x, y), error = function(e) FALSE)
+      if (!isTRUE(ok)) return(showNotification("Could not place that actor.", type = "error"))
+      position_refresh(position_refresh() + 1L)
+      showNotification("Actor placed on the selected tile.", type = "message", duration = 3)
+    }, ignoreInit = TRUE)
     
     current_encounter_row <- reactive({
       eid <- current_encounter_id()
@@ -593,113 +630,8 @@ controlEncounterSetupServer <- function(
     preview_positions <- reactive({
       eid <- current_encounter_id()
       if (is.na(eid)) return(data.frame())
-      
-      players <- current_players()
-      enemies <- current_enemies()
-      saved_pos <- current_positions()
-      
-      out <- data.frame(
-        encounter_id = integer(),
-        actor_type = character(),
-        actor_id = character(),
-        x = integer(),
-        y = integer(),
-        stringsAsFactors = FALSE
-      )
-      
-      if (is.data.frame(players) && nrow(players) > 0) {
-        for (i in seq_len(nrow(players))) {
-          row <- players[i, , drop = FALSE]
-          cid <- as.character(row$character_id[1] %||% "")
-          if (!nzchar(cid)) next
-          
-          default_x <- i
-          default_y <- 1L
-          
-          if (is.data.frame(saved_pos) && nrow(saved_pos) > 0) {
-            prow <- saved_pos[
-              as.character(saved_pos$actor_type) == "player" &
-                as.character(saved_pos$actor_id) == cid,
-              ,
-              drop = FALSE
-            ]
-            
-            if (nrow(prow) > 0) {
-              default_x <- suppressWarnings(as.integer(prow$x[1] %||% default_x))
-              default_y <- suppressWarnings(as.integer(prow$y[1] %||% default_y))
-            }
-          }
-          
-          x_key <- paste0("player_pos_x_", cid)
-          y_key <- paste0("player_pos_y_", cid)
-          
-          x_val <- suppressWarnings(as.integer(input[[x_key]] %||% default_x))
-          y_val <- suppressWarnings(as.integer(input[[y_key]] %||% default_y))
-          
-          if (is.na(x_val) || x_val < 1) x_val <- default_x
-          if (is.na(y_val) || y_val < 1) y_val <- default_y
-          
-          out <- rbind(
-            out,
-            data.frame(
-              encounter_id = as.integer(eid),
-              actor_type = "player",
-              actor_id = cid,
-              x = as.integer(x_val),
-              y = as.integer(y_val),
-              stringsAsFactors = FALSE
-            )
-          )
-        }
-      }
-      
-      if (is.data.frame(enemies) && nrow(enemies) > 0) {
-        for (i in seq_len(nrow(enemies))) {
-          row <- enemies[i, , drop = FALSE]
-          enemy_id <- as.character(row$enemy_uuid[1] %||% row$actor_id[1] %||% "")
-          if (!nzchar(enemy_id)) next
-          
-          default_x <- i
-          default_y <- 5L
-          
-          if (is.data.frame(saved_pos) && nrow(saved_pos) > 0) {
-            erow <- saved_pos[
-              as.character(saved_pos$actor_type) == "enemy" &
-                as.character(saved_pos$actor_id) == enemy_id,
-              ,
-              drop = FALSE
-            ]
-            
-            if (nrow(erow) > 0) {
-              default_x <- suppressWarnings(as.integer(erow$x[1] %||% default_x))
-              default_y <- suppressWarnings(as.integer(erow$y[1] %||% default_y))
-            }
-          }
-          
-          x_key <- paste0("enemy_pos_x_", enemy_id)
-          y_key <- paste0("enemy_pos_y_", enemy_id)
-          
-          x_val <- suppressWarnings(as.integer(input[[x_key]] %||% default_x))
-          y_val <- suppressWarnings(as.integer(input[[y_key]] %||% default_y))
-          
-          if (is.na(x_val) || x_val < 1) x_val <- default_x
-          if (is.na(y_val) || y_val < 1) y_val <- default_y
-          
-          out <- rbind(
-            out,
-            data.frame(
-              encounter_id = as.integer(eid),
-              actor_type = "enemy",
-              actor_id = enemy_id,
-              x = as.integer(x_val),
-              y = as.integer(y_val),
-              stringsAsFactors = FALSE
-            )
-          )
-        }
-      }
-      
-      out
+      pos <- current_positions()
+      if (!is.data.frame(pos)) data.frame() else pos
     })
     
     observe({
@@ -770,10 +702,11 @@ controlEncounterSetupServer <- function(
       }
       
       ids <- as.character(enc[[id_col]])
-      labels <- paste0(enc[[name_col]], " (#", ids, ")")
+      map_labels <- if ("map_name" %in% names(enc)) ifelse(is.na(enc$map_name) | !nzchar(as.character(enc$map_name)), "No map", as.character(enc$map_name)) else paste0("Map #", enc$map_id)
+      labels <- paste0(enc[[name_col]], " • ", map_labels, " (#", ids, ")")
       choices <- stats::setNames(ids, labels)
       
-      selected_id <- as.character(input$encounter_id %||% ctrl$encounter_id %||% "")
+      selected_id <- as.character(ctrl$encounter_id %||% input$encounter_id %||% "")
       
       if (!nzchar(selected_id) || !selected_id %in% ids) {
         selected_id <- ids[1]
@@ -1084,79 +1017,30 @@ controlEncounterSetupServer <- function(
       enemies <- current_enemies()
       pos <- current_positions()
       
-      ui_parts <- list()
-      
+      placement_row <- function(id, nm, type) {
+        placed <- is.data.frame(pos) && nrow(pos) > 0 && any(
+          as.character(pos$actor_type) == type & as.character(pos$actor_id) == id
+        )
+        div(
+          class = paste("encounter-placement-status", if (placed) "is-placed" else "is-unplaced"),
+          tags$strong(paste0(nm, if (type == "player") " (Player)" else " (Enemy)")),
+          tags$span(if (placed) "Placed" else "Not placed")
+        )
+      }
+      ui_parts <- list(tags$p(class="control-mini","Choose an actor above, then click its destination on the map."))
       if (is.data.frame(players) && nrow(players) > 0) {
-        player_rows <- lapply(seq_len(nrow(players)), function(i) {
-          row <- players[i, , drop = FALSE]
-          
-          cid <- as.character(row$character_id[1] %||% "")
-          nm  <- as.character(row$display_name[1] %||% "Player")
-          
-          x_val <- i
-          y_val <- 1L
-          
-          if (is.data.frame(pos) && nrow(pos) > 0) {
-            prow <- pos[
-              as.character(pos$actor_type) == "player" &
-                as.character(pos$actor_id) == cid,
-              ,
-              drop = FALSE
-            ]
-            
-            if (nrow(prow) > 0) {
-              x_val <- suppressWarnings(as.integer(prow$x[1] %||% x_val))
-              y_val <- suppressWarnings(as.integer(prow$y[1] %||% y_val))
-            }
-          }
-          
-          if (is.na(x_val) || x_val < 1) x_val <- i
-          if (is.na(y_val) || y_val < 1) y_val <- 1L
-          
-          fluidRow(
-            column(4, tags$strong(paste0(nm, " (Player)"))),
-            column(3, numericInput(session$ns(paste0("player_pos_x_", cid)), "X", value = x_val, min = 1)),
-            column(3, numericInput(session$ns(paste0("player_pos_y_", cid)), "Y", value = y_val, min = 1))
-          )
-        })
-        
+        player_rows <- lapply(seq_len(nrow(players)), function(i) placement_row(
+          as.character(players$character_id[[i]] %||% ""),
+          as.character(players$display_name[[i]] %||% "Player"), "player"
+        ))
         ui_parts <- c(ui_parts, list(tags$h5("Players")), player_rows)
       }
-      
       if (is.data.frame(enemies) && nrow(enemies) > 0) {
         enemy_rows <- lapply(seq_len(nrow(enemies)), function(i) {
-          row <- enemies[i, , drop = FALSE]
-          
-          enemy_id <- as.character(row$enemy_uuid[1] %||% row$actor_id[1] %||% "")
-          nm       <- as.character(row$name[1] %||% row$display_name[1] %||% "Enemy")
-          
-          x_val <- i
-          y_val <- 5L
-          
-          if (is.data.frame(pos) && nrow(pos) > 0) {
-            erow <- pos[
-              as.character(pos$actor_type) == "enemy" &
-                as.character(pos$actor_id) == enemy_id,
-              ,
-              drop = FALSE
-            ]
-            
-            if (nrow(erow) > 0) {
-              x_val <- suppressWarnings(as.integer(erow$x[1] %||% x_val))
-              y_val <- suppressWarnings(as.integer(erow$y[1] %||% y_val))
-            }
-          }
-          
-          if (is.na(x_val) || x_val < 1) x_val <- i
-          if (is.na(y_val) || y_val < 1) y_val <- 5L
-          
-          fluidRow(
-            column(4, tags$strong(paste0(nm, " (Enemy)"))),
-            column(3, numericInput(session$ns(paste0("enemy_pos_x_", enemy_id)), "X", value = x_val, min = 1)),
-            column(3, numericInput(session$ns(paste0("enemy_pos_y_", enemy_id)), "Y", value = y_val, min = 1))
-          )
+          row <- enemies[i,,drop=FALSE]
+          placement_row(as.character(row$enemy_uuid[[1L]] %||% row$actor_id[[1L]] %||% ""),
+            as.character(row$name[[1L]] %||% row$display_name[[1L]] %||% "Enemy"), "enemy")
         })
-        
         ui_parts <- c(ui_parts, list(tags$h5("Enemies")), enemy_rows)
       }
       
@@ -1187,77 +1071,7 @@ controlEncounterSetupServer <- function(
         return()
       }
       
-      players <- current_players()
-      enemies <- current_enemies()
       ok_all <- TRUE
-      
-      if (is.data.frame(players) && nrow(players) > 0) {
-        for (i in seq_len(nrow(players))) {
-          row <- players[i, , drop = FALSE]
-          cid <- as.character(row$character_id[1] %||% "")
-          
-          x_key <- paste0("player_pos_x_", cid)
-          y_key <- paste0("player_pos_y_", cid)
-          
-          x_val <- suppressWarnings(as.integer(input[[x_key]] %||% i))
-          y_val <- suppressWarnings(as.integer(input[[y_key]] %||% 1L))
-          
-          if (!nzchar(cid) || is.na(x_val) || is.na(y_val)) {
-            ok_all <- FALSE
-            next
-          }
-          
-          ok_pos <- tryCatch(
-            upsert_encounter_actor_position(
-              encounter_id = eid,
-              actor_type = "player",
-              actor_id = cid,
-              x = x_val,
-              y = y_val
-            ),
-            error = function(e) {
-              message("player upsert_encounter_actor_position failed: ", e$message)
-              FALSE
-            }
-          )
-          
-          if (!isTRUE(ok_pos)) ok_all <- FALSE
-        }
-      }
-      
-      if (is.data.frame(enemies) && nrow(enemies) > 0) {
-        for (i in seq_len(nrow(enemies))) {
-          row <- enemies[i, , drop = FALSE]
-          enemy_id <- as.character(row$enemy_uuid[1] %||% row$actor_id[1] %||% "")
-          
-          x_key <- paste0("enemy_pos_x_", enemy_id)
-          y_key <- paste0("enemy_pos_y_", enemy_id)
-          
-          x_val <- suppressWarnings(as.integer(input[[x_key]] %||% i))
-          y_val <- suppressWarnings(as.integer(input[[y_key]] %||% 5L))
-          
-          if (!nzchar(enemy_id) || is.na(x_val) || is.na(y_val)) {
-            ok_all <- FALSE
-            next
-          }
-          
-          ok_epos <- tryCatch(
-            upsert_encounter_actor_position(
-              encounter_id = eid,
-              actor_type = "enemy",
-              actor_id = enemy_id,
-              x = x_val,
-              y = y_val
-            ),
-            error = function(e) {
-              message("enemy upsert_encounter_actor_position failed: ", e$message)
-              FALSE
-            }
-          )
-          
-          if (!isTRUE(ok_epos)) ok_all <- FALSE
-        }
-      }
       
       ok_map <- tryCatch(set_encounter_map(eid, map_id), error = function(e) FALSE)
       ok_status <- tryCatch(set_encounter_status(eid, status = "setup"), error = function(e) FALSE)
@@ -1282,7 +1096,7 @@ controlEncounterSetupServer <- function(
     
     output$map_preview_ui <- renderUI({
       eid <- current_encounter_id()
-      mid <- suppressWarnings(as.integer(input$map_id %||% ctrl$map_id %||% NA))
+      mid <- suppressWarnings(as.integer(ctrl$map_id %||% input$map_id %||% NA))
       if (is.na(mid) || mid < 1) return(tags$em("Choose a map to preview it."))
       
       tiles <- tryCatch(get_map_tiles(mid), error = function(e) data.frame())
@@ -1351,6 +1165,17 @@ controlEncounterSetupServer <- function(
           "#d9d4c7"
         )
       }
+      terrain_texture <- function(terrain) {
+        terrain <- tolower(as.character(terrain %||% "grass"))
+        file <- switch(terrain,
+          grass="grass.jpg", forest="forest.jpg", stone="stone.jpg", wall="stone.jpg",
+          water="water.jpg", swamp="swamp.jpg", ravine="ravine.jpg", road="dirt.jpg", sand="dirt.jpg",
+          table="clutter_oak.png", bar="clutter_oak.png", chair="clutter_oak.png", bench="clutter_oak.png",
+          crate="clutter_oak.png", barrel="clutter_oak.png", bed="clutter_oak.png", shelf="clutter_oak.png",
+          rubble="battlefield_fieldstone.jpg", campfire="dirt.jpg", torch="battlefield_fieldstone.jpg",
+          brazier="battlefield_fieldstone.jpg", NULL)
+        if (is.null(file)) "" else paste0("background-image:url('player-assets/assets/textures/", file, "');background-size:cover;background-position:center;")
+      }
       
       light_overlay <- function(light, fog) {
         light <- tolower(as.character(light %||% "full"))
@@ -1381,23 +1206,17 @@ controlEncounterSetupServer <- function(
         
         tags$div(
           class = "enc-map-cell",
+          onclick = sprintf("Shiny.setInputValue('%s',{x:%d,y:%d,nonce:Math.random()},{priority:'event'})", session$ns("placement_tile"), as.integer(t$x[1]), as.integer(t$y[1])),
           style = paste0(
             "background:", terrain_col(t$terrain[1]), ";",
+            terrain_texture(t$terrain[1]),
             if (isTRUE(t$blocks_movement[1])) "box-shadow: inset 0 0 0 2px rgba(60,20,20,0.65);" else ""
           ),
           tags$div(style = light_overlay(t$light[1], t$fog[1])),
-          tags$div(
-            style = "
-    position:absolute;
-    left:2px;
-    top:1px;
-    font-size:7px;
-    color:rgba(0,0,0,0.55);
-    z-index:2;
-    pointer-events:none;
-  ",
-            paste0(t$x[1], ",", t$y[1])
-          ),
+          if ("object_type" %in% names(t) && nzchar(as.character(t$object_type[1] %||% ""))) {
+            tags$div(style="position:absolute;inset:0;z-index:2;display:flex;align-items:center;justify-content:center;font-size:15px;text-shadow:0 1px 2px white;pointer-events:none;",
+              switch(as.character(t$object_type[1]),door="🚪",gate="▥",chest="▣",""))
+          },
           if (nzchar(occ_lbl)) {
             tags$div(
               class = "enc-map-token",
@@ -1417,10 +1236,7 @@ controlEncounterSetupServer <- function(
             cells_ui
           )
         ),
-        tags$div(
-          style = "margin-top:8px; font-size:12px; opacity:.8;",
-          paste0("Map ID ", mid, " • P = player • E = enemy • preview updates from current position inputs")
-        )
+        tags$div(style = "margin-top:8px; font-size:12px; opacity:.8;", "P = player • E = enemy • click the map to place the selected actor")
       )
     })
   })

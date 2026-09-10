@@ -38,6 +38,8 @@ source("control_app/modules/control_npc_attacks_module.R", local = FALSE)
 source("control_app/modules/control_merchants_module.R", local = FALSE)
 source("control_app/modules/control_story_module.R", local = FALSE)
 source("control_app/modules/control_issue_reports_module.R", local = FALSE)
+source("control_app/modules/control_notes_module.R", local = FALSE)
+source("control_app/modules/control_quests_module.R", local = FALSE)
 source("control_app/modules/control_geography_climate_module.R", local = FALSE)
 source(file.path(player_app_dir, "server", "party_hud_module.R"), local = FALSE)
 
@@ -176,9 +178,23 @@ ui_control <- fluidPage(
       .merchant-invite-panel { clear:both; margin-top:16px; padding-top:12px; border-top:1px solid rgba(191,167,111,.5); }
       .merchant-invite-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
       @media (max-width: 900px) {
-        .control-shell { margin:10px; padding:0 8px 18px; }
+        /* Laptop Safari can report a sub-900px CSS viewport at ordinary
+           display scaling.  Keep the party rail fixed instead of reverting
+           to the obsolete in-flow/mobile HUD, which clipped its right edge. */
+        .control-shell {
+          width: calc(100vw - 248px);
+          margin: 14px 14px 24px 220px;
+          padding: 0 8px 18px;
+        }
         .control-party-hud { position:relative; left:auto; top:auto; width:auto; max-height:220px; margin-bottom:12px; }
-        #control_partyhud-partyhud_root { position:relative; top:auto; left:auto; width:156px; max-height:220px; margin-bottom:12px; }
+        #control_partyhud-partyhud_root {
+          position: fixed;
+          top: 110px;
+          left: 24px;
+          width: 178px;
+          max-height: calc(100vh - 125px);
+          margin: 0;
+        }
       }
 
       .shiny-input-container {
@@ -337,12 +353,15 @@ ui_control <- fluidPage(
         box-shadow: inset 0 1px 2px rgba(62,38,17,.08);
       }
       #control_partyhud-partyhud_root {
+        /* Control content starts at 220px: 24px left inset + 178px HUD + 18px gap. */
+        left: 24px !important;
+        width: 178px !important;
         border-color: rgba(219,181,104,.62) !important;
         background: linear-gradient(180deg, rgba(38,16,16,.97), rgba(20,14,12,.97)) !important;
         box-shadow: 0 12px 30px rgba(0,0,0,.5) !important;
       }
       @media (max-width: 1050px) {
-        .control-shell { width:calc(100vw - 28px); margin: 14px; padding: 0 8px 22px; }
+        .control-shell { width:calc(100vw - 248px); margin:14px 14px 24px 220px; padding:0 8px 22px; }
         .control-hero { flex-wrap: wrap; }
         .control-toolbar { width: 100%; margin-left: 104px; justify-content: flex-start; }
       }
@@ -401,6 +420,14 @@ ui_control <- fluidPage(
       tabPanel(
         title = "Player Reports",
         controlIssueReportsUI("issue_reports")
+      ),
+      tabPanel(
+        title = "Party Notes",
+        controlNotesUI("party_notes")
+      ),
+      tabPanel(
+        title = "Quests",
+        controlQuestsUI("quests")
       ),
       
       tabPanel(

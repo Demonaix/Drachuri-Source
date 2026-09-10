@@ -143,17 +143,14 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       available <- enemies[as.integer(enemies$hp_current)<=0L & unlooted,,drop=FALSE]
       if(!nrow(available)){showNotification("No defeated unlooted enemies.",type="warning");return()}
       showModal(modalDialog(title="Loot defeated enemy",selectInput(session$ns("loot_enemy_id"),"Enemy",choices=setNames(as.character(available$enemy_uuid),as.character(available$name))),
-        p("Items go directly into Inventory or Armoury. Gold goes into your purse."),footer=tagList(modalButton("Cancel"),actionButton(session$ns("confirm_loot"),"Take loot",class="btn btn-success"))))
+        p("Open the shared remains and take only what you want. Anything left remains available to the other players."),footer=tagList(modalButton("Cancel"),actionButton(session$ns("confirm_loot"),"Search remains",class="btn btn-success"))))
     },ignoreInit=TRUE)
 
     observeEvent(input$confirm_loot, {
-      result<-claim_defeated_enemy_loot(current_encounter_id(),input$loot_enemy_id,core$state$char_id)
+      result<-prepare_defeated_enemy_loot(current_encounter_id(),input$loot_enemy_id)
       if(is.null(result)){removeModal();showNotification("That enemy cannot be looted or was already claimed.",type="error");return()}
-      char<-validate_character(core$state$char); items<-inventory_normalize(char$inventory$items)
-      if(length(result$loot)) for(item in result$loot) items<-rbind(items,enemy_loot_to_inventory_row(item))
-      char$inventory$items<-inventory_normalize(items); char$inventory$gold<-as.numeric(char$inventory$gold%||%0)+as.numeric(result$gold%||%0); core$state$char<-char
-      save_character_to_db(char,core$state$char_id); removeModal(); bump_refresh()
-      showNotification(paste0("Looted ",result$name,": ",length(result$loot)," item(s) and ",result$gold," gold."),type="message",duration=7)
+      removeModal();bump_refresh();opener<-session$userData$open_map_lock
+      if(is.function(opener))opener(result$chest_id) else showNotification("The shared remains are available from Chests.",type="message")
     },ignoreInit=TRUE)
 
     snapshot_data <- reactive({
@@ -2554,7 +2551,14 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       }
       
       tagList(
-        if(identical(as.character(preview$attacker_type%||%""),"player"))div(class="combat-resolution-cards",lapply(seq_along(preview$attack_rolls),function(i)div(style=paste0("position:relative;width:120px;aspect-ratio:4/5;overflow:hidden;border-radius:9px;box-shadow:0 4px 12px #2d1d0c66;",if(preview$attack_rolls[[i]]==preview$attack_roll)"outline:4px solid #b88b2d;transform:translateY(-3px);"else"opacity:.7;"),tags$img(src=dice_card_src(20L,preview$attack_rolls[[i]]),style="width:100%;height:100%;object-fit:cover;"))),modifier_result_card_ui(preview$attack_bonus,"Attack bonus")),
+        div(class="confirm-box",
+          div(class="combat-section-title","Attack Roll"),
+          div(class="combat-resolution-cards",lapply(seq_along(preview$attack_rolls),function(i)div(style=paste0("position:relative;width:120px;aspect-ratio:4/5;border-radius:9px;box-shadow:0 4px 12px #2d1d0c66;padding:3px;",if(preview$attack_rolls[[i]]==preview$attack_roll)"outline:4px solid #b88b2d;transform:translateY(-3px);"else"opacity:.7;"),tags$img(src=dice_card_src(20L,preview$attack_rolls[[i]]),alt=paste("d20 result",preview$attack_rolls[[i]]),style="width:100%;height:100%;object-fit:contain;"))),modifier_result_card_ui(preview$attack_bonus,"Attack bonus")),
+          tags$p(class="combat-resolution-summary",paste0(
+            if(length(preview$attack_rolls)>1L)paste0("Rolled ",paste(preview$attack_rolls,collapse=" and ")," (",preview$attack_adv_mode,"); using ",preview$attack_roll,". ")else paste0("Natural d20: ",preview$attack_roll,". "),
+            preview$attack_roll," ",sprintf("%+d",as.integer(preview$attack_bonus))," = ",preview$attack_total," against AC ",preview$target_ac," — ",if(isTRUE(preview$is_crit))"Critical Hit"else if(isTRUE(preview$is_hit))"Hit"else"Miss"
+          ))
+        ),
         if(identical(as.character(preview$attacker_type%||%""),"player"))div(class="combat-resolution-cards",combat_resolution_card(combat_ability_card_src(preview$attack_ability,preview$attack_ability_score),paste(combat_ability_labels[[preview$attack_ability]]%||%"Strength","weapon attack"),paste0("Natural ",preview$attack_roll," + ",preview$attack_bonus," = ",preview$attack_total))),
         div(
           class = "confirm-box",
@@ -2602,7 +2606,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
             },
             div(
               class = "confirm-box",
-              div(class = "combat-section-title", "Modify Damage"),
+              div(class = "combat-section-title", "Automated Damage Features"),
               if (nzchar(as.character(preview$sneak_expr %||% ""))) {
                 tagList(
                   tags$p(
@@ -2618,12 +2622,15 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
                   }
                 )
               },
+              tags$details(
+                tags$summary("Advanced damage override"),
+                tags$p(class="text-muted","Only use this for exceptional DM-granted damage. Sneak Attack, Rage, manoeuvres, enchantments and critical dice are handled above automatically."),
               fluidRow(
                 column(
                   6,
                   numericInput(
                     session$ns("final_bonus_damage"),
-                    "Manual bonus damage",
+                    "Additional damage override",
                     value = 0,
                     min = 0,
                     step = 1
@@ -2647,7 +2654,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
                     selected = "same_as_primary"
                   )
                 )
-              )
+              ))
             ),
             
             div(
@@ -2941,7 +2948,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
             quality=isolate(input$map_3d_quality%||%"balanced"),
             inputIds = list(
               move = session$ns("move_to_tile"),
-              target = session$ns("map_target_click")
+              target = session$ns("map_target_click"), object = session$ns("map_object_click")
             )
           )
         )
@@ -4024,7 +4031,24 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
 
       ability_name <- as.character(action$name %||% feature$name)
       target_name <- get_actor_display_name(target_id, "enemy")
-      if(identical(as.character(feature$id%||%""),"bloodthirsty")&&final_damage>0L){blood_result<-consume_blood_effects(char,0.5,10,isTRUE(is_heart_eater()));char<-blood_result$character;record_blood_consumption(core$state$char_id,core$state$active_session_id,char$meta$day,"bite",target_name,0.5,blood_result$sindre_gained);log_safe(paste0("🩸 The bite provides half a pint: +",blood_result$sindre_gained," Sindre",if(blood_result$hp_gained>0L)paste0(" and +",blood_result$hp_gained," HP")else"","."),toast=TRUE,flash="gold")}
+      if (identical(as.character(feature$id %||% ""), "bloodthirsty") && final_damage > 0L) {
+        blood_result <- consume_blood_effects(char, 0.5, 10, isTRUE(is_heart_eater()))
+        char <- blood_result$character
+        record_blood_consumption(
+          core$state$char_id,
+          core$state$active_session_id,
+          char$meta$day %||% 1L,
+          "blood",
+          paste0("Bloodthirsty Bite — ", target_name),
+          0.5,
+          blood_result$sindre_gained
+        )
+        log_safe(paste0(
+          "🩸 The bite provides half a pint: +", blood_result$sindre_gained, " Sindre",
+          if (blood_result$hp_gained > 0L) paste0(" and +", blood_result$hp_gained, " HP") else "",
+          "."
+        ))
+      }
       core$state$char <- mark_class_action_used(char, action)
       log_game_event(
         encounter_id = eid,
@@ -4563,6 +4587,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     }
     
     pending_target <- reactiveVal(NULL)
+    observeEvent(input$map_object_click,{info<-input$map_object_click;chest_id<-suppressWarnings(as.integer(info$chest_id%||%NA));if(is.na(chest_id))return();pos<-tryCatch(get_encounter_positions(current_encounter_id()),error=function(e)data.frame());me<-if(nrow(pos))pos[as.character(pos$actor_type)=="player"&as.character(pos$actor_id)==as.character(core$state$char_id),,drop=FALSE]else data.frame();if(!nrow(me))return(showNotification("Your combat position is unavailable.",type="error"));distance<-max(abs(as.integer(me$x[[1L]])-as.integer(info$x)),abs(as.integer(me$y[[1L]])-as.integer(info$y)));if(distance>1L)return(showNotification("Move within 5 ft to interact with that object.",type="warning"));opener<-session$userData$open_map_lock;if(is.function(opener))opener(chest_id)},ignoreInit=TRUE)
     
     observeEvent(input$map_target_click, {
       

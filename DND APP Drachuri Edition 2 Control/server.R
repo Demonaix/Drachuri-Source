@@ -113,6 +113,8 @@ server_control <- function(input, output, session) {
   partyHudServer("control_partyhud",control_hud_state,live_snapshot=control_live_snapshot,
                  portrait_base="player-assets/assets/player-posters",
                  enemy_portrait_base="player-assets/assets/enemy-portraits")
+  controlNotesServer("party_notes", current_session_id)
+  controlQuestsServer("quests", current_session_id)
   output$ctrl_active_session<-renderUI({
     sid<-current_session_id();span(class="control-kpi",paste0("Active session: ",sid%||%"none"))
   })

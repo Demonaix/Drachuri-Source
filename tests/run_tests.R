@@ -454,6 +454,9 @@ test("weapon range and sight-blocking terrain gate attacks", {
   tiles$map_id <- 1L; tiles$blocks_vision <- FALSE; tiles$terrain <- "grass"
   clear <- test_env$combat_attack_geometry(tiles, 1L, 2L, 5L, 2L, 20L, 60L, 1L)
   stopifnot(isTRUE(clear$ok), clear$distance_ft == 20L, isTRUE(clear$normal_range))
+  tiles$terrain[tiles$x == 3L & tiles$y == 2L] <- "water"
+  water_line <- test_env$combat_attack_geometry(tiles, 1L, 2L, 5L, 2L, 20L, 60L, 1L)
+  stopifnot(isTRUE(water_line$ok), isTRUE(water_line$line_clear))
   tiles$blocks_vision[tiles$x == 3L & tiles$y == 2L] <- TRUE
   blocked <- test_env$combat_attack_geometry(tiles, 1L, 2L, 5L, 2L, 20L, 60L, 1L)
   stopifnot(!isTRUE(blocked$ok), !isTRUE(blocked$line_clear))
@@ -727,6 +730,15 @@ test("every level-one class feature has an integration review", {
   stopifnot(nrow(audit) == 12L)
   stopifnot(!any(audit$status == "unreviewed"))
   stopifnot(identical(audit$status[audit$feature_id == "water_channeler"], "working"))
+})
+
+test("Bloodthirsty Bite records ordinary blood without crashing combat", {
+  combat_source <- paste(readLines(file.path(
+    project_dir, "DND APP Drachuri Edition Player_v2", "server", "debug_combat_module.R"
+  ), warn = FALSE), collapse = "\n")
+  stopifnot(grepl('"blood",\n          paste0("Bloodthirsty Bite', combat_source, fixed = TRUE))
+  stopifnot(!grepl('record_blood_consumption(core$state$char_id,core$state$active_session_id,char$meta$day,"bite"', combat_source, fixed = TRUE))
+  stopifnot(!grepl('toast=TRUE,flash="gold"', combat_source, fixed = TRUE))
 })
 
 test("every level-two class feature has an integration review", {
@@ -1136,6 +1148,45 @@ test("control combat exposes the shared standard action set", {
                 "escape_grapple", "control_ready_action")
   stopifnot(all(vapply(required, grepl, logical(1), x = source_text, fixed = TRUE)))
   stopifnot(grepl("control_disengage()", source_text, fixed = TRUE))
+  stopifnot(all(vapply(c("toggle_control_movement", "toggle_control_actions", "toggle_control_glyphs", "toggle_control_turn"), grepl, logical(1), x = source_text, fixed = TRUE)))
+  stopifnot(grepl('shinyjs::show("control_actions_panel")', source_text, fixed = TRUE))
+  fullscreen_js <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition 2 Control", "www", "js", "combat2d_simple.js"), warn = FALSE), collapse = "\n")
+  fullscreen_css <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition 2 Control", "www", "css", "combat.css"), warn = FALSE), collapse = "\n")
+  stopifnot(grepl("control-combat-document-fullscreen", fullscreen_js, fixed = TRUE))
+  stopifnot(grepl('shell.closest(".combat-map-card")', fullscreen_js, fixed = TRUE))
+  stopifnot(grepl("#control_partyhud-partyhud_root", fullscreen_css, fixed = TRUE))
+  stopifnot(grepl(".control-shell > .tabbable > .nav-tabs{display:none", fullscreen_css, fixed = TRUE))
+  stopifnot(grepl("panHandlerAttached", fullscreen_js, fixed = TRUE))
+  stopifnot(grepl("moveOverlayElement", fullscreen_js, fixed = TRUE))
+  stopifnot(grepl("overflow:visible !important", fullscreen_css, fixed = TRUE))
+  stopifnot(grepl("NPC opportunity attack", source_text, fixed = TRUE))
+  stopifnot(grepl("opportunity_attack_context", source_text, fixed = TRUE))
+})
+
+test("party notes include the Game Master and persisted acknowledgements", {
+  player_notes <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","private_notes_module.R"),warn=FALSE),collapse="\n")
+  shared_notes <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","shared","session_db_core.R"),warn=FALSE),collapse="\n")
+  control_notes <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition 2 Control","control_app","modules","control_notes_module.R"),warn=FALSE),collapse="\n")
+  stopifnot(grepl('"Game Master"="__dm__"',player_notes,fixed=TRUE))
+  stopifnot(grepl("claim_private_note_acknowledgements",player_notes,fixed=TRUE))
+  stopifnot(grepl("get_session_private_notes",shared_notes,fixed=TRUE))
+  stopifnot(grepl("sender_notified_at",shared_notes,fixed=TRUE))
+  stopifnot(grepl("The sender will be told",control_notes,fixed=TRUE))
+})
+
+test("party quests are shared between Control and the player journal", {
+  shared <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","shared","session_db_core.R"),warn=FALSE),collapse="\n")
+  player <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","quest_module.R"),warn=FALSE),collapse="\n")
+  control <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition 2 Control","control_app","modules","control_quests_module.R"),warn=FALSE),collapse="\n")
+  migration <- paste(readLines(file.path(project_dir,"database","migrations","054_party_quests.sql"),warn=FALSE),collapse="\n")
+  stopifnot(all(vapply(c("list_party_quests","get_party_quest","save_party_quest","add_party_quest_objective","set_party_quest_objective"),grepl,logical(1),x=shared,fixed=TRUE)))
+  stopifnot(grepl("Party Quest Journal",player,fixed=TRUE))
+  stopifnot(grepl("bottom:306px",player,fixed=TRUE))
+  stopifnot(grepl("Hidden from players",control,fixed=TRUE))
+  stopifnot(grepl("Edit Selected",control,fixed=TRUE))
+  stopifnot(grepl("input$edit_quest",control,fixed=TRUE))
+  stopifnot(grepl("CREATE TABLE IF NOT EXISTS party_quests",migration,fixed=TRUE))
+  stopifnot(grepl("CREATE TABLE IF NOT EXISTS party_quest_objectives",migration,fixed=TRUE))
 })
 
 test("combat UI exposes lifecycle, summon control, and module shortcuts", {
@@ -1685,6 +1736,8 @@ test("map autogenerator creates deterministic editable terrain presets", {
   stopifnot(all(maps$tavern$blocks_movement[maps$tavern$terrain=="wall"]),all(maps$forest$move_cost[maps$forest$terrain=="forest"]==2))
   stopifnot(any(maps$ravine$terrain=="ravine"),all(maps$ravine$blocks_movement[maps$ravine$terrain=="ravine"]))
   stopifnot(any(maps$river$terrain=="water"),any(maps$river$terrain=="road"),any(maps$coast$terrain=="sand"),any(maps$coast$terrain=="water"))
+  generated_water<-maps$river[maps$river$terrain=="water",,drop=FALSE]
+  stopifnot(nrow(generated_water)>0,all(generated_water$move_cost==2),!any(generated_water$blocks_movement),!any(generated_water$blocks_vision))
 })
 
 test("improvised encounter drafts are deterministic, party-aware and editable", {
@@ -1693,8 +1746,10 @@ test("improvised encounter drafts are deterministic, party-aware and editable", 
   standard<-test_env$compose_encounter_draft(players,templates,"standard",seed=44L)
   repeat_draft<-test_env$compose_encounter_draft(players,templates,"standard",seed=44L)
   dangerous<-test_env$compose_encounter_draft(players,templates,"dangerous",seed=44L)
+  overwhelming<-test_env$compose_encounter_draft(players,templates,"overwhelming",seed=44L)
   stopifnot(identical(standard$enemies$npc_id,repeat_draft$enemies$npc_id))
-  stopifnot(standard$party_size==3L,nrow(standard$enemies)>=1L,dangerous$party_budget>standard$party_budget)
+  stopifnot(standard$party_size==3L,nrow(standard$enemies)>=2L,dangerous$party_budget>standard$party_budget)
+  stopifnot(nrow(dangerous$enemies)>=nrow(standard$enemies),nrow(overwhelming$enemies)>=nrow(dangerous$enemies),nrow(overwhelming$enemies)>=3L)
   dims<-test_env$encounter_draft_dimensions(standard$party_size,nrow(standard$enemies));stopifnot(dims[["width"]]>=12L,dims[["height"]]>=10L)
   tiles<-test_env$generate_control_map_tiles(42L,dims[["width"]],dims[["height"]],"forest",44L,35)
   enemy_ids<-paste0("e",seq_len(nrow(standard$enemies)));positions<-test_env$encounter_draft_positions(tiles,players$character_id,enemy_ids,44L)
@@ -2161,7 +2216,7 @@ test("combat fullscreen expands only the map beneath persistent HUDs", {
   stopifnot(grepl("[id$='status_card_dock']",combat_css,fixed=TRUE))
   stopifnot(grepl("body.combat-document-fullscreen .modal",combat_css,fixed=TRUE))
   stopifnot(grepl("background:rgba(255,255,245,.48)",combat_css,fixed=TRUE))
-  stopifnot(grepl("left:max(16px, env(safe-area-inset-left))!important",combat_css,fixed=TRUE))
+  stopifnot(grepl("left:max(24px, env(safe-area-inset-left))!important",combat_css,fixed=TRUE))
   stopifnot(grepl("close_actions_menu",combat_server,fixed=TRUE))
   stopifnot(grepl("Natural Magic can be cast on your turn",combat_server,fixed=TRUE))
   stopifnot(grepl('combat.css?v=',combat_server,fixed=TRUE))
@@ -2254,6 +2309,19 @@ test("enemy pools provide parchment portraits in the combat HUD", {
   assets<-file.path(project_dir,"DND APP Drachuri Edition Player_v2","www","assets","enemy-portraits",paste0(c("humanoid","sorcerer","undead","beast","construct"),".png"))
   control_server<-paste(readLines(file.path(project_dir,"DND APP Drachuri Edition 2 Control","server.R"),warn=FALSE),collapse="\n")
   stopifnot(all(file.exists(assets)),grepl("enemy_portrait_file",hud,fixed=TRUE),grepl("enemy_portrait_base",hud,fixed=TRUE),grepl("player-assets/assets/enemy-portraits",control_server,fixed=TRUE),grepl("enemy_type = as.character(enemies$enemy_type",snapshot,fixed=TRUE))
+})
+
+test("party HUD keeps a fixed unclipped rail at laptop Safari widths", {
+  hud<-paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","party_hud_module.R"),warn=FALSE),collapse="\n")
+  player_fullscreen<-paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","www","css","combat.css"),warn=FALSE),collapse="\n")
+  control_ui<-paste(readLines(file.path(project_dir,"DND APP Drachuri Edition 2 Control","ui.R"),warn=FALSE),collapse="\n")
+  control_fullscreen<-paste(readLines(file.path(project_dir,"DND APP Drachuri Edition 2 Control","www","css","combat.css"),warn=FALSE),collapse="\n")
+  stopifnot(grepl("padding: 0 10px 0 5px",hud,fixed=TRUE))
+  stopifnot(grepl("align-items: stretch",hud,fixed=TRUE))
+  stopifnot(!grepl("#control_partyhud-partyhud_root { position:relative",control_ui,fixed=TRUE))
+  stopifnot(grepl("width: calc(100vw - 248px)",control_ui,fixed=TRUE))
+  stopifnot(grepl("padding:0 10px 0 4px!important",player_fullscreen,fixed=TRUE))
+  stopifnot(grepl("padding:0 10px 0 4px !important",control_fullscreen,fixed=TRUE))
 })
 
 cat("\n", tests_run, " tests passed.\n", sep = "")

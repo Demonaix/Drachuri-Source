@@ -365,6 +365,27 @@
   flex:0 0 auto;
 }
 
+/* Control uses an in-page fullscreen layer so its DM HUD remains usable. */
+body.control-combat-document-fullscreen{overflow:hidden !important;}
+body.control-combat-document-fullscreen > .combat-map-card{position:fixed !important;inset:0 !important;z-index:999990 !important;width:100vw !important;height:100vh !important;max-width:none !important;margin:0 !important;padding:0 !important;border:0 !important;border-radius:0 !important;background:#0f1115 !important;}
+body.control-combat-document-fullscreen > .combat-map-card > [id$='battlefield_ui']{display:none !important;}
+body.control-combat-document-fullscreen .combat-3d-shell,body.control-combat-document-fullscreen .combat-2d-shell{height:100vh !important;min-height:100vh !important;padding:0 !important;}
+body.control-combat-document-fullscreen .combat-3d-canvas,body.control-combat-document-fullscreen .combat-2d-canvas{height:100vh !important;min-height:100vh !important;border-radius:0 !important;}
+body.control-combat-document-fullscreen .combat-map-toolbar{position:fixed !important;right:18px !important;top:112px !important;z-index:1000007 !important;width:215px !important;padding:10px !important;border-radius:12px !important;background:rgba(247,231,195,.58) !important;color:#3e2f1c !important;backdrop-filter:blur(6px);display:flex !important;flex-direction:column !important;align-items:stretch !important;gap:8px !important;overflow:visible !important;}
+body.control-combat-document-fullscreen .combat-map-toolbar .btn,body.control-combat-document-fullscreen .combat-map-toolbar .form-group{width:100% !important;margin:0 !important;}
+body.control-combat-document-fullscreen .combat-map-toolbar .selectize-control,body.control-combat-document-fullscreen .combat-map-toolbar .selectize-input{overflow:visible !important;}
+body.control-combat-document-fullscreen .combat-map-toolbar .selectize-dropdown{z-index:1000014 !important;}
+body.control-combat-document-fullscreen > .combat-fullscreen-controls{position:fixed !important;left:222px !important;right:255px !important;top:18px !important;z-index:1000003 !important;width:auto !important;margin:0 !important;padding:8px 10px !important;background:rgba(247,231,195,.58) !important;border-color:rgba(191,167,111,.5) !important;backdrop-filter:blur(6px);}
+body.control-combat-document-fullscreen > .combat-fullscreen-controls > .live-combat-actions{display:none !important;}
+body.control-combat-document-fullscreen > .control-fullscreen-party,body.control-combat-document-fullscreen > #control_partyhud-partyhud_root{display:block !important;position:fixed !important;left:18px !important;width:186px !important;padding:0 10px 0 4px !important;top:52% !important;transform:translateY(-50%) !important;z-index:1000005 !important;max-height:78vh !important;overflow-y:auto !important;overflow-x:hidden !important;scrollbar-width:none !important;background:rgba(38,16,16,.72) !important;backdrop-filter:blur(5px);}
+body.control-combat-document-fullscreen > #control_partyhud-partyhud_root .partyhud-shell{align-items:stretch !important;width:100% !important;min-width:0 !important;transform:none !important;}
+body.control-combat-document-fullscreen > #control_partyhud-partyhud_root::-webkit-scrollbar{display:none !important;width:0 !important;height:0 !important;}
+body.control-combat-document-fullscreen .control-shell > .tabbable > .nav-tabs{display:none !important;}
+body.control-combat-document-fullscreen .combat-2d-canvas{cursor:grab !important;overscroll-behavior:contain !important;overflow:auto !important;}
+body.control-combat-document-fullscreen .combat-2d-canvas.is-panning{cursor:grabbing !important;user-select:none !important;}
+body.control-combat-document-fullscreen .combat-2d-grid{margin:220px 300px 180px 250px !important;}
+body.control-combat-document-fullscreen .modal-backdrop{z-index:1000010 !important;}body.control-combat-document-fullscreen .modal{z-index:1000011 !important;}
+
 /* =========================================================
    BATTLEFIELD SUMMARY
 ========================================================= */

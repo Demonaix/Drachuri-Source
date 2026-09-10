@@ -9,13 +9,17 @@ partyHudUI <- function(id) {
 #", root_id, "{
   position: fixed;
   top: 110px;
-  left: max(16px, env(safe-area-inset-left));
+  left: max(24px, env(safe-area-inset-left));
   width: var(--party-hud-width, clamp(154px, 13.5vw, 360px));
   z-index: 10000;
   pointer-events: none;
   max-height: calc(100vh - 125px);
   overflow-y: auto;
   overflow-x: hidden;
+  /* Keep the card border and its inset shadow safely inside the scrolling
+     viewport.  Safari otherwise clips the final pixels when vertical
+     overflow is active, which makes the whole right edge look amputated. */
+  padding: 0 10px 0 5px;
   box-sizing: border-box;
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -25,16 +29,19 @@ partyHudUI <- function(id) {
     #", root_id, " .partyhud-shell{
       display: flex;
       flex-direction: column;
-      align-items: flex-end;
+      align-items: stretch;
       gap: 8px;
       width: 100%;
+      min-width: 0;
+      transform: none;
     }
 
     #", root_id, " .partyhud-label{
-      align-self: flex-end;
-      width: calc(100% - 12px);
+      align-self: flex-start;
+      width: 100%;
+      min-width: 0;
       box-sizing: border-box;
-      margin-right: 2px;
+      margin-right: 0;
       padding: 3px 8px;
       border-radius: 999px;
       background: rgba(255,255,245,0.90);
@@ -49,7 +56,9 @@ partyHudUI <- function(id) {
     }
 
     #", root_id, " .partyhud-empty{
-      width: calc(100% - 12px);
+      width: 100%;
+      min-width: 0;
+      box-sizing: border-box;
       padding: 7px 9px;
       border-radius: 3px;
       border: 1px solid rgba(91,56,30,0.88);
@@ -61,7 +70,9 @@ partyHudUI <- function(id) {
     }
 
     #", root_id, " .party-row{
-      width: calc(100% - 12px);
+      width: 100%;
+      min-width: 0;
+      box-sizing: border-box;
       pointer-events: none;
     }
 
@@ -69,8 +80,8 @@ partyHudUI <- function(id) {
       width: 100%;
       box-sizing: border-box;
       position: relative;
-      min-height: 92px;
-      padding: 7px 7px 7px 72px;
+      min-height: 76px;
+      padding: 6px 6px 6px 60px;
       border-radius: 3px 6px 4px 2px;
       border: 1px solid rgba(91,56,30,0.9);
       background:
@@ -94,8 +105,8 @@ partyHudUI <- function(id) {
       position:absolute;
       left:4px;
       top:4px;
-      width:62px;
-      height:82px;
+      width:50px;
+      height:66px;
       display:flex;
       align-items:center;
       justify-content:center;
@@ -127,18 +138,18 @@ partyHudUI <- function(id) {
     #", root_id, " .party-strip.deck-available:hover,#", root_id, " .party-strip.deck-available:focus{transform:translateY(-2px);filter:brightness(1.06);outline:2px solid rgba(215,185,109,.9);outline-offset:-2px;}
 
     @media (min-width:1800px){
-      #", root_id, " .partyhud-shell{gap:11px}
-      #", root_id, " .partyhud-label{font-size:11px;padding:5px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-      #", root_id, " .party-row{width:calc(100% - 8px)}
-      #", root_id, " .party-strip{min-height:132px;padding:10px 10px 10px 106px}
-      #", root_id, " .party-portrait{left:6px;top:6px;width:91px;height:118px}
-      #", root_id, " .party-portrait-initial{font-size:39px}
-      #", root_id, " .party-name{font-size:15px}
-      #", root_id, " .party-turn-order,#", root_id, " .party-initiative{font-size:11px}
-      #", root_id, " .party-meta,#", root_id, " .party-condition{font-size:10px}
-      #", root_id, " .party-status-icon{font-size:13px}
-      #", root_id, " .party-mini-label{font-size:11px}
-      #", root_id, " .party-bar{height:10px}
+      #", root_id, " .partyhud-shell{gap:8px}
+      #", root_id, " .partyhud-label{font-size:10px;padding:4px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      #", root_id, " .party-row{width:100%}
+      #", root_id, " .party-strip{min-height:82px;padding:7px 7px 7px 64px}
+      #", root_id, " .party-portrait{left:5px;top:5px;width:54px;height:72px}
+      #", root_id, " .party-portrait-initial{font-size:25px}
+      #", root_id, " .party-name{font-size:10px}
+      #", root_id, " .party-turn-order,#", root_id, " .party-initiative{font-size:8px}
+      #", root_id, " .party-meta,#", root_id, " .party-condition{font-size:7px}
+      #", root_id, " .party-status-icon{font-size:10px}
+      #", root_id, " .party-mini-label{font-size:8px}
+      #", root_id, " .party-bar{height:7px}
     }
 
     .modal-dialog:has(.party-deck-modal){position:fixed;left:var(--module-left-gutter,210px);right:var(--module-right-gutter,255px);top:90px;bottom:22px;width:auto;max-width:none;margin:0}.modal-dialog:has(.party-deck-modal) .modal-content{max-height:100%;overflow-y:auto}
@@ -158,10 +169,16 @@ partyHudUI <- function(id) {
       align-items:center;
       justify-content:space-between;
       gap:5px;
+      width:100%;
+      min-width:0;
+      padding-right:27px;
+      box-sizing:border-box;
     }
 
     #", root_id, " .party-turn-order{
-      flex:0 0 auto;
+      position:absolute;
+      right:6px;
+      top:6px;
       min-width:20px;
       padding:1px 5px;
       border-radius:999px;
@@ -180,6 +197,9 @@ partyHudUI <- function(id) {
     }
 
     #", root_id, " .party-name{
+      flex:1 1 auto;
+      min-width:0;
+      max-width:100%;
       font-size: 10px;
       font-weight: 900;
       line-height: 1.05;
@@ -215,11 +235,16 @@ partyHudUI <- function(id) {
 }
 
 #", root_id, " .party-meta-wrap{
+  min-width:0;
+  max-width:100%;
   margin-bottom: 4px;
 }
 
     #", root_id, " .party-status{
       display: flex;
+      flex-wrap:wrap;
+      min-width:0;
+      max-width:100%;
       gap: 3px;
       margin-bottom: 4px;
       min-height: 10px;
@@ -234,6 +259,8 @@ partyHudUI <- function(id) {
     #", root_id, " .party-minirow{
       display: grid;
 grid-template-columns: 10px 1fr;
+      min-width:0;
+      max-width:100%;
       gap: 5px;
       align-items: center;
     }
@@ -250,6 +277,8 @@ grid-template-columns: 10px 1fr;
     }
 
     #", root_id, " .party-bar{
+      min-width:0;
+      width:100%;
       position: relative;
       height: 7px;
       border-radius: 999px;

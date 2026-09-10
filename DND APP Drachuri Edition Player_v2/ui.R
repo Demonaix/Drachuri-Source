@@ -18,6 +18,7 @@ source("server/sidebar_module.R")
 source("server/camp_module.R")
 source("server/landing_module.R")
 source("server/private_notes_module.R")
+source("server/quest_module.R")
 source("server/merchant_module.R")
 source("server/chest_module.R")
 source("server/story_module.R")
@@ -277,9 +278,11 @@ body {
 body.camp { background: #000 !important; }
 body.parchment {
   background: #000;
-  --party-hud-width: clamp(154px, 13.5vw, 360px);
+  /* The module boundary is derived from this width, keeping a 48px gutter
+     between the party deck and every open module at every viewport size. */
+  --party-hud-width: clamp(154px, 9.45vw, 252px);
   --module-left-gutter: calc(var(--party-hud-width) + 48px);
-  --module-right-gutter: clamp(184px, 18vw, 255px);
+  --module-right-gutter: 94px;
 }
 
 /* -----------------------------
@@ -347,21 +350,27 @@ body.parchment #app-panel > .tabbable > .tab-content > .tab-pane.active .contain
    ----------------------------- */
 #return-camp-wrap{
   position: fixed;
-  right: 14px;
-  top: 90px;
-  width: clamp(170px, 16vw, 235px);
+  right: 22px;
+  top: 104px;
+  width: 60px;
   z-index: 999950;
   display: none;
 }
-#return-camp-wrap{display:none;flex-direction:column;align-items:stretch;gap:6px}
+#return-camp-wrap{display:none;flex-direction:column;align-items:center;gap:9px}
 #return-camp-wrap .btn{
-  width: 100%;
-  border-radius: 999px;
-  padding: 10px 14px;
+  width: 58px;
+  height: 58px;
+  min-width:58px;
+  border-radius: 50%;
+  padding: 0;
   box-shadow: 0 8px 20px rgba(0,0,0,0.35);
   border: 1px solid rgba(191,167,111,0.9);
   background: rgba(255,255,245,0.92);
   font-family: 'Cinzel', serif;
+  font-size:22px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
 }
 
 /* -----------------------------
@@ -730,6 +739,7 @@ window.showToast = function(message, timeoutMs = 2500) {
   hudUI("hud"),
  partyHudUI("partyhud"),
  privateNotesUI("notes"),
+ questPlayerUI("quests"),
  merchantUI("merchants"),
  chestUI("chests"),
  storyPlayerUI("story"),
@@ -762,10 +772,10 @@ window.showToast = function(message, timeoutMs = 2500) {
   # Return to camp
   div(
     id = "return-camp-wrap",
-    actionButton("return_to_camp", "↩ Return to Camp", class = "btn btn-default"),
-    actionButton("shortcut_armoury", "🛡 Armoury", class = "btn btn-default"),
-    actionButton("shortcut_magic", "✨ Magic", class = "btn btn-default"),
-    actionButton("shortcut_combat", "⚔ Combat", class = "btn btn-default")
+    actionButton("return_to_camp", "↩", class = "btn btn-default", title = "Return to Camp", `aria-label` = "Return to Camp"),
+    actionButton("shortcut_armoury", "🛡", class = "btn btn-default", title = "Armoury", `aria-label` = "Armoury"),
+    actionButton("shortcut_magic", "✨", class = "btn btn-default", title = "Magic", `aria-label` = "Magic"),
+    actionButton("shortcut_combat", "⚔", class = "btn btn-default", title = "Combat", `aria-label` = "Combat")
   ),
 
   # Main app

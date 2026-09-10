@@ -803,6 +803,66 @@ function setupFullscreen2DHandler() {
   const state = window.combat2dState;
   if (state.fullscreenHandlerAttached) return;
 
+  if (!state.panHandlerAttached) {
+    let drag = null;
+    document.addEventListener("mousedown", (event) => {
+      if (!document.body.classList.contains("control-combat-document-fullscreen")) return;
+      const canvas = event.target.closest(".combat-2d-canvas");
+      if (!canvas || ![1, 2].includes(event.button)) return;
+      if (event.target.closest(".combat-2d-token, button, input, select, a")) return;
+      event.preventDefault();
+      drag = { canvas, x: event.clientX, y: event.clientY, left: canvas.scrollLeft, top: canvas.scrollTop };
+      canvas.classList.add("is-panning");
+    });
+    document.addEventListener("mousemove", (event) => {
+      if (!drag) return;
+      drag.canvas.scrollLeft = drag.left - (event.clientX - drag.x);
+      drag.canvas.scrollTop = drag.top - (event.clientY - drag.y);
+    });
+    document.addEventListener("mouseup", () => {
+      if (!drag) return;
+      drag.canvas.classList.remove("is-panning");
+      drag = null;
+    });
+    document.addEventListener("contextmenu", (event) => {
+      if (document.body.classList.contains("control-combat-document-fullscreen") && event.target.closest(".combat-2d-canvas")) event.preventDefault();
+    });
+    state.panHandlerAttached = true;
+  }
+
+  function restoreOverlayElements() {
+    (state.fullscreenOverlays || []).reverse().forEach((record) => {
+      record.element.classList.remove(record.className);
+      record.parent.insertBefore(record.element, record.nextSibling || null);
+    });
+    state.fullscreenOverlays = [];
+  }
+
+  function moveOverlayElement(element, className) {
+    if (!element || element.parentNode === document.body) return;
+    state.fullscreenOverlays = state.fullscreenOverlays || [];
+    state.fullscreenOverlays.push({ element, parent: element.parentNode, nextSibling: element.nextSibling, className });
+    element.classList.add(className);
+    document.body.appendChild(element);
+  }
+
+  function leaveControlMapFullscreen() {
+    document.body.classList.remove("combat-document-fullscreen", "control-combat-document-fullscreen");
+    restoreOverlayElements();
+    if (state.fullscreenControls && state.fullscreenControlsParent) {
+      state.fullscreenControls.classList.remove("combat-fullscreen-controls");
+      state.fullscreenControlsParent.insertBefore(state.fullscreenControls, state.fullscreenControlsNextSibling || null);
+    }
+    if (state.fullscreenMapCard && state.fullscreenMapParent) {
+      state.fullscreenMapParent.insertBefore(state.fullscreenMapCard, state.fullscreenMapNextSibling || null);
+    }
+    state.fullscreenControls = state.fullscreenControlsParent = state.fullscreenControlsNextSibling = null;
+    state.fullscreenMapCard = state.fullscreenMapParent = state.fullscreenMapNextSibling = null;
+    const fullscreenBtn = document.querySelector("[id$='map_3d_fullscreen']");
+    if (fullscreenBtn) fullscreenBtn.textContent = "Fullscreen Map";
+    setTimeout(() => window.dispatchEvent(new CustomEvent("drachuri-combat3d-fit")), 80);
+  }
+
   document.addEventListener("click", async function(e) {
     const zoomBtn = e.target.closest("[id$='map_zoom_in'], [id$='map_zoom_out']");
     if (zoomBtn) {
@@ -844,25 +904,42 @@ function setupFullscreen2DHandler() {
     shell.classList.add("combat-2d-shell");
 
     try {
-      if (!document.fullscreenElement) {
-        if (shell.requestFullscreen) {
-          await shell.requestFullscreen();
-        } else if (shell.webkitRequestFullscreen) {
-          shell.webkitRequestFullscreen();
+      const entering = !document.body.classList.contains("combat-document-fullscreen");
+      if (entering) {
+        const mapCard = shell.closest(".combat-map-card");
+        const controls = document.querySelector(".live-combat-wrap > .live-combat-card:first-child");
+        if (!mapCard) throw new Error("Map card was not found.");
+        state.fullscreenMapCard = mapCard;
+        state.fullscreenMapParent = mapCard.parentNode;
+        state.fullscreenMapNextSibling = mapCard.nextSibling;
+        if (controls && controls !== mapCard) {
+          state.fullscreenControls = controls;
+          state.fullscreenControlsParent = controls.parentNode;
+          state.fullscreenControlsNextSibling = controls.nextSibling;
+          controls.classList.add("combat-fullscreen-controls");
+          document.body.appendChild(controls);
         }
+        document.body.appendChild(mapCard);
+        moveOverlayElement(document.getElementById("control_partyhud-partyhud_root"), "control-fullscreen-party");
+        document.body.classList.add("combat-document-fullscreen", "control-combat-document-fullscreen");
+        btn.textContent = "Exit Fullscreen Map";
+        setTimeout(() => window.dispatchEvent(new CustomEvent("drachuri-combat3d-fit")), 90);
+        setTimeout(() => window.dispatchEvent(new CustomEvent("drachuri-combat3d-fit")), 320);
       } else {
-        if (document.exitFullscreen) {
-          await document.exitFullscreen();
-        } else if (document.webkitExitFullscreen) {
-          document.webkitExitFullscreen();
-        }
+        leaveControlMapFullscreen();
       }
-
       setTimeout(() => scrollActiveTokenIntoView2D(), 120);
       setTimeout(() => scrollActiveTokenIntoView2D(), 400);
     } catch (err) {
+      leaveControlMapFullscreen();
       console.error("2D fullscreen failed:", err);
       alert("Fullscreen failed. Check browser console.");
+    }
+  });
+
+  document.addEventListener("keydown", function(e) {
+    if (e.key === "Escape" && document.body.classList.contains("control-combat-document-fullscreen")) {
+      leaveControlMapFullscreen();
     }
   });
 
