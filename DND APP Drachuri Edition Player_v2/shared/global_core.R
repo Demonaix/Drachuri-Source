@@ -1696,6 +1696,17 @@ load_character_from_db <- function(char_id) {
   )
 }
 
+get_character_db_snapshot <- function(char_id) {
+  con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE)
+  tryCatch({
+    row<-DBI::dbGetQuery(con,"SELECT state_blob,updated_at FROM character_blobs WHERE id=$1",params=list(char_id))
+    if(!nrow(row))return(NULL)
+    char<-validate_character(unserialize(row$state_blob[[1L]]))
+    char<-tryCatch(hydrate_character_inventory_relational(con,char,char_id),error=function(e)char)
+    list(character=char,updated_at=row$updated_at[[1L]])
+  },error=function(e){message("get_character_db_snapshot failed: ",e$message);NULL})
+}
+
 list_characters_in_db <- function() {
   con <- get_db_connection()
   if (is.null(con)) return(data.frame())
@@ -1739,7 +1750,7 @@ character_save_payload <- function(char) {
   )
 }
 
-save_character_to_db <- function(char, char_id = NULL) {
+save_character_to_db <- function(char, char_id = NULL, expected_updated_at = NULL) {
   con <- get_db_connection()
   if (is.null(con)) return(NULL)
   on.exit(release_db_connection(con), add = TRUE)
@@ -1761,17 +1772,20 @@ save_character_to_db <- function(char, char_id = NULL) {
         )
         as.character(res$id[[1]])
       } else {
-        DBI::dbExecute(
-          con,
-          "
+        sql <- "
           UPDATE character_blobs
           SET state_blob = $1,
               char_name = $2,
               updated_at = NOW()
           WHERE id = $3
-          ",
-          params = list(list(raw), name, char_id)
-        )
+        "
+        params<-list(list(raw),name,char_id)
+        if(!is.null(expected_updated_at)){
+          sql<-paste0(sql," AND updated_at = $4 RETURNING id")
+          params<-c(params,list(expected_updated_at))
+          updated<-DBI::dbGetQuery(con,sql,params=params)
+          if(!nrow(updated))stop("Character changed on the server before this save completed.")
+        }else DBI::dbExecute(con,sql,params=params)
         as.character(char_id)
       }
     sync_character_inventory_relational(con, char, saved_id)

@@ -1,6 +1,9 @@
 library(shiny)
 cat("SOURCED server.R\n")
 server_player <- function(input, output, session) {
+  if (exists("drachuri_register_browser_session", mode = "function"))
+    drachuri_register_browser_session(session)
+  options(shiny.maxRequestSize = 250 * 1024^2)
   # runApp() restores its caller's working directory after the initial app
   # load. Every browser connection invokes this function afterwards, so an
   # installed build must re-anchor relative module paths for each session.
@@ -283,6 +286,7 @@ server_player <- function(input, output, session) {
   # not changed. Remember the last successful payload so those invalidations do
   # not produce unnecessary database writes.
   last_saved_character <- reactiveVal(NULL)
+  character_signature<-function(x)jsonlite::toJSON(validate_character(x),auto_unbox=TRUE,null="null",dataframe="rows",digits=NA)
   
   observe({
     char <- debounced_char()
@@ -297,13 +301,7 @@ server_player <- function(input, output, session) {
     
     char <- validate_character(char)
 
-    payload_signature <- jsonlite::toJSON(
-      char,
-      auto_unbox = TRUE,
-      null = "null",
-      dataframe = "rows",
-      digits = NA
-    )
+    payload_signature <- character_signature(char)
     if (identical(payload_signature, isolate(last_saved_character()))) return()
     
     # extra protection: do not sync obvious blank starter characters
@@ -314,9 +312,29 @@ server_player <- function(input, output, session) {
     if (!has_identity) return()
     
     char_id <- isolate(core$state$char_id)
+    expected_updated_at<-NULL
+    if(!is.null(char_id)){
+      snapshot<-get_character_db_snapshot(char_id)
+      if(!is.null(snapshot)){
+        remote_signature<-character_signature(snapshot$character)
+        baseline<-isolate(last_saved_character())
+        if(is.null(baseline)){
+          last_saved_character(remote_signature)
+          baseline<-remote_signature
+        }
+        if(!identical(remote_signature,baseline)){
+          core$state$char<-snapshot$character
+          if(is.function(core$bump_char_rev))core$bump_char_rev()
+          last_saved_character(remote_signature)
+          showNotification("Your character changed elsewhere and has been refreshed before autosave.",type="message",duration=6)
+          return()
+        }
+        expected_updated_at<-snapshot$updated_at
+      }
+    }
     
     saved_id <- tryCatch(
-      save_character_to_db(char, char_id = char_id),
+      save_character_to_db(char, char_id = char_id, expected_updated_at = expected_updated_at),
       error = function(e) {
         message("Autosave failed: ", e$message)
         NULL

@@ -1333,33 +1333,18 @@ next_combat_turn <- function(actors, combat) {
 }
 
 advance_turn <- function(encounter_id) {
-  actors <- get_encounter_actors(encounter_id)
-  combat <- get_combat_state(encounter_id)
-  next_turn <- next_combat_turn(actors, combat)
-  if (identical(next_turn, FALSE)) return(FALSE)
-  
-  ok1 <- set_combat_state(
-    encounter_id = encounter_id,
-    round_number = next_turn$round_number,
-    current_turn_order = next_turn$turn_order,
-    active_actor_type = next_turn$actor_type,
-    active_actor_id = next_turn$actor_id,
-    phase = "combat"
-  )
-  
-  ok2 <- log_game_event(
-    encounter_id = encounter_id,
-    event_type = "end_turn",
-    actor_type = "system",
-    payload = list(
-      next_turn_order = next_turn$turn_order,
-      next_actor_id = next_turn$actor_id,
-      next_actor_type = next_turn$actor_type,
-      round_number = next_turn$round_number
-    )
-  )
-  
-  isTRUE(ok1) && isTRUE(ok2)
+  encounter_id<-suppressWarnings(as.integer(encounter_id));if(is.na(encounter_id)||encounter_id<1L)return(FALSE)
+  con<-get_db_connection();if(is.null(con))return(FALSE);on.exit(release_db_connection(con),add=TRUE)
+  tryCatch(DBI::dbWithTransaction(con,{
+    # Both Player and Control can end a turn. Serialize those requests so a
+    # double click or two connected screens cannot skip an actor.
+    DBI::dbGetQuery(con,"SELECT pg_advisory_xact_lock(hashtext($1))",params=list(paste0("advance_turn:",encounter_id)))
+    actors<-get_encounter_actors(encounter_id);combat<-get_combat_state(encounter_id);next_turn<-next_combat_turn(actors,combat)
+    if(identical(next_turn,FALSE))return(FALSE)
+    ok1<-set_combat_state(encounter_id,next_turn$round_number,next_turn$turn_order,next_turn$actor_id,next_turn$actor_type,"combat")
+    ok2<-log_game_event(encounter_id,"end_turn","system",payload=list(next_turn_order=next_turn$turn_order,next_actor_id=next_turn$actor_id,next_actor_type=next_turn$actor_type,round_number=next_turn$round_number))
+    isTRUE(ok1)&&isTRUE(ok2)
+  }),error=function(e){message("advance_turn failed: ",e$message);FALSE})
 }
 
 end_encounter_combat <- function(encounter_id) {
@@ -2011,6 +1996,8 @@ phase_hour_label <- function(time_of_day,offset) {
 resolve_session_phase <- function(phase_id,next_phase_kind=NULL,next_duration_hours=6) {
   con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE)
   phase<-tryCatch(DBI::dbGetQuery(con,"UPDATE session_time_phases SET status='resolving' WHERE id=$1 AND status='open' RETURNING *",params=list(as.integer(phase_id))),error=function(e)data.frame());if(!nrow(phase))return(NULL)
+  phase_resolved<-FALSE
+  on.exit(if(!isTRUE(phase_resolved))try(DBI::dbExecute(con,"UPDATE session_time_phases SET status='open' WHERE id=$1 AND status='resolving'",params=list(as.integer(phase_id))),silent=TRUE),add=TRUE)
   sid<-as.integer(phase$session_id[[1L]]);hours<-as.numeric(phase$duration_hours[[1L]]);actions<-get_session_phase_actions(phase_id);players<-get_session_players(sid);env<-get_session_environment(sid);fire<-get_session_fire(sid)
   updated_env<-advance_session_hours(sid,hours);results<-list()
   active<-if(nrow(players)&&"is_active"%in%names(players))is.na(players$is_active)|players$is_active else rep(TRUE,nrow(players));players<-players[active,,drop=FALSE]
@@ -2042,6 +2029,7 @@ resolve_session_phase <- function(phase_id,next_phase_kind=NULL,next_duration_ho
   }
   set_session_fire(sid,FALSE)
   DBI::dbExecute(con,"UPDATE session_time_phases SET status='resolved',resolved_at=now() WHERE id=$1",params=list(as.integer(phase_id)))
+  phase_resolved<-TRUE
   next_phase<-NULL
   if(!is.null(next_phase_kind)){
     next_kind<-match.arg(as.character(next_phase_kind),c("standard","rest"));next_hours<-if(next_kind=="rest")as.numeric(next_duration_hours)else 6
@@ -2112,14 +2100,11 @@ resolve_camp_gather_request <- function(request_id,responder_id,accept=TRUE,help
       requester_roll<-requester_natural+as.integer(r$requester_bonus[[1L]]);helper_roll<-if(nzchar(helper))helper_natural+as.integer(helper_bonus)else NA_integer_;total<-max(c(requester_roll,helper_roll),na.rm=TRUE);amount<-camp_gathering_yield(total);resource<-as.character(r$resource[[1L]]);reward<-if(resource=="rations")camp_foraging_reward(total)else NULL
       for(actor in actors)DBI::dbExecute(con,"INSERT INTO camp_gather_actions(session_id,day_number,character_id,resource,request_id) VALUES($1,$2,$3,$4,$5)",params=list(r$session_id[[1L]],r$day_number[[1L]],actor,r$resource[[1L]],r$id[[1L]]))
       if(resource!="rations"){DBI::dbExecute(con,"INSERT INTO session_supplies(session_id) VALUES($1) ON CONFLICT DO NOTHING",params=list(r$session_id[[1L]]));sql<-paste0("UPDATE session_supplies SET ",resource,"=LEAST(",resource,"_max,",resource,"+$2),updated_at=now() WHERE session_id=$1");DBI::dbExecute(con,sql,params=list(r$session_id[[1L]],amount))}
+      else if(amount>0L){cid<-as.character(r$requester_character_id[[1L]]);blob<-DBI::dbGetQuery(con,"SELECT state_blob FROM character_blobs WHERE id::text=$1 FOR UPDATE",params=list(cid));if(!nrow(blob))stop("Foraging character not found.");char<-validate_character(unserialize(blob$state_blob[[1L]]));char<-hydrate_character_inventory_relational(con,char,cid);char<-add_foraged_food(char,reward,as.integer(r$day_number[[1L]]));DBI::dbExecute(con,"UPDATE character_blobs SET state_blob=$1,char_name=$2,updated_at=now() WHERE id::text=$3",params=list(list(serialize(char,NULL)),char$meta$name,cid));sync_character_inventory_relational(con,char,cid)}
       DBI::dbExecute(con,"UPDATE camp_gather_requests SET status='resolved',helper_bonus=$2,requester_roll=$3,helper_roll=$4,result_total=$5,yield_amount=$6,reward_json=$7::jsonb,resolved_at=now() WHERE id=$1",params=list(r$id[[1L]],if(nzchar(helper))as.integer(helper_bonus)else NA_integer_,requester_roll,helper_roll,total,amount,enemy_json(reward%||%list())))
       list(status="resolved",request_id=as.integer(r$id[[1L]]),resource=resource,amount=amount,total=total,requester_roll=requester_roll,helper_roll=helper_roll,assisted=nzchar(helper),requester_id=as.character(r$requester_character_id[[1L]]),day_number=as.integer(r$day_number[[1L]]),reward=reward)
     }
   }),error=function(e){message("resolve_camp_gather_request failed: ",e$message);NULL})
-  if(!is.null(result)&&identical(result$status,"resolved")&&identical(result$resource,"rations")&&result$amount>0L){
-    granted<-tryCatch(DBI::dbWithTransaction(con,{cid<-result$requester_id;blob<-DBI::dbGetQuery(con,"SELECT state_blob FROM character_blobs WHERE id::text=$1 FOR UPDATE",params=list(cid));if(!nrow(blob))stop("Foraging character not found.");char<-validate_character(unserialize(blob$state_blob[[1L]]));char<-hydrate_character_inventory_relational(con,char,cid);char<-add_foraged_food(char,result$reward,result$day_number);DBI::dbExecute(con,"UPDATE character_blobs SET state_blob=$1,char_name=$2,updated_at=now() WHERE id::text=$3",params=list(list(serialize(char,NULL)),char$meta$name,cid));sync_character_inventory_relational(con,char,cid);TRUE}),error=function(e){message("foraged food grant failed: ",e$message);FALSE})
-    if(!isTRUE(granted))return(NULL)
-  }
   result
 }
 
@@ -2368,12 +2353,12 @@ create_encounter_summon <- function(encounter_id, owner_actor_id, name,
 damage_encounter_summon <- function(encounter_id, summon_uuid, amount) {
   con <- get_db_connection(); if (is.null(con)) return(NULL)
   on.exit(release_db_connection(con), add=TRUE)
-  tryCatch({
-    row<-DBI::dbGetQuery(con,"SELECT hp_current,temp_hp FROM encounter_summons WHERE encounter_id=$1 AND summon_uuid=$2",params=list(as.integer(encounter_id),as.character(summon_uuid)))
+  tryCatch(DBI::dbWithTransaction(con,{
+    row<-DBI::dbGetQuery(con,"SELECT hp_current,temp_hp FROM encounter_summons WHERE encounter_id=$1 AND summon_uuid=$2 FOR UPDATE",params=list(as.integer(encounter_id),as.character(summon_uuid)))
     if(!nrow(row))return(NULL);old_hp<-as.integer(row$hp_current[[1L]]);old_temp<-as.integer(row$temp_hp[[1L]]);dmg<-max(0L,as.integer(amount));absorbed<-min(old_temp,dmg);new_temp<-old_temp-absorbed;new_hp<-max(0L,old_hp-(dmg-absorbed))
     DBI::dbExecute(con,"UPDATE encounter_summons SET hp_current=$1,temp_hp=$2,is_active=($1>0),updated_at=now() WHERE encounter_id=$3 AND summon_uuid=$4",params=list(new_hp,new_temp,as.integer(encounter_id),as.character(summon_uuid)))
     list(hp_before=old_hp,hp_after=new_hp,temp_before=old_temp,temp_after=new_temp,amount=dmg)
-  },error=function(e){message("damage_encounter_summon failed: ",e$message);NULL})
+  }),error=function(e){message("damage_encounter_summon failed: ",e$message);NULL})
 }
 
 get_encounter_summons <- function(encounter_id) {
@@ -2482,7 +2467,7 @@ damage_encounter_enemy <- function(encounter_id, enemy_uuid, amount) {
   if (!nzchar(enemy_uuid)) return(NULL)
   if (is.na(amount) || amount < 0) amount <- 0L
   
-  tryCatch({
+  tryCatch(DBI::dbWithTransaction(con,{
     row <- DBI::dbGetQuery(
       con,
       "
@@ -2490,6 +2475,7 @@ damage_encounter_enemy <- function(encounter_id, enemy_uuid, amount) {
       FROM encounter_enemies
       WHERE encounter_id = $1
         AND enemy_uuid = $2
+      FOR UPDATE
       ",
       params = list(
         encounter_id,
@@ -2537,7 +2523,7 @@ damage_encounter_enemy <- function(encounter_id, enemy_uuid, amount) {
       temp_after = new_temp,
       amount = dmg
     )
-  }, error = function(e) {
+  }), error = function(e) {
     message("damage_encounter_enemy failed: ", e$message)
     NULL
   })

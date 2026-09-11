@@ -23,6 +23,24 @@ fail <- function(message) {
 }
 
 setwd(app_dir)
+options(shiny.maxRequestSize = 250 * 1024^2)
+# Count browser sessions across tabs. Allow reloads and short reconnects before
+# stopping the installed process; development/test servers do not use this hook.
+drachuri_browser_sessions <- new.env(parent = emptyenv())
+drachuri_register_browser_session <- function(session) {
+  token <- session$token
+  assign(token, TRUE, envir = drachuri_browser_sessions)
+  session$onSessionEnded(function() {
+    if (exists(token, envir = drachuri_browser_sessions, inherits = FALSE))
+      rm(list = token, envir = drachuri_browser_sessions)
+    later::later(function() {
+      if (!length(ls(drachuri_browser_sessions, all.names = TRUE))) {
+        log_message("Last browser session closed; stopping installed app.")
+        shiny::stopApp()
+      }
+    }, delay = 30)
+  })
+}
 log_message("Starting installed ", app_name, " from ", app_dir)
 required <- strsplit(Sys.getenv("DRACHURI_REQUIRED_PACKAGES", "shiny,shinyjs,dplyr,jsonlite,DBI,RPostgres,pool"), ",", fixed = TRUE)[[1L]]
 missing <- required[!vapply(required, requireNamespace, logical(1), quietly = TRUE)]
