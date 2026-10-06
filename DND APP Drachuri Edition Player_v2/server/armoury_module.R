@@ -17,13 +17,17 @@ armouryTabUI <- function(id) {
         pfx, ".card-titlebar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;}\n",
         pfx, ".item-card{border:1px solid rgba(150,120,70,0.45);border-radius:14px;background:rgba(255,255,250,0.92);padding:12px;margin-bottom:10px;}\n",
         pfx, ".item-head{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;}\n",
+        pfx, ".equipment-summary{display:flex;align-items:flex-start;gap:12px;flex:1;min-width:0;}\n",
+        pfx, ".equipment-copy{min-width:0;flex:1;}\n",
+        pfx, ".equipment-thumbnail{width:86px;height:86px;flex:0 0 86px;object-fit:cover;border-radius:11px;border:1px solid rgba(105,72,30,.58);box-shadow:0 3px 9px rgba(45,27,8,.22);background:#d8bf88;}\n",
         pfx, ".item-title{font-size:18px;font-weight:700;}\n",
         pfx, ".item-sub{font-size:13px;opacity:.9;line-height:1.3;margin-top:2px;}\n",
         pfx, ".enchantment-status{display:inline-block;margin-top:8px;padding:5px 9px;border:1px solid #b58a35;border-radius:999px;background:#f4e4b6;color:#5b3b13;font-size:12px;font-weight:800;}\n",
         pfx, ".item-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;}\n",
         pfx, ".pill{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;border:1px solid rgba(150,120,70,0.35);background:rgba(255,255,245,0.8);font-size:12px;font-weight:700;}\n",
         pfx, ".pill-row{display:flex;gap:8px;flex-wrap:wrap;}\n",
-        pfx, "details.bag summary{cursor:pointer;font-weight:700;margin-top:6px;opacity:.95;}\n"
+        pfx, "details.bag summary{cursor:pointer;font-weight:700;margin-top:6px;opacity:.95;}\n",
+        "@media(max-width:700px){",pfx,".equipment-thumbnail{width:64px;height:64px;flex-basis:64px;}",pfx,".item-head{flex-wrap:wrap;}",pfx,".item-actions{width:100%;}}\n"
       )
     })),
     
@@ -319,27 +323,36 @@ armouryTabServer <- function(id, state, restoring, add_log, char_rev) {
         div(
           class = "item-head",
           div(
-            div(class = "item-title", paste0("🗡️ ", w$name[[1]] %||% "Weapon")),
-            div(
-              class = "item-sub",
-              paste0(
-                "To Hit: ",
-                ifelse(hit_bonus >= 0, paste0("+", hit_bonus), hit_bonus),
-                " • Stat: ", toupper(meta$stat),
-                " • Damage: ", meta$damage1,
-                if (nzchar(displayed_damage2)) paste0(" + ", displayed_damage2," ",displayed_type2) else "",
-                glyph_line,
-                if (damage_modifier != 0) sprintf(" %+g", damage_modifier) else "",
-                if (nzchar(as.character(meta$material %||% ""))) paste0(" • ", meta$material, " / ", meta$build_quality %||% "Unrated") else "",
-                " • Qty: ", w$qty[[1]] %||% 1,
-                " • ", w$weight[[1]] %||% 0, " lbs",
-                " • ", w$value[[1]] %||% 0, "g"
-              ),
-              if (isTRUE(w$equipped[[1]]) && !isTRUE(w$in_bag[[1]])) tags$span(" • EQUIPPED"),
-              if (nzchar(w$desc[[1]] %||% "")) tagList(tags$br(), w$desc[[1]])
+            class = "equipment-summary",
+            tags$img(
+              class = "equipment-thumbnail",
+              src = equipment_thumbnail_src(w$name[[1]], "weapon"),
+              alt = paste(w$name[[1]] %||% "Weapon", "thumbnail")
             ),
-            if(glyph_active)div(class="enchantment-status",paste0("✧ Enchantment: ",glyph_days_left," campaign day",if(glyph_days_left==1L)""else"s"," remaining · expires after day ",glyph_until))
-            else if(!is.na(glyph_until))div(class="enchantment-status","✧ Enchantment depleted — replenish it in Glyphs")
+            div(
+              class = "equipment-copy",
+              div(class = "item-title", w$name[[1]] %||% "Weapon"),
+              div(
+                class = "item-sub",
+                paste0(
+                  "To Hit: ",
+                  ifelse(hit_bonus >= 0, paste0("+", hit_bonus), hit_bonus),
+                  " • Stat: ", toupper(meta$stat),
+                  " • Damage: ", meta$damage1,
+                  if (nzchar(displayed_damage2)) paste0(" + ", displayed_damage2," ",displayed_type2) else "",
+                  glyph_line,
+                  if (damage_modifier != 0) sprintf(" %+g", damage_modifier) else "",
+                  if (nzchar(as.character(meta$material %||% ""))) paste0(" • ", meta$material, " / ", meta$build_quality %||% "Unrated") else "",
+                  " • Qty: ", w$qty[[1]] %||% 1,
+                  " • ", w$weight[[1]] %||% 0, " lbs",
+                  " • ", w$value[[1]] %||% 0, "g"
+                ),
+                if (isTRUE(w$equipped[[1]]) && !isTRUE(w$in_bag[[1]])) tags$span(" • EQUIPPED"),
+                if (nzchar(w$desc[[1]] %||% "")) tagList(tags$br(), w$desc[[1]])
+              ),
+              if(glyph_active)div(class="enchantment-status",paste0("✧ Enchantment: ",glyph_days_left," campaign day",if(glyph_days_left==1L)""else"s"," remaining · expires after day ",glyph_until))
+              else if(!is.na(glyph_until))div(class="enchantment-status","✧ Enchantment depleted — replenish it in Glyphs")
+            )
           ),
           div(
             class = "item-actions",
@@ -393,21 +406,30 @@ armouryTabServer <- function(id, state, restoring, add_log, char_rev) {
         div(
           class = "item-head",
           div(
-            div(class = "item-title", paste0("🛡️ ", a$name[[1]] %||% "Armor")),
+            class = "equipment-summary",
+            tags$img(
+              class = "equipment-thumbnail",
+              src = equipment_thumbnail_src(a$name[[1]], "armor"),
+              alt = paste(a$name[[1]] %||% "Armour", "thumbnail")
+            ),
             div(
-              class = "item-sub",
-              paste0(
-                "AC: ", round(this_ac, 0),
-                " • Base AC: ", meta$base_ac,
-                " • Type: ", meta$type,
-                " • Slot: ", tools::toTitleCase(meta$equipment_slot),
-                if (nzchar(as.character(meta$material %||% ""))) paste0(" • ", meta$material, " / ", meta$build_quality %||% "Unrated") else "",
-                " • Qty: ", a$qty[[1]] %||% 1,
-                " • ", a$weight[[1]] %||% 0, " lbs",
-                " • ", a$value[[1]] %||% 0, "g"
+              class = "equipment-copy",
+              div(class = "item-title", a$name[[1]] %||% "Armour"),
+              div(
+                class = "item-sub",
+                paste0(
+                  "AC: ", round(this_ac, 0),
+                  " • Base AC: ", meta$base_ac,
+                  " • Type: ", meta$type,
+                  " • Slot: ", tools::toTitleCase(meta$equipment_slot),
+                  if (nzchar(as.character(meta$material %||% ""))) paste0(" • ", meta$material, " / ", meta$build_quality %||% "Unrated") else "",
+                  " • Qty: ", a$qty[[1]] %||% 1,
+                  " • ", a$weight[[1]] %||% 0, " lbs",
+                  " • ", a$value[[1]] %||% 0, "g"
+                ),
+                if (isTRUE(a$equipped[[1]]) && !isTRUE(a$in_bag[[1]])) tags$span(" • WORN"),
+                if (nzchar(a$desc[[1]] %||% "")) tagList(tags$br(), a$desc[[1]])
               ),
-              if (isTRUE(a$equipped[[1]]) && !isTRUE(a$in_bag[[1]])) tags$span(" • WORN"),
-              if (nzchar(a$desc[[1]] %||% "")) tagList(tags$br(), a$desc[[1]])
             )
           ),
           div(

@@ -22,6 +22,7 @@ source("server/quest_module.R")
 source("server/merchant_module.R")
 source("server/chest_module.R")
 source("server/story_module.R")
+source("server/world_map_module.R")
 source("server/dice_module.R")
 source("server/magic_module.R")
 source("server/blood_module.R")
@@ -743,6 +744,7 @@ window.showToast = function(message, timeoutMs = 2500) {
  merchantUI("merchants"),
  chestUI("chests"),
  storyPlayerUI("story"),
+ worldMapUI("worldmap"),
 
   # Landing overlay
   div(

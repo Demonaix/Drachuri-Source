@@ -1,7 +1,8 @@
 library(shiny)
 
 controlQuestsUI<-function(id){ns<-NS(id);tagList(
-  div(class="control-card",div(class="control-section-title","✦ Party Quests"),p("Create a shared journal for the active party. Completed and failed quests remain in the players' journal; Hidden quests are visible only here."),
+  tags$style(HTML(paste0("#",ns("quest_editor")," input, #",ns("quest_editor")," textarea, #",ns("quest_editor")," select{font-family:Georgia,serif;text-transform:none;} #",ns("quest_editor")," label{text-transform:none;}"))),
+  div(id=ns("quest_editor"),class="control-card",div(class="control-section-title","✦ Party Quests"),p("Create a shared journal for the active party. Completed and failed quests remain in the players' journal; Hidden quests are visible only here."),
     div(class="row",div(class="col-md-4",selectInput(ns("quest_id"),"Quest",choices=c()),div(style="display:flex;gap:8px;flex-wrap:wrap",actionButton(ns("edit_quest"),"Edit Selected",class="btn btn-primary"),actionButton(ns("new_quest"),"New Quest",class="btn btn-default"))),div(class="col-md-8",textInput(ns("title"),"Title",placeholder="A Blade in the Dark"),textAreaInput(ns("description"),"Description",rows=6,placeholder="Describe the story, its stakes and what the party knows…"),selectInput(ns("status"),"Status",choices=c("Active"="active","Completed"="completed","Failed"="failed","Hidden from players"="hidden")),actionButton(ns("save"),"Save Quest",class="btn btn-primary")))),
   div(class="control-card",div(class="control-section-title","Objectives"),textInput(ns("objective_text"),"New objective",placeholder="Find a way into the ruined watchtower"),actionButton(ns("add_objective"),"Add Objective",class="btn btn-success"),uiOutput(ns("objectives_ui")))
 )}

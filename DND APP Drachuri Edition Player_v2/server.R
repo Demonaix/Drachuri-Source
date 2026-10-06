@@ -151,6 +151,7 @@ server_player <- function(input, output, session) {
   source("server/merchant_module.R")
   source("server/chest_module.R")
   source("server/story_module.R")
+  source("server/world_map_module.R")
   source("server/dice_module.R")
   source("server/magic_module.R")
   source("server/blood_module.R")
@@ -413,6 +414,7 @@ server_player <- function(input, output, session) {
   merchantServer("merchants",core$state)
   chestServer("chests",core$state)
   storyPlayerServer("story",core$state)
+  worldMapServer("worldmap")
  source("calls/character_3d_call.R", local=TRUE)
   source("calls/rune_call.R", local=TRUE)
   

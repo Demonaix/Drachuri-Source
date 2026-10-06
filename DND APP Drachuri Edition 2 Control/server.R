@@ -115,7 +115,8 @@ server_control <- function(input, output, session) {
   observe({control_hud_state$active_session_id<-current_session_id();s<-control_live_snapshot()$session%||%data.frame();eid<-if(nrow(s))suppressWarnings(as.integer(s$active_encounter_id[[1L]]%||%NA))else NA_integer_;control_hud_state$active_encounter_id<-if(is.na(eid))NULL else eid})
   partyHudServer("control_partyhud",control_hud_state,live_snapshot=control_live_snapshot,
                  portrait_base="player-assets/assets/player-posters",
-                 enemy_portrait_base="player-assets/assets/enemy-portraits")
+                 enemy_portrait_base="player-assets/assets/enemy-portraits",
+                 card_asset_base="player-assets/assets")
   controlNotesServer("party_notes", current_session_id)
   controlQuestsServer("quests", current_session_id)
   output$ctrl_active_session<-renderUI({

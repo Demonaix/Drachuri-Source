@@ -60,7 +60,7 @@ load_functions(global_file, c(
   "character_skill_modifier", "skill_card_count_for_rank", "character_skill_cards", "resolve_skill_card_roll", "triggered_skill_cards", "party_skill_support_result",
   "status_condition_definitions", "active_character_conditions", "character_condition_status_cards", "encounter_condition_values", "exhaustion_effect_text", "character_roll_status",
   "equipped_magical_traits", "new_character", "validate_character", "inventory_empty", "inventory_normalize",
-  "weapon_meta_defaults_global", "standard_spear_attack_modes",
+  "weapon_meta_defaults_global", "standard_spear_attack_modes", "equipment_thumbnail_src",
   "upgrade_weapon_damage_die", "standard_weapon_attack_modes",
   "normalise_weapon_attack_modes", "merge_legacy_weapon_mode_items",
   "combat_grid_distance_ft", "combat_grid_shortest_path", "combat_line_tiles",
@@ -1229,8 +1229,24 @@ test("level-two abilities are connected to action and skill interfaces", {
 
 test("Continue Adventure reports load and validation failures", {
   landing_source <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","landing_module.R"),warn=FALSE),collapse="\n")
+  session_source <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","shared","session_db_core.R"),warn=FALSE),collapse="\n")
   stopifnot(grepl('showNotification("Continue Adventure could not reach any saved characters.',landing_source,fixed=TRUE))
   stopifnot(grepl('restored<-tryCatch(validate_character(x)',landing_source,fixed=TRUE))
+  stopifnot(grepl('selectInput(ns("db_session"), "Select Adventure"',landing_source,fixed=TRUE))
+  stopifnot(grepl("list_active_sessions_for_character(char_id)",landing_source,fixed=TRUE))
+  stopifnot(grepl('gs.name AS session_name',session_source,fixed=TRUE))
+  stopifnot(!grepl("ORDER BY gs.updated_at DESC NULLS LAST, gs.id DESC\n      LIMIT 1",session_source,fixed=TRUE))
+})
+
+test("Control safely manages player resources, conditions and card decks", {
+  players <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition 2 Control","control_app","modules","control_players_module.R"),warn=FALSE),collapse="\n")
+  control_server <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition 2 Control","server.R"),warn=FALSE),collapse="\n")
+  hud <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","party_hud_module.R"),warn=FALSE),collapse="\n")
+  stopifnot(all(vapply(c("Refill HP","Refill Sindre","Refill Both","Add Status","Remove Status"),grepl,logical(1),x=players,fixed=TRUE)))
+  stopifnot(grepl("set_session_hp(sid,cid",players,fixed=TRUE))
+  stopifnot(grepl("status_condition_definitions()",players,fixed=TRUE))
+  stopifnot(grepl('card_asset_base="player-assets/assets"',control_server,fixed=TRUE))
+  stopifnot(grepl("deck<-tryCatch(build_character_deck(cid)",hud,fixed=TRUE))
 })
 
 test("level up requires and stores a subclass choice", {
@@ -2046,6 +2062,8 @@ test("party time is shared across camp, rest, runes and DM geography controls", 
   stopifnot(file.exists(file.path(project_dir,"database","migrations","042_dm_rest_phases.sql")))
   stopifnot(file.exists(file.path(project_dir,"database","migrations","043_repeatable_camp_gathering.sql")))
   stopifnot(grepl("Begin Standard Phase",control,fixed=TRUE),grepl("Begin Rest Phase",control,fixed=TRUE),grepl("12 hours (two phases)",control,fixed=TRUE),grepl("Resolve & Begin Next Phase",control,fixed=TRUE))
+  stopifnot(!grepl('numericInput(ns("day_number")',control,fixed=TRUE),!grepl('selectInput(ns("time_of_day")',control,fixed=TRUE))
+  stopifnot(grepl("day_number=NULL,time_of_day=NULL",control,fixed=TRUE))
   stopifnot(grepl("resolve_session_phase(x$id[[1L]],next_kind",control,fixed=TRUE),grepl("next_phase_kind=NULL",shared,fixed=TRUE))
   stopifnot(grepl('budget<-as.numeric(p$duration_hours[[1L]])',rest,fixed=TRUE))
   stopifnot(grepl('gather_label(resource)),1)',rest,fixed=TRUE),grepl('Help with gathering",1',rest,fixed=TRUE))
@@ -2365,6 +2383,37 @@ test("polled session state reads do not write-lock shared live rows", {
   stopifnot(grepl("SELECT * FROM session_supplies WHERE session_id=$1",supplies_helper,fixed=TRUE))
   stopifnot(grepl("ON CONFLICT(session_id) DO NOTHING RETURNING *",supplies_helper,fixed=TRUE))
   stopifnot(!grepl("DO UPDATE SET session_id=EXCLUDED.session_id",supplies_helper,fixed=TRUE))
+})
+
+test("equipment catalogue resolves to illustrated weapon and armour thumbnails", {
+  asset_root <- file.path(project_dir,"DND APP Drachuri Edition Player_v2","www","assets","equipment-thumbnails")
+  expected <- file.path(asset_root,c(
+    "weapons/longsword.png","weapons/dagger.png","weapons/battleaxe.png","weapons/spear.png",
+    "weapons/bow.png","weapons/staff.png","weapons/hammer.png","weapons/mace.png",
+    "weapons/flail.png","weapons/polearm.png","weapons/trident.png","weapons/sickle.png",
+    "weapons/club.png","weapons/greatsword.png","weapons/rapier.png",
+    "armour/leather-armour.png","armour/chain-mail.png","armour/plate-armour.png",
+    "armour/hide-armour.png","armour/scale-mail.png","armour/splint-armour.png",
+    "armour/padded-armour.png","armour/round-shield.png","armour/kite-shield.png",
+    "armour/helm.png","armour/chain-coif.png","armour/circlet.png"
+  ))
+  stopifnot(all(file.exists(expected)))
+  stopifnot(identical(test_env$equipment_thumbnail_src("Rimeblade Rapier","weapon"),"assets/equipment-thumbnails/weapons/rapier.png"))
+  stopifnot(identical(test_env$equipment_thumbnail_src("Drachuri Tower Shield","armor"),"assets/equipment-thumbnails/armour/kite-shield.png"))
+  stopifnot(identical(test_env$equipment_thumbnail_src("Twilight Veil","armor"),"assets/equipment-thumbnails/armour/helm.png"))
+  stopifnot(identical(test_env$equipment_thumbnail_src("Entirely New Blade","weapon"),"assets/equipment-thumbnails/weapons/longsword.png"))
+})
+
+test("player HUD exposes the shared Annwn wall map as a fullscreen overlay", {
+  module <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","world_map_module.R"),warn=FALSE),collapse="\n")
+  ui <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","ui.R"),warn=FALSE),collapse="\n")
+  server <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server.R"),warn=FALSE),collapse="\n")
+  combat_css <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","www","css","combat.css"),warn=FALSE),collapse="\n")
+  stopifnot(grepl("assets/textures/map_annwn_world.jpg",module,fixed=TRUE))
+  stopifnot(grepl("position:fixed;inset:0",module,fixed=TRUE))
+  stopifnot(grepl('worldMapUI("worldmap")',ui,fixed=TRUE))
+  stopifnot(grepl('worldMapServer("worldmap")',server,fixed=TRUE))
+  stopifnot(grepl("worldmap-wrap",combat_css,fixed=TRUE))
 })
 
 cat("\n", tests_run, " tests passed.\n", sep = "")

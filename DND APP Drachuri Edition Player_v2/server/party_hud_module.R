@@ -333,7 +333,8 @@ grid-template-columns: 10px 1fr;
 partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
                            char_rev = NULL, live_snapshot = NULL,
                            portrait_base = "assets/player-posters",
-                           enemy_portrait_base = "assets/enemy-portraits") {
+                           enemy_portrait_base = "assets/enemy-portraits",
+                           card_asset_base = "assets") {
   moduleServer(id, function(input, output, session) {
     
     `%||%` <- get("%||%", inherits = TRUE)
@@ -513,8 +514,9 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
     skill_card_labels<-c(reliable="Reliable",wild_card="Wild Card",inspired="Inspired")
     skill_card_help<-c(reliable="On a natural roll of 2–4, add the proficiency bonus again.",wild_card="Roll a d6: on 1 subtract the proficiency bonus; on 6 add it.",inspired="On a natural roll of 18–20, add the proficiency bonus again.")
     card_key<-function(x)gsub(" ","_",tolower(as.character(x)))
-    ability_card_image<-function(ch,ab){score<-suppressWarnings(as.integer(ch$abilities[[ab]]%||%10L));if(is.na(score))score<-10L;mod<-mod_calc(score);paste0("assets/ability-cards/",ability_dirs[[ab]],"/",if(mod<0)paste0("minus-",abs(mod))else paste0("plus-",mod),".jpg")}
-    skill_card_image<-function(skill_key,variant){art<-c(reliable="core",wild_card="aspect",inspired="descriptor")[[variant]]%||%"core";lookup<-switch(art,core=skill_core,aspect=skill_aspect,descriptor=skill_descriptor);folder<-switch(art,core="skill-cores",aspect="skill-aspects",descriptor="skill-descriptors");paste0("assets/skill-cards/",folder,"/",unname(lookup[[skill_key]]%||%skill_core[[skill_key]]),".jpg")}
+    card_asset<-function(path){path<-sub("^assets/","",as.character(path%||%""));paste0(sub("/$","",card_asset_base),"/",path)}
+    ability_card_image<-function(ch,ab){score<-suppressWarnings(as.integer(ch$abilities[[ab]]%||%10L));if(is.na(score))score<-10L;mod<-mod_calc(score);card_asset(paste0("ability-cards/",ability_dirs[[ab]],"/",if(mod<0)paste0("minus-",abs(mod))else paste0("plus-",mod),".jpg"))}
+    skill_card_image<-function(skill_key,variant){art<-c(reliable="core",wild_card="aspect",inspired="descriptor")[[variant]]%||%"core";lookup<-switch(art,core=skill_core,aspect=skill_aspect,descriptor=skill_descriptor);folder<-switch(art,core="skill-cores",aspect="skill-aspects",descriptor="skill-descriptors");card_asset(paste0("skill-cards/",folder,"/",unname(lookup[[skill_key]]%||%skill_core[[skill_key]]),".jpg"))}
     deck_card<-function(group,key,label,image,reason,score=NULL,modifier=NULL)list(group=group,key=key,label=label,image=image,reason=reason,score=score,modifier=modifier)
 
     build_character_deck<-function(character_id){
@@ -525,14 +527,15 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
       for(i in seq_len(nrow(SKILLS_LIST))){skill<-as.character(SKILLS_LIST$Skill[[i]]);key<-card_key(skill);rank<-as.character(ch$prof$skills[[key]]%||%"None");variants<-character_skill_cards(ch,key);if(!length(variants))next;for(variant in variants)cards[[length(cards)+1L]]<-deck_card("Skill Cards",paste(key,variant,sep="_"),paste0(skill," — ",skill_card_labels[[variant]]),skill_card_image(key,variant),paste0(SKILL_DESC[[skill]]%||%skill," Training: ",rank,". ",skill_card_help[[variant]]))}
       sid<-resolved_session_id();env<-list(climate=ch$environment$temperature%||%"Temperate",weather="");fire<-isTRUE(ch$status$has_fire);actions<-character();phase<-NULL
       if(!is.na(sid)){fresh_env<-tryCatch(get_session_environment(sid),error=function(e)NULL);if(!is.null(fresh_env))env<-fresh_env;fire<-isTRUE(tryCatch(get_session_fire(sid),error=function(e)fire));phase<-tryCatch(get_open_session_phase(sid),error=function(e)NULL);if(!is.null(phase)&&identical(as.character(phase$phase_kind[[1L]]),"rest")){rows<-tryCatch(get_session_phase_actions(phase$id[[1L]],character_id),error=function(e)data.frame());if(nrow(rows))actions<-as.character(rows$action_type)}}
-      rest_cards<-character_rest_status_cards(ch,fire,actions,env,if(is.null(phase))0 else as.numeric(phase$duration_hours[[1L]]));for(card in rest_cards)cards[[length(cards)+1L]]<-deck_card("Rest & Survival",card$key,card$label,card$image,card$reason)
+      rest_cards<-character_rest_status_cards(ch,fire,actions,env,if(is.null(phase))0 else as.numeric(phase$duration_hours[[1L]]));for(card in rest_cards)cards[[length(cards)+1L]]<-deck_card("Rest & Survival",card$key,card$label,card_asset(card$image),card$reason)
       extra_conditions<-if(is.function(live_snapshot))encounter_condition_values(live_snapshot(),character_id)else character();condition_cards<-character_condition_status_cards(ch,extra_conditions);for(card in condition_cards)cards[[length(cards)+1L]]<-deck_card("Conditions",card$key,card$label,card$image,card$reason)
+      if(length(cards))for(i in seq_along(cards))if(grepl("^assets/",cards[[i]]$image))cards[[i]]$image<-card_asset(cards[[i]]$image)
       list(character=ch,cards=cards)
     }
 
     card_art<-function(card){div(class="party-deck-art",tags$img(src=card$image,alt=card$label),if(!is.null(card$score))tags$span(class="party-deck-ability-score",card$score),if(!is.null(card$modifier))tags$span(class="party-deck-ability-mod",paste0(if(card$modifier>=0)"+"else"",card$modifier)))}
     show_character_deck<-function(){deck<-active_deck();if(is.null(deck))return();cards<-deck$cards;groups<-unique(vapply(cards,function(card)card$group,character(1)));showModal(modalDialog(class="party-deck-modal",title=paste0(deck$character$meta$name%||%"Character"," — Card Deck"),div(class="party-deck-intro","Select any card to enlarge it and read its complete effect."),lapply(groups,function(group){indices<-which(vapply(cards,function(card)identical(card$group,group),logical(1)));div(class="party-deck-section",h4(group),div(class="party-deck-grid",lapply(indices,function(index){card<-cards[[index]];tags$button(type="button",class="party-deck-card",`data-card-index`=index,title=paste("Open",card$label),card_art(card),tags$span(card$label))})))}),footer=modalButton("Close"),easyClose=TRUE,size="l"))}
-    observeEvent(input$open_character_deck,{cid<-as.character(input$open_character_deck%||%"");if(!nzchar(cid))return();deck<-build_character_deck(cid);if(is.null(deck))return(showNotification("That character's card deck could not be loaded.",type="warning"));active_deck(deck);show_character_deck()},ignoreInit=TRUE)
+    observeEvent(input$open_character_deck,{cid<-as.character(input$open_character_deck%||%"");if(!nzchar(cid))return();deck_error<-NULL;deck<-tryCatch(build_character_deck(cid),error=function(e){deck_error<<-conditionMessage(e);NULL});if(is.null(deck)){message("Character deck failed for ",cid,": ",deck_error%||%"unknown error");return(showNotification(paste0("That character's card deck could not be loaded",if(nzchar(deck_error%||%""))paste0(": ",deck_error)else"."),type="error",duration=10))};active_deck(deck);show_character_deck()},ignoreInit=TRUE)
     observeEvent(input$open_deck_card,{deck<-active_deck();index<-suppressWarnings(as.integer(input$open_deck_card));if(is.null(deck)||is.na(index)||index<1L||index>length(deck$cards))return();card<-deck$cards[[index]];showModal(modalDialog(class="party-deck-modal",title=card$label,div(class="party-deck-detail",card_art(card),h3(card$label),p(card$reason)),footer=tagList(actionButton(session$ns("back_to_deck"),"Back to Deck"),modalButton("Close")),easyClose=TRUE,size="l"))},ignoreInit=TRUE)
     observeEvent(input$back_to_deck,show_character_deck(),ignoreInit=TRUE)
     

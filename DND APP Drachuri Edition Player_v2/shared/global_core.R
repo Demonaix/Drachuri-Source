@@ -12,6 +12,57 @@ APP_SAVE_VERSION <- 2
 
 `%||%` <- function(a, b) if (!is.null(a)) a else b
 
+# Resolve equipment names to the shared illustrated thumbnail library.  The
+# catalogue contains legacy duplicates and DMs can create new gear, so this is
+# intentionally family based rather than a brittle one-file-per-database-row
+# lookup. Bespoke named-item art can override this resolver later.
+equipment_thumbnail_src <- function(name, type = NULL, asset_base = "assets") {
+  item_name <- tolower(trimws(as.character(name %||% "")))[1L]
+  item_type <- tolower(trimws(as.character(type %||% "")))[1L]
+  if (is.na(item_name)) item_name <- ""
+  if (is.na(item_type)) item_type <- ""
+
+  weapon_key <- function(x) {
+    if (grepl("greatsword|great sword", x)) return("greatsword")
+    if (grepl("dagger", x)) return("dagger")
+    if (grepl("rapier|sabre|scimitar", x)) return("rapier")
+    if (grepl("battleaxe|handaxe|\\baxe\\b", x)) return("battleaxe")
+    if (grepl("longbow|shortbow|\\bbow\\b", x)) return("bow")
+    if (grepl("trident", x)) return("trident")
+    if (grepl("glaive|pike|polearm", x)) return("polearm")
+    if (grepl("spear|javelin", x)) return("spear")
+    if (grepl("staff|rod", x)) return("staff")
+    if (grepl("warhammer|hammer|maul", x)) return("hammer")
+    if (grepl("flail", x)) return("flail")
+    if (grepl("mace", x)) return("mace")
+    if (grepl("sickle", x)) return("sickle")
+    if (grepl("club", x)) return("club")
+    "longsword"
+  }
+
+  armour_key <- function(x) {
+    if (grepl("circlet|crown", x)) return("circlet")
+    if (grepl("coif|chain hood", x)) return("chain-coif")
+    if (grepl("helm|helmet|hood|veil|head", x)) return("helm")
+    if (grepl("tower shield|kite shield", x)) return("kite-shield")
+    if (grepl("shield|buckler", x)) return("round-shield")
+    if (grepl("padded|gambeson", x)) return("padded-armour")
+    if (grepl("splint", x)) return("splint-armour")
+    if (grepl("scale", x)) return("scale-mail")
+    if (grepl("hide", x)) return("hide-armour")
+    if (grepl("leather|jerkin|leafweave|scout", x)) return("leather-armour")
+    if (grepl("chain|ring mail|mail", x)) return("chain-mail")
+    if (grepl("plate|breastplate|brigandine|cuirass", x)) return("plate-armour")
+    "leather-armour"
+  }
+
+  is_weapon <- identical(item_type, "weapon") ||
+    grepl("sword|dagger|axe|bow|spear|javelin|trident|glaive|pike|staff|rod|hammer|maul|mace|flail|sickle|club|rapier|sabre|scimitar|blade", item_name)
+  folder <- if (is_weapon) "weapons" else "armour"
+  key <- if (is_weapon) weapon_key(item_name) else armour_key(item_name)
+  paste0(sub("/+$", "", asset_base), "/equipment-thumbnails/", folder, "/", key, ".png")
+}
+
 #Database connection
 library(DBI)
 library(RPostgres)

@@ -36,6 +36,25 @@ controlPlayersUI <- function(id) {
             uiOutput(ns("players_summary")),
             br(),
             actionButton(ns("remove_player"), "Remove Selected", class = "btn btn-danger")
+        ),
+
+        div(class = "card",
+            h4("Player Resources & Status"),
+            selectInput(ns("manage_character_id"), "Player", choices = character()),
+            uiOutput(ns("managed_player_summary")),
+            div(style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 16px",
+                actionButton(ns("refill_hp"), "Refill HP", class = "btn btn-success"),
+                actionButton(ns("refill_sindre"), "Refill Sindre", class = "btn btn-primary"),
+                actionButton(ns("refill_both"), "Refill Both", class = "btn btn-warning")
+            ),
+            fluidRow(
+              column(6,selectInput(ns("status_add"),"Add status",choices=character())),
+              column(6,selectInput(ns("status_remove"),"Remove active status",choices=character()))
+            ),
+            div(style="display:flex;gap:8px;flex-wrap:wrap",
+                actionButton(ns("add_status"),"Add Status",class="btn btn-primary"),
+                actionButton(ns("remove_status"),"Remove Status",class="btn btn-default")
+            )
         )
     )
   )
@@ -52,6 +71,8 @@ controlPlayersServer <- function(id, ctrl, session_tbl, players_tbl, positions_t
     # --------------------------------
     characters_rv <- reactiveVal(data.frame())
     remove_player_choice_signature <- reactiveVal(NULL)
+    manage_player_choice_signature <- reactiveVal(NULL)
+    manage_rev <- reactiveVal(0L)
     
     load_characters <- function() {
       chars <- tryCatch(
@@ -110,7 +131,92 @@ controlPlayersServer <- function(id, ctrl, session_tbl, players_tbl, positions_t
       selected <- as.character(isolate(input$remove_character_id) %||% ids[[1L]])
       if (!selected %in% ids) selected <- ids[[1L]]
       updateSelectInput(session, "remove_character_id", choices = setNames(ids, labels), selected = selected)
+
+      if (!identical(signature, manage_player_choice_signature())) {
+        manage_player_choice_signature(signature)
+        managed <- as.character(isolate(input$manage_character_id) %||% ids[[1L]])
+        if (!managed %in% ids) managed <- ids[[1L]]
+        updateSelectInput(session, "manage_character_id", choices = setNames(ids, labels), selected = managed)
+      }
     })
+
+    condition_choices <- function() {
+      defs <- tryCatch(status_condition_definitions(), error=function(e) list())
+      keys <- names(defs)
+      stats::setNames(keys, tools::toTitleCase(keys))
+    }
+    observeEvent(TRUE, {
+      choices <- condition_choices()
+      updateSelectInput(session,"status_add",choices=choices,selected=if(length(choices))unname(choices[[1L]])else character())
+    }, once=TRUE)
+
+    managed_character <- reactive({
+      manage_rev()
+      cid <- as.character(input$manage_character_id %||% "")
+      if(!nzchar(cid)) return(NULL)
+      tryCatch(validate_character(load_character_from_db(cid)), error=function(e) NULL)
+    })
+
+    active_conditions <- reactive({
+      ch <- managed_character()
+      if(is.null(ch)) return(character())
+      values <- unique(tolower(trimws(as.character(c(ch$status$conditions %||% character(),ch$status$effects %||% character())))))
+      intersect(values,names(tryCatch(status_condition_definitions(),error=function(e)list())))
+    })
+
+    observe({
+      values <- active_conditions()
+      values <- values[nzchar(values)]
+      updateSelectInput(session,"status_remove",choices=stats::setNames(values,tools::toTitleCase(values)),selected=if(length(values))values[[1L]]else character())
+    })
+
+    output$managed_player_summary <- renderUI({
+      ch <- managed_character()
+      if(is.null(ch)) return(p(class="control-mini","Choose a player."))
+      hp <- ch$resources$hp %||% list(); si <- ch$resources$sindre %||% list(); conditions <- active_conditions()
+      div(class="control-kpi-row",
+          span(class="control-kpi",paste0("HP ",hp$cur%||%0," / ",hp$max%||%0)),
+          span(class="control-kpi",paste0("Sindre ",si$cur%||%0," / ",si$total%||%0)),
+          span(class="control-kpi",if(length(conditions))paste(tools::toTitleCase(conditions),collapse=", ")else"No active statuses"))
+    })
+
+    save_managed_character <- function(ch, message) {
+      cid <- as.character(input$manage_character_id %||% "")
+      if(!nzchar(cid) || is.null(ch) || is.null(save_character_to_db(validate_character(ch),cid))) {
+        showNotification("The player could not be updated.",type="error",duration=8)
+        return(FALSE)
+      }
+      manage_rev(manage_rev()+1L); bump_refresh(); showNotification(message,type="message")
+      TRUE
+    }
+
+    refill_player <- function(hp=FALSE,sindre=FALSE) {
+      ch <- managed_character(); cid <- as.character(input$manage_character_id%||%""); sid <- suppressWarnings(as.integer(ctrl$session_id%||%NA))
+      if(is.null(ch)||!nzchar(cid)||is.na(sid)) return()
+      if(isTRUE(hp)) {
+        ch$resources$hp$cur <- as.integer(ch$resources$hp$max%||%0L)
+        ch$resources$hp$temp <- 0L
+      }
+      if(isTRUE(sindre)) ch$resources$sindre$cur <- as.integer(ch$resources$sindre$total%||%0L)
+      if(!save_managed_character(ch,if(hp&&sindre)"HP and Sindre refilled."else if(hp)"HP refilled."else"Sindre refilled.")) return()
+      if(isTRUE(hp)) set_session_hp(sid,cid,ch$resources$hp$cur,0L)
+      bump_refresh()
+    }
+    observeEvent(input$refill_hp,refill_player(hp=TRUE),ignoreInit=TRUE)
+    observeEvent(input$refill_sindre,refill_player(sindre=TRUE),ignoreInit=TRUE)
+    observeEvent(input$refill_both,refill_player(hp=TRUE,sindre=TRUE),ignoreInit=TRUE)
+
+    observeEvent(input$add_status,{
+      ch<-managed_character(); key<-tolower(as.character(input$status_add%||%""));if(is.null(ch)||!nzchar(key))return()
+      ch$status$conditions<-unique(c(as.character(ch$status$conditions%||%character()),key))
+      save_managed_character(ch,paste(tools::toTitleCase(key),"added."))
+    },ignoreInit=TRUE)
+    observeEvent(input$remove_status,{
+      ch<-managed_character(); key<-tolower(as.character(input$status_remove%||%""));if(is.null(ch)||!nzchar(key))return()
+      ch$status$conditions<-as.character(ch$status$conditions%||%character())[tolower(as.character(ch$status$conditions%||%character()))!=key]
+      ch$status$effects<-as.character(ch$status$effects%||%character())[tolower(as.character(ch$status$effects%||%character()))!=key]
+      save_managed_character(ch,paste(tools::toTitleCase(key),"removed."))
+    },ignoreInit=TRUE)
     
 
     observeEvent(input$refresh_characters, {

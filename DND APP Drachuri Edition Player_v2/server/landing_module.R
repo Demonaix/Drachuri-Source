@@ -58,6 +58,7 @@ landingUI <- function(id) {
       h4("Load from Server"),
       
       selectInput(ns("db_character"), "Select Character", choices = character()),
+      selectInput(ns("db_session"), "Select Adventure", choices = character()),
       
       div(
         style = "display:flex; gap:10px; margin-top:10px;",
@@ -234,11 +235,54 @@ landingTabServer <- function(
         updateSelectInput(session, "db_character", choices = choices)
       }
     }, ignoreInit = TRUE)
+
+    observeEvent(input$db_character, {
+      char_id <- as.character(input$db_character %||% "")
+      if (!nzchar(char_id)) {
+        updateSelectInput(session, "db_session", choices = character(0))
+        return()
+      }
+
+      memberships <- tryCatch(
+        list_active_sessions_for_character(char_id),
+        error = function(e) data.frame()
+      )
+      if (!is.data.frame(memberships) || !nrow(memberships)) {
+        updateSelectInput(session, "db_session", choices = character(0))
+        return()
+      }
+
+      ids <- as.character(memberships$session_id)
+      labels <- trimws(as.character(memberships$session_name %||% ""))
+      labels[is.na(labels) | !nzchar(labels)] <- "Adventure"
+      labels <- paste0(labels, " (Session #", ids, ")")
+      updateSelectInput(
+        session,
+        "db_session",
+        choices = stats::setNames(ids, labels),
+        selected = ids[[1L]]
+      )
+    }, ignoreInit = TRUE)
     
     observeEvent(input$db_load, {
       req(input$db_character)
       
       char_id <- input$db_character
+      selected_session_id <- suppressWarnings(as.integer(input$db_session %||% NA_integer_))
+
+      memberships <- tryCatch(
+        list_active_sessions_for_character(char_id),
+        error = function(e) data.frame()
+      )
+      if (!is.data.frame(memberships) || !nrow(memberships)) {
+        showNotification("This character is not currently assigned to an active adventure.", type = "warning", duration = 10)
+        return()
+      }
+      allowed_session_ids <- suppressWarnings(as.integer(memberships$session_id))
+      if (is.na(selected_session_id) || !selected_session_id %in% allowed_session_ids) {
+        showNotification("Choose the adventure you want to join.", type = "warning", duration = 8)
+        return()
+      }
       
       load_error <- NULL
       x <- tryCatch(load_character_from_db(char_id),error=function(e){load_error<<-conditionMessage(e);NULL})
@@ -260,10 +304,7 @@ landingTabServer <- function(
       state$char_id <- char_id
       state$sync_enabled <- TRUE
 
-      membership <- tryCatch(
-        get_active_session_for_character(char_id),
-        error = function(e) data.frame()
-      )
+      membership <- memberships[as.character(memberships$session_id) == as.character(selected_session_id), , drop = FALSE]
       if (is.data.frame(membership) && nrow(membership) > 0L) {
         state$active_session_id <- as.integer(membership$session_id[[1L]])
         encounter_id <- suppressWarnings(as.integer(membership$active_encounter_id[[1L]]))

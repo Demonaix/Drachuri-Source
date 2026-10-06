@@ -17,6 +17,8 @@ armouryTabUI <- function(id) {
         pfx, ".card-titlebar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;}\n",
         pfx, ".item-card{border:1px solid rgba(150,120,70,0.45);border-radius:14px;background:rgba(255,255,250,0.92);padding:12px;margin-bottom:10px;}\n",
         pfx, ".item-head{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;}\n",
+        pfx, ".equipment-copy{min-width:0;flex:1;}\n",
+        pfx, ".equipment-thumbnail{width:86px;height:86px;flex:0 0 86px;object-fit:cover;border-radius:11px;border:1px solid rgba(105,72,30,.58);box-shadow:0 3px 9px rgba(45,27,8,.22);background:#d8bf88;}\n",
         pfx, ".item-title{font-size:18px;font-weight:700;}\n",
         pfx, ".item-sub{font-size:13px;opacity:.9;line-height:1.3;margin-top:2px;}\n",
         pfx, ".item-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;}\n",
@@ -301,8 +303,10 @@ armouryTabServer <- function(id, state, restoring, add_log, char_rev) {
         class = "item-card",
         div(
           class = "item-head",
+          tags$img(class="equipment-thumbnail",src=equipment_thumbnail_src(w$name[[1]],"weapon","player-assets/assets"),alt=paste(w$name[[1]]%||%"Weapon","thumbnail")),
           div(
-            div(class = "item-title", paste0("🗡️ ", w$name[[1]] %||% "Weapon")),
+            class = "equipment-copy",
+            div(class = "item-title", w$name[[1]] %||% "Weapon"),
             div(
               class = "item-sub",
               paste0(
@@ -365,8 +369,10 @@ armouryTabServer <- function(id, state, restoring, add_log, char_rev) {
         class = "item-card",
         div(
           class = "item-head",
+          tags$img(class="equipment-thumbnail",src=equipment_thumbnail_src(a$name[[1]],"armor","player-assets/assets"),alt=paste(a$name[[1]]%||%"Armour","thumbnail")),
           div(
-            div(class = "item-title", paste0("🛡️ ", a$name[[1]] %||% "Armor")),
+            class = "equipment-copy",
+            div(class = "item-title", a$name[[1]] %||% "Armour"),
             div(
               class = "item-sub",
               paste0(
