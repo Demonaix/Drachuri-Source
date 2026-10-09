@@ -625,6 +625,7 @@ limit 1
     events_key <- reactiveVal(0L)
     actors_key <- reactiveVal(0L)
     enemies_key <- reactiveVal(0L)
+    encounter_key <- reactiveVal(0L)
     map_visual_key <- reactiveVal(0L)
     map_send_generation <- reactiveVal(0L)
     map_ui_ready <- reactiveVal(FALSE)
@@ -755,6 +756,7 @@ limit 1
     bump_events    <- function() events_key(isolate(events_key()) + 1L)
     bump_actors    <- function() actors_key(isolate(actors_key()) + 1L)
     bump_enemies   <- function() enemies_key(isolate(enemies_key()) + 1L)
+    bump_encounter <- function() encounter_key(isolate(encounter_key()) + 1L)
     bump_map_visual <- function() map_visual_key(isolate(map_visual_key()) + 1L)
     observeEvent(session$rootScope()$input$combat3d_lean_ready, {
       if (identical(input$map_render_mode %||% "2d", "3d")) later::later(bump_map_visual, 0.05)
@@ -766,6 +768,7 @@ limit 1
       bump_events()
       bump_actors()
       bump_enemies()
+      bump_encounter()
       bump_map_visual()
     }
     # --------------------------------------------------
@@ -787,6 +790,7 @@ limit 1
 
     observe({
       ctrl$refresh_key
+      encounter_key()
       sid <- current_session_id()
       if (is.na(sid)) {
         if (!identical(live_encounter_choice_signature(), "")) {
@@ -1123,6 +1127,7 @@ limit 1
     # --------------------------------------------------
     encounter_tbl_r <- reactive({
       ctrl$refresh_key
+      encounter_key()
       
       eid <- current_encounter_id()
       if (is.na(eid)) return(data.frame())
@@ -2588,6 +2593,7 @@ limit 1
         }
       )
       if (!is.data.frame(render_df) || nrow(render_df) == 0) return()
+      render_df <- apply_unique_player_3d_colours(render_df)
       
       # Personal GLTF models remain disabled; the lean renderer uses procedural miniatures.
       

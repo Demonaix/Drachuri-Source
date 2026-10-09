@@ -1128,8 +1128,18 @@ upsert_encounter_actor_position <- function(encounter_id, actor_type, actor_id, 
   
   tryCatch({
     # One atomic statement avoids the select/update race and halves the network
-    # round trips for every square of movement.
-    DBI::dbExecute(con,"INSERT INTO encounter_positions(encounter_id,actor_type,actor_id,x,y,updated_at) VALUES($1,$2,$3,$4,$5,NOW()) ON CONFLICT(encounter_id,actor_type,actor_id) DO UPDATE SET x=EXCLUDED.x,y=EXCLUDED.y,updated_at=NOW()",params=list(encounter_id,actor_type,actor_id,x,y))
+    # round trips for every square of movement.  Older live schemas did not
+    # retain the matching unique key, so fall back to update/insert until the
+    # repair migration has been applied.
+    params <- list(encounter_id, actor_type, actor_id, x, y)
+    tryCatch(
+      DBI::dbExecute(con,"INSERT INTO encounter_positions(encounter_id,actor_type,actor_id,x,y,updated_at) VALUES($1,$2,$3,$4,$5,NOW()) ON CONFLICT(encounter_id,actor_type,actor_id) DO UPDATE SET x=EXCLUDED.x,y=EXCLUDED.y,updated_at=NOW()",params=params),
+      error = function(e) {
+        if (!grepl("no unique or exclusion constraint", conditionMessage(e), fixed = TRUE)) stop(e)
+        changed <- DBI::dbExecute(con,"UPDATE encounter_positions SET x=$4,y=$5,updated_at=NOW() WHERE encounter_id=$1 AND actor_type=$2 AND actor_id=$3",params=params)
+        if (changed < 1L) DBI::dbExecute(con,"INSERT INTO encounter_positions(encounter_id,actor_type,actor_id,x,y,updated_at) VALUES($1,$2,$3,$4,$5,NOW())",params=params)
+      }
+    )
     
     TRUE
   }, error = function(e) {

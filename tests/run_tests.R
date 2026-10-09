@@ -28,6 +28,7 @@ glyph_core_file <- file.path(project_dir,"DND APP Drachuri Edition Player_v2","s
 combat_map_file <- file.path(project_dir,"DND APP Drachuri Edition 2 Control","server","combat_map_logic.R")
 map_builder_file <- file.path(project_dir,"DND APP Drachuri Edition 2 Control","control_app","modules","control_map_builder_module.R")
 encounter_generator_file <- file.path(project_dir,"DND APP Drachuri Edition 2 Control","control_app","modules","control_encounter_generator_core.R")
+control_global_file <- file.path(project_dir,"DND APP Drachuri Edition 2 Control","global.R")
 
 test_env <- new.env(parent = baseenv())
 test_env$`%||%` <- function(a, b) if (!is.null(a)) a else b
@@ -65,6 +66,8 @@ load_functions(global_file, c(
   "normalise_weapon_attack_modes", "merge_legacy_weapon_mode_items",
   "combat_grid_distance_ft", "combat_grid_shortest_path", "combat_line_tiles",
   "combat_attack_geometry", "combat_hide_dc", "dice_card_supported_sides", "dice_card_src", "dice_result_card_ui", "modifier_result_card_ui", "manual_dice_values"
+  , "combat_player_marker_palette", "combat_player_marker_assignments",
+  "combat_player_marker_identity", "apply_unique_player_3d_colours"
 ))
 load_functions(relational_inventory_file, c("equipment_material_is_eligible", "inventory_item_category", "equipment_adjusted_value"))
 load_functions(enemy_generator_file, c("enemy_special_attack", "enemy_attack_catalog", "enemy_loot_catalog", "resolve_layered_damage_traits", "enemy_is_animal", "roll_enemy_mundane_loot", "roll_enemy_food_loot", "npc_feature_definition", "npc_feature_catalogue", "npc_feature_effect_summary"))
@@ -1206,6 +1209,20 @@ test("combat UI exposes lifecycle, summon control, and module shortcuts", {
   stopifnot(grepl('input$confirm_end_combat', control_source, fixed = TRUE))
 })
 
+test("player combat prefers local equipment while Armoury autosave is pending", {
+  combat <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","debug_combat_module.R"),warn=FALSE),collapse="\n")
+  loader <- sub(".*load_actor_for_combat <- function", "load_actor_for_combat <- function", combat)
+  local_pos <- regexpr("return(validate_character(core$state$char))", loader, fixed=TRUE)[[1L]]
+  db_pos <- regexpr("load_character_from_db(actor_id)", loader, fixed=TRUE)[[1L]]
+  stopifnot(local_pos > 0L, db_pos > 0L, local_pos < db_pos)
+})
+
+test("combat Hide always returns integer passive perception values", {
+  combat <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","debug_combat_module.R"),warn=FALSE),collapse="\n")
+  stopifnot(grepl("as.integer(10L + floor((wis - 10L) / 2L))", combat, fixed=TRUE))
+  stopifnot(grepl("enemy_passive_perception,integer(1)", combat, fixed=TRUE))
+})
+
 test("Magic and Balance use authoritative class progression", {
   magic_source <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition Player_v2", "server", "magic_module.R"), warn = FALSE), collapse = "\n")
   level_source <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition Player_v2", "server", "level_module.R"), warn = FALSE), collapse = "\n")
@@ -1275,6 +1292,9 @@ test("uploaded storyboards install against the currently revealed story id", {
   stopifnot(grepl('set "DRACHURI_DATA_DIR=%LOCALAPPDATA%\\Drachuri Player"',windows_launcher,fixed=TRUE))
   stopifnot(grepl("Storyboard asset could not be installed",core,fixed=TRUE))
   stopifnot(grepl("Storyboard installed without required picture",core,fixed=TRUE))
+  stopifnot(grepl("local_revision<-reactiveVal(0L)",module,fixed=TRUE))
+  stopifnot(grepl("revision();local_revision();slide_ui()",module,fixed=TRUE))
+  stopifnot(grepl("local_revision(isolate(local_revision())+1L)",module,fixed=TRUE))
 })
 
 test("level up requires and stores a subclass choice", {
@@ -1830,9 +1850,33 @@ test("lean 3D renderer keeps costly features optional", {
   stopifnot(grepl('quality==="decorative"', js, fixed = TRUE))
   stopifnot(!grepl("GLTFLoader", js, fixed = TRUE))
   stopifnot(grepl("makeMiniature", js, fixed = TRUE), grepl("actorColour", js, fixed = TRUE))
+  stopifnot(grepl("row?.marker_3d_color", js, fixed = TRUE))
+  stopifnot(!grepl("if(self)return new THREE.Color", js, fixed = TRUE))
   stopifnot(grepl("PointLight", js, fixed = TRUE), grepl("chandelierLight", js, fixed = TRUE))
   stopifnot(grepl("SpotLight", js, fixed = TRUE), grepl("buildTerrainTransitions", js, fixed = TRUE))
   stopifnot(!grepl("function animate", js, fixed = TRUE))
+})
+
+test("every player receives a stable, visible temporary 3D marker colour", {
+  ids <- c("player-c", "player-a", "player-b", "player-a")
+  assignments <- test_env$combat_player_marker_assignments(ids)
+  stopifnot(identical(assignments$actor_id, c("player-a", "player-b", "player-c")))
+  stopifnot(length(unique(assignments$colour)) == 3L)
+  identity <- test_env$combat_player_marker_identity(ids, "player-b")
+  stopifnot(identical(identity$name, "Crimson"), identical(identity$colour, "#C6473A"))
+  map <- data.frame(
+    occupant_id = c("player-c", "enemy-1", "player-a", "player-b", "player-a"),
+    occupant_type = c("player", "enemy", "player", "player", "player"),
+    stringsAsFactors = FALSE
+  )
+  coloured <- test_env$apply_unique_player_3d_colours(map)
+  player_colours <- coloured$marker_3d_color[coloured$occupant_type == "player"]
+  stopifnot(length(unique(player_colours)) == 3L)
+  stopifnot(identical(player_colours[[2L]], "#2F80C3"))
+  player_combat <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","debug_combat_module.R"),warn=FALSE),collapse="\n")
+  control_combat <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition 2 Control","control_app","modules","control_live_combat_module.R"),warn=FALSE),collapse="\n")
+  stopifnot(grepl("Your 3D marker:", player_combat, fixed = TRUE))
+  stopifnot(all(vapply(c(player_combat, control_combat), function(src) grepl("apply_unique_player_3d_colours(render_df)", src, fixed = TRUE), logical(1))))
 })
 
 test("lean 3D renderer pins player posters to the tavern wall", {
@@ -2481,6 +2525,10 @@ test("combat refresh and turn advancement avoid duplicate database work", {
   stopifnot(!grepl("get_encounter_actors(encounter_id)",advance,fixed=TRUE))
   stopifnot(!grepl("set_combat_state(",advance,fixed=TRUE))
   stopifnot(grepl("ON CONFLICT(encounter_id,actor_type,actor_id)",movement,fixed=TRUE))
+  stopifnot(grepl("no unique or exclusion constraint",movement,fixed=TRUE))
+  stopifnot(grepl("UPDATE encounter_positions SET x=$4,y=$5",movement,fixed=TRUE))
+  migration <- paste(readLines(file.path(project_dir,"database","migrations","055_encounter_position_actor_unique.sql"),warn=FALSE),collapse="\n")
+  stopifnot(grepl("CREATE UNIQUE INDEX IF NOT EXISTS encounter_positions_actor_unique_idx",migration,fixed=TRUE))
   stopifnot(!grepl("get_session_overview(sid)",player_server,fixed=TRUE))
   stopifnot(!grepl("get_session_overview(sid)",control_server,fixed=TRUE))
   stopifnot(grepl("positions_tbl <- reactive({control_live_snapshot()$positions",control_server,fixed=TRUE))
@@ -2525,6 +2573,29 @@ test("Control attack previews cannot survive movement or reuse stale range state
   stopifnot(grepl("pending_attack(NULL)\n\n      opportunity_context <- opportunity_attack_context()",live,fixed=TRUE))
   stopifnot(grepl("range_ft = suppressWarnings(as.integer(atk$range_ft",live,fixed=TRUE))
   stopifnot(grepl("position_check <- validate_pending_attack_position(preview)",live,fixed=TRUE))
+})
+
+test("Control loads canonical glyph zone handlers before live combat", {
+  control_global <- paste(readLines(control_global_file, warn = FALSE), collapse = "\n")
+  live <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition 2 Control","control_app","modules","control_live_combat_module.R"),warn=FALSE),collapse="\n")
+  stopifnot(grepl('file.path(player_app_dir, "shared", "glyph_core.R")', control_global, fixed = TRUE))
+  stopifnot(grepl("trigger_rune_zone_entry", live, fixed = TRUE))
+  stopifnot(grepl("get_active_glyph_zones", live, fixed = TRUE))
+})
+
+test("Control refreshes encounter status after explicit combat mutations", {
+  live <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition 2 Control","control_app","modules","control_live_combat_module.R"),warn=FALSE),collapse="\n")
+  stopifnot(grepl("encounter_key <- reactiveVal(0L)", live, fixed = TRUE))
+  stopifnot(grepl("bump_encounter <- function()", live, fixed = TRUE))
+  stopifnot(grepl("bump_enemies()\n      bump_encounter()\n      bump_map_visual()", live, fixed = TRUE))
+  stopifnot(grepl("ctrl$refresh_key\n      encounter_key()\n      sid <- current_session_id()", live, fixed = TRUE))
+})
+
+test("Player waits for combat canvas replacement and retries map delivery", {
+  player_combat <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","debug_combat_module.R"),warn=FALSE),collapse="\n")
+  stopifnot(grepl("session$onFlushed(function()", player_combat, fixed = TRUE))
+  stopifnot(grepl("later::later(send_map_message, delay = 0.35)", player_combat, fixed = TRUE))
+  stopifnot(grepl("later::later(send_map_message, delay = 0.9)", player_combat, fixed = TRUE))
 })
 
 cat("\n", tests_run, " tests passed.\n", sep = "")

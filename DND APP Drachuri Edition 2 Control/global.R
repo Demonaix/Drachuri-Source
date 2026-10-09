@@ -40,6 +40,14 @@ source(
   file.path(player_app_dir, "shared", "session_db_core.R"),
   local = FALSE
 )
+# Live combat resolves rune/ward zones while actors move.  Control must load
+# the same canonical glyph implementation as Player; otherwise movement can
+# fail at runtime with `trigger_rune_zone_entry` (and related zone helpers)
+# missing from the packaged Control process.
+source(
+  file.path(player_app_dir, "shared", "glyph_core.R"),
+  local = FALSE
+)
 source(
   file.path(player_app_dir, "shared", "story_core.R"),
   local = FALSE

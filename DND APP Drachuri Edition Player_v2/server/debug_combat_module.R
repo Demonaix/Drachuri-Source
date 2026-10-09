@@ -584,7 +584,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       explicit<-suppressWarnings(as.integer(enemy$combat_profile$passive_perception%||%NA))
       if(!is.na(explicit))return(explicit)
       wis<-suppressWarnings(as.integer(enemy$abilities$wis%||%enemy$abilities$int%||%10L));if(is.na(wis))wis<-10L
-      10L+floor((wis-10L)/2L)
+      as.integer(10L + floor((wis - 10L) / 2L))
     }
     hide_context <- function(x=NULL,y=NULL) {
       actors<-encounter_actors_tbl();cid<-as.character(core$state$char_id%||%"");self<-actors[as.character(actors$actor_id)==cid,,drop=FALSE]
@@ -1886,14 +1886,18 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       if (!nzchar(actor_id) || !nzchar(actor_type)) return(NULL)
       
       if (identical(actor_type, "player")) {
+        # The Armoury updates the current Shiny character immediately, while
+        # its database autosave is deliberately debounced.  Prefer that local
+        # canonical state for this player so a newly readied weapon can be
+        # attacked with straight away instead of waiting for Supabase.
+        if (identical(as.character(core$state$char_id %||% ""), actor_id)) {
+          return(validate_character(core$state$char))
+        }
+
         db_char <- tryCatch(load_character_from_db(actor_id), error = function(e) NULL)
         
         if (!is.null(db_char)) {
           return(db_char)
-        }
-        
-        if (identical(as.character(core$state$char_id %||% ""), actor_id)) {
-          return(core$state$char)
         }
         
         return(NULL)
@@ -2736,6 +2740,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       enc <- encounter_tbl()
       combat <- combat_tbl()
       active <- active_actor_row()
+      actors <- encounter_actors_tbl()
       
       enc_name <- if (is.data.frame(enc) && nrow(enc) > 0) {
         as.character(enc$name[1] %||% paste("encounter", current_encounter_id()))
@@ -2754,13 +2759,24 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       } else {
         "No active actor"
       }
+
+      marker_identity <- NULL
+      if (is.data.frame(actors) && nrow(actors) && all(c("actor_id", "actor_type") %in% names(actors))) {
+        player_ids <- as.character(actors$actor_id[as.character(actors$actor_type) == "player"])
+        marker_identity <- combat_player_marker_identity(player_ids, core$state$char_id)
+      }
       
       div(
         class = "combat-compact-summary",
         tags$strong("⚔️ ", enc_name),
         tags$span(paste("Round", round_txt)),
         tags$span(paste("Turn:", active_name)),
-        tags$span(paste("Moved:", turn_move_ft(), "ft"))
+        tags$span(paste("Moved:", turn_move_ft(), "ft")),
+        if (!is.null(marker_identity)) tags$span(
+          class = "combat-marker-identity",
+          tags$i(style = paste0("background:", marker_identity$colour)),
+          paste("Your 3D marker:", marker_identity$name)
+        )
       )
     })
     
@@ -2787,7 +2803,14 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
     # Map UI
     # --------------------------------------------------
     output$map_ui <- renderUI({
-      map_ui_ready(TRUE)
+      # Switching modules or render modes replaces the canvas element.  Wait
+      # until Shiny has flushed that replacement before asking JavaScript to
+      # draw into it; an immediate one-shot message can otherwise leave both
+      # the 2D and Lean 3D canvases permanently blank.
+      session$onFlushed(function() {
+        map_ui_ready(TRUE)
+        bump_map_visual()
+      }, once = TRUE)
       mode<-input$map_render_mode%||%"2d"
       tags$div(
         id = session$ns("combat_3d_shell"),
@@ -2843,6 +2866,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
           data.frame()
         }
       )
+      render_df <- apply_unique_player_3d_colours(render_df)
       
       
       # Personal GLTF models remain disabled; the lean renderer uses procedural miniatures.
@@ -2932,7 +2956,7 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
       
       generation<-isolate(map_send_generation())+1L
       map_send_generation(generation)
-      later::later(function() {
+      send_map_message <- function() {
         if(!identical(isolate(map_send_generation()),generation))return()
         mode<-isolate(input$map_render_mode%||%"2d")
         session$sendCustomMessage(
@@ -2953,7 +2977,11 @@ debugCombatServer <- function(id, core, ctrl, add_log = NULL,
             )
           )
         )
-      }, delay = 0.1)
+      }
+      # Send after the new DOM node exists, then repeat once for slower
+      # browsers.  The generation guard prevents stale payloads winning.
+      later::later(send_map_message, delay = 0.35)
+      later::later(send_map_message, delay = 0.9)
     })
     
   

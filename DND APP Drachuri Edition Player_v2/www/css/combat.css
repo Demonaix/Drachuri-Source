@@ -121,6 +121,21 @@
   font-weight:800;
 }
 
+.combat-compact-summary .combat-marker-identity{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+}
+
+.combat-marker-identity i{
+  display:inline-block;
+  width:13px;
+  height:13px;
+  border:2px solid rgba(255,248,220,.9);
+  border-radius:50%;
+  box-shadow:0 0 0 1px rgba(61,43,25,.75),0 0 8px rgba(255,227,139,.45);
+}
+
 .combat-command-bar{
   display:grid;
   grid-template-columns:minmax(0,1fr) auto;

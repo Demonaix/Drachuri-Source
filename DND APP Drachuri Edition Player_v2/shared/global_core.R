@@ -12,6 +12,66 @@ APP_SAVE_VERSION <- 2
 
 `%||%` <- function(a, b) if (!is.null(a)) a else b
 
+# Temporary, deterministic combat-marker identities.  Sorting the active
+# player IDs means Player and Control independently assign the same distinct
+# colour to every adventurer without relying on the currently unreliable
+# marker customisation payload.
+combat_player_marker_palette <- function() {
+  c(
+    Azure = "#2F80C3",
+    Crimson = "#C6473A",
+    Emerald = "#3F995B",
+    Gold = "#D39B2F",
+    Violet = "#7B5AC6",
+    Teal = "#2B9C9C",
+    Rose = "#C65383",
+    Copper = "#B96B32",
+    Indigo = "#4B62B5",
+    Lime = "#76A83A",
+    Magenta = "#A94F9D",
+    Amber = "#D37824"
+  )
+}
+
+combat_player_marker_assignments <- function(actor_ids) {
+  ids <- sort(unique(trimws(as.character(actor_ids %||% character()))))
+  ids <- ids[!is.na(ids) & nzchar(ids)]
+  if (!length(ids)) {
+    return(data.frame(actor_id = character(), name = character(), colour = character()))
+  }
+  palette <- combat_player_marker_palette()
+  slot <- ((seq_along(ids) - 1L) %% length(palette)) + 1L
+  data.frame(
+    actor_id = ids,
+    name = unname(names(palette)[slot]),
+    colour = unname(palette[slot]),
+    stringsAsFactors = FALSE
+  )
+}
+
+combat_player_marker_identity <- function(actor_ids, actor_id) {
+  assignments <- combat_player_marker_assignments(actor_ids)
+  row <- assignments[assignments$actor_id == as.character(actor_id %||% ""), , drop = FALSE]
+  if (!nrow(row)) return(NULL)
+  list(name = row$name[[1L]], colour = row$colour[[1L]])
+}
+
+apply_unique_player_3d_colours <- function(render_df) {
+  if (!is.data.frame(render_df) || !nrow(render_df) ||
+      !all(c("occupant_id", "occupant_type") %in% names(render_df))) return(render_df)
+  if (!"marker_3d_color" %in% names(render_df)) render_df$marker_3d_color <- rep("", nrow(render_df))
+  player_rows <- which(
+    !is.na(render_df$occupant_id) & nzchar(as.character(render_df$occupant_id)) &
+      as.character(render_df$occupant_type) == "player"
+  )
+  if (!length(player_rows)) return(render_df)
+  assignments <- combat_player_marker_assignments(render_df$occupant_id[player_rows])
+  render_df$marker_3d_color[player_rows] <- assignments$colour[
+    match(as.character(render_df$occupant_id[player_rows]), assignments$actor_id)
+  ]
+  render_df
+}
+
 # Resolve equipment names to the shared illustrated thumbnail library.  The
 # catalogue contains legacy duplicates and DMs can create new gear, so this is
 # intentionally family based rather than a brittle one-file-per-database-row
