@@ -2542,6 +2542,12 @@ test("combat refresh and turn advancement avoid duplicate database work", {
   stopifnot(!grepl("get_session_overview(sid)",player_server,fixed=TRUE))
   stopifnot(!grepl("get_session_overview(sid)",control_server,fixed=TRUE))
   stopifnot(grepl("positions_tbl <- reactive({control_live_snapshot()$positions",control_server,fixed=TRUE))
+  stopifnot(grepl("control_live_snapshot_value <- reactiveVal(empty_player_live_snapshot())",control_server,fixed=TRUE))
+  stopifnot(grepl('signature_payload <- snapshot[names(snapshot) != "fetched_at"]',control_server,fixed=TRUE))
+  stopifnot(grepl("if (!identical(signature, isolate(control_live_snapshot_signature())))",control_server,fixed=TRUE))
+  direct_snapshot <- sub(".*control_live_snapshot <- reactive", "control_live_snapshot <- reactive", control_server)
+  direct_snapshot <- sub("session_tbl <- reactive.*", "", direct_snapshot)
+  stopifnot(!grepl("invalidateLater",direct_snapshot,fixed=TRUE))
 })
 
 test("equipment catalogue resolves to illustrated weapon and armour thumbnails", {

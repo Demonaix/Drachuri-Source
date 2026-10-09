@@ -1317,14 +1317,9 @@ limit 1
     
     active_actor_id <- reactive({
       combat <- combat_state_r()
-      cat("\n[active_actor_id] combat rows:", if (is.data.frame(combat)) nrow(combat) else "not df", "\n")
-      print(combat)
-      
       if (!is.data.frame(combat) || nrow(combat) == 0) return(NULL)
       
       aid <- as.character(combat$active_actor_id[1] %||% "")
-      cat("[active_actor_id] active_actor_id =", aid, "\n")
-      
       if (!nzchar(aid)) return(NULL)
       aid
     })

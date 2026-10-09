@@ -37,16 +37,42 @@ server_control <- function(input, output, session) {
     mid
   })
   
-  # One compact snapshot feeds every live Control consumer.  The previous
-  # shell also evaluated get_session_overview(), duplicating the session,
-  # position, combat and event queries whenever combat requested a refresh.
-  control_live_snapshot<-reactive({
+  # One compact snapshot feeds every live Control consumer. Polling happens
+  # here, but downstream HUDs and maps are invalidated only when the returned
+  # data actually changes. A timed reactive used to invalidate the entire
+  # combat UI every three seconds even when Supabase returned identical rows,
+  # which made selectors flash and continuously rebuilt the party HUD/map.
+  control_live_snapshot_value <- reactiveVal(empty_player_live_snapshot())
+  control_live_snapshot_signature <- reactiveVal(NULL)
+  refresh_control_live_snapshot <- function() {
+    sid <- current_session_id()
+    snapshot <- if (is.null(sid)) {
+      empty_player_live_snapshot()
+    } else {
+      tryCatch(
+        get_player_live_snapshot(sid, "__control__", encounter_id = NULL, event_limit = 20L),
+        error = function(e) {
+          message("Control live snapshot failed: ", e$message)
+          empty_player_live_snapshot()
+        }
+      )
+    }
+    # fetched_at records when the read happened, not a gameplay change. If it
+    # participates in equality every poll looks new and remounts the UI.
+    signature_payload <- snapshot[names(snapshot) != "fetched_at"]
+    signature <- serialize(signature_payload, NULL, version = 2)
+    if (!identical(signature, isolate(control_live_snapshot_signature()))) {
+      control_live_snapshot_signature(signature)
+      control_live_snapshot_value(snapshot)
+    }
+    invisible(snapshot)
+  }
+  observe({
     ctrl$refresh_key
     invalidateLater(3000, session)
-    sid<-current_session_id()
-    if(is.null(sid))return(empty_player_live_snapshot())
-    tryCatch(get_player_live_snapshot(sid,"__control__",encounter_id=NULL,event_limit=20L),error=function(e){message("Control live snapshot failed: ",e$message);empty_player_live_snapshot()})
+    refresh_control_live_snapshot()
   })
+  control_live_snapshot <- reactive(control_live_snapshot_value())
   session_tbl <- reactive({control_live_snapshot()$session%||%data.frame()})
   players_tbl <- reactive({
     control_live_snapshot()$players%||%data.frame()
