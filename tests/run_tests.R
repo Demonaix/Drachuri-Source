@@ -1217,6 +1217,16 @@ test("player combat prefers local equipment while Armoury autosave is pending", 
   stopifnot(local_pos > 0L, db_pos > 0L, local_pos < db_pos)
 })
 
+test("character autosave tolerates PostgreSQL timestamp round-trip precision", {
+  global_source <- paste(readLines(global_file, warn = FALSE), collapse = "\n")
+  stopifnot(grepl(
+    "abs(extract(epoch from (updated_at - $4::timestamptz))) < 0.001",
+    global_source,
+    fixed = TRUE
+  ))
+  stopifnot(!grepl('sql<-paste0(sql," AND updated_at = $4 RETURNING id")', global_source, fixed = TRUE))
+})
+
 test("combat Hide always returns integer passive perception values", {
   combat <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","debug_combat_module.R"),warn=FALSE),collapse="\n")
   stopifnot(grepl("as.integer(10L + floor((wis - 10L) / 2L))", combat, fixed=TRUE))

@@ -1892,7 +1892,14 @@ save_character_to_db <- function(char, char_id = NULL, expected_updated_at = NUL
         "
         params<-list(list(raw),name,char_id)
         if(!is.null(expected_updated_at)){
-          sql<-paste0(sql," AND updated_at = $4 RETURNING id")
+          # PostgreSQL keeps microsecond precision, but a POSIXct timestamp can
+          # move by one microsecond when RPostgres binds it back as a query
+          # parameter. Exact equality consequently rejected every legitimate
+          # autosave and left the Player app retrying indefinitely. Keep the
+          # optimistic lock while allowing only sub-millisecond round-trip
+          # drift; real character writes set updated_at to NOW() and remain
+          # distinguishable at this scale.
+          sql<-paste0(sql," AND abs(extract(epoch from (updated_at - $4::timestamptz))) < 0.001 RETURNING id")
           params<-c(params,list(expected_updated_at))
           updated<-DBI::dbGetQuery(con,sql,params=params)
           if(!nrow(updated))stop("Character changed on the server before this save completed.")
