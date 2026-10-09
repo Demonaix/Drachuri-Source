@@ -38,59 +38,14 @@ server_player <- function(input, output, session) {
     suppressWarnings(as.integer(mid))
   })
   
-  # ------------------------------------------------------------
-  # Shared session snapshot
-  # ------------------------------------------------------------
-  session_data <- reactive({
-    ctrl$refresh_key
-    sid <- current_session_id()
-    
-    if (is.null(sid) || is.na(sid) || sid < 1) {
-      return(list(
-        session = data.frame(),
-        players = data.frame(),
-        positions = data.frame(),
-        combat = data.frame(),
-        events = data.frame()
-      ))
-    }
-    
-    out <- tryCatch(
-      get_session_overview(sid),
-      error = function(e) {
-        list(
-          session = data.frame(),
-          players = data.frame(),
-          positions = data.frame(),
-          combat = data.frame(),
-          events = data.frame(),
-          error = e$message
-        )
-      }
-    )
-    
-    out
-  })
-  
-  session_tbl <- reactive({
-    session_data()$session %||% data.frame()
-  })
-  
-  players_tbl <- reactive({
-    session_data()$players %||% data.frame()
-  })
-  
-  positions_tbl <- reactive({
-    session_data()$positions %||% data.frame()
-  })
-  
-  combat_tbl <- reactive({
-    session_data()$combat %||% data.frame()
-  })
-  
-  events_tbl <- reactive({
-    session_data()$events %||% data.frame()
-  })
+  # These consumers resolve after live_snapshot is created below. Keeping them
+  # on that one snapshot avoids a second get_session_overview query burst after
+  # every movement, attack and turn change.
+  session_tbl <- reactive({live_snapshot()$session%||%data.frame()})
+  players_tbl <- reactive({live_snapshot()$players%||%data.frame()})
+  positions_tbl <- reactive({live_snapshot()$positions%||%data.frame()})
+  combat_tbl <- reactive({live_snapshot()$combat%||%data.frame()})
+  events_tbl <- reactive({live_snapshot()$events%||%data.frame()})
   
   # ------------------------------------------------------------
   # Top-level refresh control
@@ -121,10 +76,14 @@ server_player <- function(input, output, session) {
     core$state$active_tab <- as.character(input$main_tabs %||% "camp")
   }, ignoreInit = FALSE)
 
+  last_saved_character <- reactiveVal(NULL)
+  character_signature<-function(x)jsonlite::toJSON(validate_character(x),auto_unbox=TRUE,null="null",dataframe="rows",digits=NA)
+
   observe({
     invalidateLater(1800,session)
     cid<-as.character(core$state$char_id%||%"");if(!nzchar(cid)||isTRUE(core$state$offline_mode))return()
     update<-consume_character_refresh(cid);if(is.null(update)||!is.list(update$character))return()
+    last_saved_character(character_signature(update$character))
     core$state$char<-update$character;if(is.function(core$bump_char_rev))core$bump_char_rev()
     phase_messages<-as.character(update$messages[as.character(update$kinds)=="phase_resolution"]%||%character())
     other_messages<-as.character(update$messages[as.character(update$kinds)!="phase_resolution"]%||%character())
@@ -286,8 +245,35 @@ server_player <- function(input, output, session) {
   # A reactive character can invalidate even when its serialized content has
   # not changed. Remember the last successful payload so those invalidations do
   # not produce unnecessary database writes.
-  last_saved_character <- reactiveVal(NULL)
-  character_signature<-function(x)jsonlite::toJSON(validate_character(x),auto_unbox=TRUE,null="null",dataframe="rows",digits=NA)
+  # Control and other players can update this character while the app remains
+  # open (HP/Sindre refills, conditions, trades). Autosave used to check for a
+  # conflict only after a local edit, leaving the visible player state stale.
+  # Poll clean state and adopt a newer remote character without overwriting an
+  # unsaved local change.
+  observe({
+    invalidateLater(2500, session)
+    if (isTRUE(core$state$offline_mode) || !isTRUE(core$state$sync_enabled) || isTRUE(core$restoring())) return()
+    char_id <- isolate(core$state$char_id)
+    if (is.null(char_id) || !nzchar(as.character(char_id))) return()
+    current <- validate_character(isolate(core$state$char))
+    current_signature <- character_signature(current)
+    baseline <- isolate(last_saved_character())
+    if (is.null(baseline)) {
+      last_saved_character(current_signature)
+      baseline <- current_signature
+    }
+    # A local edit is waiting for the debounced autosave; let that path perform
+    # its optimistic conflict check rather than replacing the edit here.
+    if (!identical(current_signature, baseline)) return()
+    snapshot <- get_character_db_snapshot(char_id)
+    if (is.null(snapshot) || is.null(snapshot$character)) return()
+    remote_signature <- character_signature(snapshot$character)
+    if (identical(remote_signature, baseline)) return()
+    last_saved_character(remote_signature)
+    core$state$char <- snapshot$character
+    if (is.function(core$bump_char_rev)) core$bump_char_rev()
+    if (is.function(core$add_log)) try(core$add_log("Character updated by the DM.", toast = TRUE), silent = TRUE)
+  })
   
   observe({
     char <- debounced_char()

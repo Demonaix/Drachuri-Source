@@ -51,18 +51,23 @@ character3DTabUI <- function(id) {
       #%s .marker-aura.beacon{border:4px solid var(--aura-core);box-shadow:0 0 22px var(--aura-core),inset 0 0 18px var(--aura-core)} #%s .marker-aura.subtle{opacity:.48;filter:drop-shadow(0 0 5px var(--aura-core))}
     ", ns("marker_preview"),ns("marker_preview"),ns("marker_preview"),ns("marker_preview"),ns("marker_preview"),ns("marker_preview"),ns("marker_preview"),ns("marker_preview"),ns("marker_preview"),ns("marker_preview")))),
     tags$script(HTML(sprintf("(function(){
-      function value(id,fallback){var el=document.getElementById(id);return el&&el.value?el.value:fallback;}
+      function value(id,fallback){
+        if(window.Shiny&&Shiny.shinyapp&&Shiny.shinyapp.$inputValues){var shinyValue=Shiny.shinyapp.$inputValues[id];if(shinyValue!==undefined&&shinyValue!==null&&String(shinyValue)!=='')return String(shinyValue);}
+        var el=document.getElementById(id);if(!el)return fallback;
+        if(el.value!==undefined&&el.value!==null&&String(el.value)!=='')return String(el.value);
+        var child=el.querySelector('input');return child&&child.value?child.value:fallback;
+      }
       function syncMarkerPreview(){
         var root=document.getElementById('%s');if(!root)return;
         var token=root.querySelector('.marker-token'),aura=root.querySelector('.marker-aura');
         if(token){token.style.background=value('%s','#4b91b5');token.className='marker-token '+value('%s','circle');var symbol=token.querySelector('span'),raw=value('%s','').trim();if(symbol)symbol.textContent=raw.substring(0,2)||symbol.textContent;}
         if(aura){var colour=value('%s','#77ddff');aura.style.setProperty('--aura-core',colour);aura.style.setProperty('--aura-fade',colour+'66');aura.className='marker-aura '+value('%s','wisps');}
       }
-      Shiny.addCustomMessageHandler('%s',function(x){
+      Shiny.addCustomMessageHandler('%s',function(x){setTimeout(function(){
         var root=document.getElementById('%s');if(!root)return;var token=root.querySelector('.marker-token'),aura=root.querySelector('.marker-aura');
         if(token){token.style.background=x.tokenColour;token.className='marker-token '+x.shape;var symbol=token.querySelector('span');if(symbol)symbol.textContent=x.symbol;}
         if(aura){aura.style.setProperty('--aura-core',x.auraColour);aura.style.setProperty('--aura-fade',x.auraColour+'66');aura.className='marker-aura '+x.aura;}
-      });
+      },0);});
       document.addEventListener('input',syncMarkerPreview,true);document.addEventListener('change',syncMarkerPreview,true);setInterval(syncMarkerPreview,250);
     })();",ns("marker_preview"),ns("marker_2d_color"),ns("marker_2d_shape"),ns("marker_2d_symbol"),ns("marker_3d_color"),ns("marker_3d_style"),ns("marker_preview_update"),ns("marker_preview")))),
     div(
@@ -347,6 +352,8 @@ character3DTabServer <- function(id, state, restoring, add_log, char_rev = NULL)
         hair_color = input$hair_color %||% "#3b2416",
         eye_texture = input$eye_texture %||% "T_Eye_Brown.png"
       )
+
+      if (is.function(char_rev)) char_rev(char_rev() + 1L)
       
       add_log("Combat marker appearance saved.")
       

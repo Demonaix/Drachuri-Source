@@ -9,6 +9,19 @@ printf 'Current version: %s\nNew version: ' "$current"
 read -r version
 [ -n "$version" ] || { echo "No version entered; nothing was published."; read -r _; exit 1; }
 
+# People naturally type a major/minor release such as 0.5.  The updater and
+# release assets use three-part semantic versions, so make that 0.5.0 instead
+# of failing before any build output appears.
+case "$version" in
+  [0-9]*.[0-9]*)
+    case "$version" in
+      *.*.*) ;;
+      *) version="$version.0" ;;
+    esac
+    ;;
+esac
+printf 'Publishing as version: %s\n' "$version"
+
 case "$repository" in
   */*) ;;
   *) printf 'GitHub release repository (owner/repository): '; read -r repository ;;

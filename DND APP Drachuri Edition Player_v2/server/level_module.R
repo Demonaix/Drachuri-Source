@@ -324,7 +324,12 @@ levelTabServer <- function(id, state, restoring, add_log, char_rev) {
 
     output$character_level_heading_ui <- renderUI({
       char <- display_character_r()
-      total <- sum(vapply(classes_r(), function(entry) as.integer(entry$level %||% 0L), integer(1)))
+      stored_total <- suppressWarnings(as.integer(char$build$level %||% NA_integer_))
+      class_total <- sum(vapply(classes_r(), function(entry) as.integer(entry$level %||% 0L), integer(1)))
+      # build$level is the authoritative total written by character creation
+      # and level-up. Old saves can contain duplicated build$classes entries;
+      # summing those made a level-three character appear to be level six.
+      total <- if (!is.na(stored_total) && stored_total > 0L) stored_total else class_total
       p(
         class = "levelup-muted",
         paste0(as.character(char$meta$name %||% "Character"), " • Total level ", total)

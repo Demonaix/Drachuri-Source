@@ -356,6 +356,12 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
         nefretari = "nefretari.png"
       )
       result <- unname(portraits[key])
+      if ((!length(result) || is.na(result)) && nzchar(key)) {
+        canonical <- names(portraits)[vapply(names(portraits), function(candidate) {
+          identical(key, candidate) || startsWith(key, paste0(candidate, "_"))
+        }, logical(1))]
+        if (length(canonical)) result <- unname(portraits[[canonical[[1L]]]])
+      }
       if (length(result) && !is.na(result)) result else ""
     }
     enemy_portrait_file <- function(enemy_type, name="") {
@@ -493,6 +499,7 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
       )
       
       list(
+        name = as.character(ch$meta$name %||% ""),
         race = if (nzchar(race_txt)) race_txt else "—",
         class = if (nzchar(class_txt)) class_txt else "—",
         level = lvl_txt,
@@ -761,7 +768,8 @@ partyHudServer <- function(id, state, restoring = NULL, add_log = NULL,
         status_icons <- extra$status_icons %||% character(0)
         conditions <- strsplit(as.character(row$conditions[1] %||% ""), ",", fixed = TRUE)[[1L]]
         conditions <- conditions[nzchar(conditions)]
-        portrait_file <- if (identical(actor_type, "player")) party_portrait_file(nm) else if(identical(actor_type,"summon"))as.character(row$portrait_asset[1]%||%"summoned-beast.png")else enemy_portrait_file(row$enemy_type[1]%||%"",nm)
+        portrait_name <- as.character(extra$name %||% nm)
+        portrait_file <- if (identical(actor_type, "player")) party_portrait_file(portrait_name) else if(identical(actor_type,"summon"))as.character(row$portrait_asset[1]%||%"summoned-beast.png")else enemy_portrait_file(row$enemy_type[1]%||%"",nm)
         portrait_src <- if(identical(actor_type,"enemy"))paste0(sub("/$", "", enemy_portrait_base),"/",portrait_file)else paste0(sub("/$", "", portrait_base), "/", portrait_file)
         portrait_initial <- toupper(substr(trimws(nm), 1L, 1L))
         if (!nzchar(portrait_initial)) portrait_initial <- "?"

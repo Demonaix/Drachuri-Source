@@ -77,7 +77,8 @@ load_functions(
   c(
     "calculate_hp_damage", "next_combat_turn",
     "empty_player_live_snapshot", "filter_player_snapshot_visibility", "get_player_live_snapshot", "session_notification_dedupe_key",
-    "build_snapshot_encounter_actors", "get_encounter_actors", "start_encounter_combat"
+    "build_snapshot_encounter_actors", "get_encounter_actors", "start_encounter_combat",
+    "session_watch_slots"
   )
 )
 load_functions(
@@ -529,6 +530,8 @@ test("player snapshots conceal exploration and hidden enemies", {
   base<-list(enemies=data.frame(enemy_uuid=c("e1","e2"),name=c("Seen","Hidden")),positions=data.frame(actor_type=c("enemy","enemy","player"),actor_id=c("e1","e2","p1")),effects=data.frame(target_actor_type="enemy",target_actor_id="e2",payload=I(list(list(condition="hidden")))),events=data.frame(actor_id=c("e1","e2"),target_id=c("p1","p1")),combat=data.frame(phase="combat"))
   filtered<-test_env$filter_player_snapshot_visibility(base);stopifnot(identical(as.character(filtered$enemies$enemy_uuid),"e1"),!"e2"%in%filtered$positions$actor_id)
   base$combat$phase<-"exploration";explore<-test_env$filter_player_snapshot_visibility(base);stopifnot(nrow(explore$enemies)==0L,!any(explore$positions$actor_type=="enemy"))
+  base$combat$phase<-"combat";base$effects<-data.frame(target_actor_type=NA_character_,target_actor_id=NA_character_,payload=I(list(list(name="Calling Rain"))))
+  area<-test_env$filter_player_snapshot_visibility(base);stopifnot(nrow(area$effects)==1L,nrow(area$enemies)==2L)
 })
 
 test("live session refresh uses one connection and selects the current player", {
@@ -1241,12 +1244,37 @@ test("Continue Adventure reports load and validation failures", {
 test("Control safely manages player resources, conditions and card decks", {
   players <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition 2 Control","control_app","modules","control_players_module.R"),warn=FALSE),collapse="\n")
   control_server <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition 2 Control","server.R"),warn=FALSE),collapse="\n")
+  control_global <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition 2 Control","global.R"),warn=FALSE),collapse="\n")
+  player_server <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server.R"),warn=FALSE),collapse="\n")
   hud <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","party_hud_module.R"),warn=FALSE),collapse="\n")
   stopifnot(all(vapply(c("Refill HP","Refill Sindre","Refill Both","Add Status","Remove Status"),grepl,logical(1),x=players,fixed=TRUE)))
   stopifnot(grepl("set_session_hp(sid,cid",players,fixed=TRUE))
   stopifnot(grepl("status_condition_definitions()",players,fixed=TRUE))
   stopifnot(grepl('card_asset_base="player-assets/assets"',control_server,fixed=TRUE))
+  stopifnot(grepl('file.path(player_app_dir, "plug", "skills_data.R")',control_global,fixed=TRUE))
   stopifnot(grepl("deck<-tryCatch(build_character_deck(cid)",hud,fixed=TRUE))
+  stopifnot(grepl("invalidateLater(2500, session)",player_server,fixed=TRUE))
+  stopifnot(grepl('core$add_log("Character updated by the DM."',player_server,fixed=TRUE))
+  stopifnot(grepl('name = as.character(ch$meta$name',hud,fixed=TRUE))
+})
+
+test("character level display trusts the canonical stored total", {
+  level_source <- paste(readLines(level_file,warn=FALSE),collapse="\n")
+  stopifnot(grepl("stored_total <- suppressWarnings(as.integer(char$build$level",level_source,fixed=TRUE))
+  stopifnot(grepl("stored_total else class_total",level_source,fixed=TRUE))
+})
+
+test("uploaded storyboards install against the currently revealed story id", {
+  core <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","shared","story_core.R"),warn=FALSE),collapse="\n")
+  module <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","story_module.R"),warn=FALSE),collapse="\n")
+  mac_launcher <- paste(readLines(file.path(project_dir,"installer","mac","Drachuri Player"),warn=FALSE),collapse="\n")
+  windows_launcher <- paste(readLines(file.path(project_dir,"installer","player","Drachuri Player.cmd"),warn=FALSE),collapse="\n")
+  stopifnot(grepl("storyboard_id_override=NULL",core,fixed=TRUE))
+  stopifnot(grepl("storyboard_id_override=expected",module,fixed=TRUE))
+  stopifnot(grepl('export DRACHURI_DATA_DIR="$support_dir"',mac_launcher,fixed=TRUE))
+  stopifnot(grepl('set "DRACHURI_DATA_DIR=%LOCALAPPDATA%\\Drachuri Player"',windows_launcher,fixed=TRUE))
+  stopifnot(grepl("Storyboard asset could not be installed",core,fixed=TRUE))
+  stopifnot(grepl("Storyboard installed without required picture",core,fixed=TRUE))
 })
 
 test("level up requires and stores a subclass choice", {
@@ -2286,6 +2314,23 @@ test("blood inventory actions initialise and large-screen player UI remains usab
   stopifnot(grepl('max-width:none', player_ui, fixed = TRUE))
 })
 
+test("combat marker colour and aura changes reach live 3D tokens", {
+  markers <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition Player_v2", "server", "character_3d_module.R"), warn = FALSE), collapse = "\n")
+  player_combat <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition Player_v2", "www", "js", "combat3d.js"), warn = FALSE), collapse = "\n")
+  control_combat <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition 2 Control", "www", "js", "combat3d.js"), warn = FALSE), collapse = "\n")
+  control_server <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition 2 Control", "control_app", "modules", "control_live_combat_module.R"), warn = FALSE), collapse = "\n")
+  player_server <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition Player_v2", "server", "debug_combat_module.R"), warn = FALSE), collapse = "\n")
+
+  stopifnot(grepl("Shiny.shinyapp.$inputValues", markers, fixed = TRUE))
+  stopifnot(grepl("char_rev(char_rev() + 1L)", markers, fixed = TRUE))
+  stopifnot(grepl("if (is_current_player) core$state$char", player_server, fixed = TRUE))
+  stopifnot(grepl("marker_3d_color", control_server, fixed = TRUE))
+  stopifnot(grepl("applyTokenMarkerAppearance(token, tile)", player_combat, fixed = TRUE))
+  stopifnot(grepl("applyTokenMarkerAppearance(token, t)", player_combat, fixed = TRUE))
+  stopifnot(grepl("applyTokenMarkerAppearance(token, tile)", control_combat, fixed = TRUE))
+  stopifnot(grepl("applyTokenMarkerAppearance(token, t)", control_combat, fixed = TRUE))
+})
+
 test("blood stock, card sound preference and nested module sizing remain player friendly", {
   blood <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition Player_v2", "server", "blood_module.R"), warn = FALSE), collapse = "\n")
   control_inventory <- paste(readLines(file.path(project_dir, "DND APP Drachuri Edition 2 Control", "control_app", "modules", "control_inventory_module.R"), warn = FALSE), collapse = "\n")
@@ -2318,7 +2363,18 @@ test("shared chests use a persistent Sleight of Hand lockpicking flow", {
   stopifnot(grepl("character_skill_cards(char,\"sleight of hand\")",chest,fixed=TRUE),grepl("tolerance_bonus",chest,fixed=TRUE),grepl("lockpicks_remaining",shared,fixed=TRUE),grepl("no usable lockpicks",shared,fixed=TRUE))
   stopifnot(grepl("Chest Generator",control,fixed=TRUE),grepl("Reveal Chest",control,fixed=TRUE))
   stopifnot(grepl("remaining<=0L",shared,fixed=TRUE),grepl("confirm_remove_chest",control,fixed=TRUE),grepl("confirm_close_merchant",control,fixed=TRUE))
+  stopifnot(grepl("COALESCE(c.lock_kind,'chest')='chest'",shared,fixed=TRUE))
+  stopifnot(grepl('if(kind!="chest")return(tagList(h3(tools::toTitleCase(noun)," Open")',chest,fixed=TRUE))
   stopifnot(grepl('source("server/chest_module.R")',player_ui,fixed=TRUE),grepl('chestUI("chests")',player_ui,fixed=TRUE),grepl('chestServer("chests",core$state)',player_server,fixed=TRUE))
+})
+
+test("unlocked doors and gates override blocking wall terrain", {
+  player_map<-paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","combat_map_logic.R"),warn=FALSE),collapse="\n")
+  control_map<-paste(readLines(file.path(project_dir,"DND APP Drachuri Edition 2 Control","server","combat_map_logic.R"),warn=FALSE),collapse="\n")
+  expected<-"CASE WHEN o.object_type IN ('door','gate') THEN COALESCE(c.locked,TRUE) ELSE (t.blocks_movement OR o.object_type='chest') END AS effective_blocks_movement"
+  sight<-"CASE WHEN o.object_type IN ('door','gate') AND COALESCE(c.locked,FALSE)=FALSE THEN FALSE"
+  stopifnot(grepl(expected,player_map,fixed=TRUE),grepl(expected,control_map,fixed=TRUE))
+  stopifnot(grepl(sight,player_map,fixed=TRUE),grepl(sight,control_map,fixed=TRUE))
 })
 
 test("enemy pools provide parchment portraits in the combat HUD", {
@@ -2385,6 +2441,51 @@ test("polled session state reads do not write-lock shared live rows", {
   stopifnot(!grepl("DO UPDATE SET session_id=EXCLUDED.session_id",supplies_helper,fixed=TRUE))
 })
 
+test("rest allocations do not queue the whole party or trigger polling autosaves", {
+  shared <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","shared","session_db_core.R"),warn=FALSE),collapse="\n")
+  rest <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","rest_module.R"),warn=FALSE),collapse="\n")
+  player_server <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server.R"),warn=FALSE),collapse="\n")
+  allocation <- sub(".*allocate_session_phase_time <- function", "allocate_session_phase_time <- function", shared)
+  allocation <- sub("set_phase_watches_open <- function.*", "", allocation)
+  stopifnot(grepl("pg_advisory_xact_lock",allocation,fixed=TRUE))
+  stopifnot(grepl("FOR SHARE",allocation,fixed=TRUE))
+  stopifnot(!grepl("FOR UPDATE",allocation,fixed=TRUE))
+  stopifnot(grepl("shared_supplies<-reactiveVal(NULL)",rest,fixed=TRUE))
+  stopifnot(!grepl("if(!identical(as.integer(x$meta$day",rest,fixed=TRUE))
+  stopifnot(grepl("last_saved_character(character_signature(update$character))",player_server,fixed=TRUE))
+})
+
+test("watch rotas scale to party size and cover the whole rest phase", {
+  two_players <- test_env$session_watch_slots(12, 2L)
+  three_players <- test_env$session_watch_slots(12, 3L)
+  four_players <- test_env$session_watch_slots(12, 4L)
+  stopifnot(identical(two_players$hours, c(6, 6)))
+  stopifnot(identical(three_players$hours, c(4, 4, 4)))
+  stopifnot(identical(four_players$hours, c(3, 3, 3, 3)))
+  stopifnot(two_players$start[[1L]] == 0, tail(two_players$end, 1L) == 12)
+  stopifnot(all(head(three_players$end, -1L) == tail(three_players$start, -1L)))
+  rest <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server","rest_module.R"),warn=FALSE),collapse="\n")
+  stopifnot(grepl("watch length adapts", rest, fixed = TRUE))
+  stopifnot(grepl("session_watch_slots", rest, fixed = TRUE))
+})
+
+test("combat refresh and turn advancement avoid duplicate database work", {
+  shared <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","shared","session_db_core.R"),warn=FALSE),collapse="\n")
+  player_server <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition Player_v2","server.R"),warn=FALSE),collapse="\n")
+  control_server <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition 2 Control","server.R"),warn=FALSE),collapse="\n")
+  advance <- sub(".*advance_turn <- function", "advance_turn <- function", shared)
+  advance <- sub("end_encounter_combat <- function.*", "", advance)
+  movement <- sub(".*upsert_encounter_actor_position <- function", "upsert_encounter_actor_position <- function", shared)
+  movement <- sub("get_encounter_positions <- function.*", "", movement)
+  stopifnot(grepl("pg_advisory_xact_lock",advance,fixed=TRUE))
+  stopifnot(!grepl("get_encounter_actors(encounter_id)",advance,fixed=TRUE))
+  stopifnot(!grepl("set_combat_state(",advance,fixed=TRUE))
+  stopifnot(grepl("ON CONFLICT(encounter_id,actor_type,actor_id)",movement,fixed=TRUE))
+  stopifnot(!grepl("get_session_overview(sid)",player_server,fixed=TRUE))
+  stopifnot(!grepl("get_session_overview(sid)",control_server,fixed=TRUE))
+  stopifnot(grepl("positions_tbl <- reactive({control_live_snapshot()$positions",control_server,fixed=TRUE))
+})
+
 test("equipment catalogue resolves to illustrated weapon and armour thumbnails", {
   asset_root <- file.path(project_dir,"DND APP Drachuri Edition Player_v2","www","assets","equipment-thumbnails")
   expected <- file.path(asset_root,c(
@@ -2414,6 +2515,16 @@ test("player HUD exposes the shared Annwn wall map as a fullscreen overlay", {
   stopifnot(grepl('worldMapUI("worldmap")',ui,fixed=TRUE))
   stopifnot(grepl('worldMapServer("worldmap")',server,fixed=TRUE))
   stopifnot(grepl("worldmap-wrap",combat_css,fixed=TRUE))
+})
+
+test("Control attack previews cannot survive movement or reuse stale range state", {
+  live <- paste(readLines(file.path(project_dir,"DND APP Drachuri Edition 2 Control","control_app","modules","control_live_combat_module.R"),warn=FALSE),collapse="\n")
+  stopifnot(grepl("validate_pending_attack_position <- function(preview)",live,fixed=TRUE))
+  stopifnot(grepl("The attacker or target moved after this roll",live,fixed=TRUE))
+  stopifnot(grepl("pending_attack(NULL)\n      \n      attacker_id <- active_actor_id()",live,fixed=TRUE))
+  stopifnot(grepl("pending_attack(NULL)\n\n      opportunity_context <- opportunity_attack_context()",live,fixed=TRUE))
+  stopifnot(grepl("range_ft = suppressWarnings(as.integer(atk$range_ft",live,fixed=TRUE))
+  stopifnot(grepl("position_check <- validate_pending_attack_position(preview)",live,fixed=TRUE))
 })
 
 cat("\n", tests_run, " tests passed.\n", sep = "")

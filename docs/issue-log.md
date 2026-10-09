@@ -12,6 +12,71 @@ This is the authoritative issue register for the player and control apps. The or
 
 ## Active issues
 
+### COMBAT-002 — Area effect broke live snapshots and falsely removed active players
+
+- **Status:** Fixed — awaiting installed app retest
+- **Priority:** Critical
+- **Area:** Player and Control live combat snapshots
+- **Reported:** 2026-10-08
+- **Original report:** End Turn appeared to do nothing and Control reported no active players, leaving the session unusable even after refresh.
+- **Cause:** Calling Rain correctly created an area effect without a target actor. The visibility filter compared the resulting SQL `NULL` as though it were a true/false value, raising `missing value where TRUE/FALSE needed` on every Player and Control refresh.
+- **Immediate recovery:** Live encounter 24's Calling Rain row was normalized to target type `area` without removing or changing the effect. Read-only verification returned encounter, combat, effect and all five active players for both Player and Control snapshots.
+- **Permanent fix:** Snapshot filtering now safely accepts untargeted area effects and missing phase/target fields.
+- **Retest:** Reload Player and Control during Calling Rain, confirm five players remain visible, then End Turn and confirm initiative advances.
+
+### COMBAT-003 — Door, movement, hide and turn-flow test findings
+
+- **Status:** Open
+- **Priority:** High
+- **Area:** Combat map and standard actions
+- **Reported:** 2026-10-08
+- **Original report:** A door was identified as a chest; an open door remained impassable; movement was limited outside combat; attempting Hide crashed; End Turn showed confirmation but appeared not to advance.
+- **Known evidence:** Hide crashes because `hide_context()` requires integer values but receives at least one double. End Turn was tested while COMBAT-002 prevented all live snapshot refreshes, so turn progression must be retested after that blocker is cleared before changing turn logic.
+
+### COMBAT-004 — NPC attack retained stale range state after movement
+
+- **Status:** Fixed — awaiting Control retest
+- **Priority:** Critical
+- **Area:** Control live combat / attack confirmation
+- **Reported:** 2026-10-08
+- **Observed:** An NPC spear attempt correctly reported the target outside its 30 ft range. After the NPC moved adjacent, the old warning/attack state remained usable and the DM resorted to direct damage override.
+- **Live-data audit:** The override applied 5 current-HP damage to Dewydd Troell Test (28 → 23). His stored maximum remains 28; no character maximum was mutated.
+- **Fix:** Starting any attack now clears the previous pending preview. Every preview records the attacker and target coordinates plus the attack ranges. Apply Result refreshes positions from the database and refuses the result if either actor moved, the current range is invalid, or line of sight changed; a fresh roll is then required.
+- **Retest:** Attempt a spear attack outside range, move the NPC adjacent, and attack again. Confirm the new roll opens normally. Then move either actor while a confirmation is open and verify Apply Result closes without damage and asks for a fresh roll.
+
+### COMBAT-005 — Door locks leaked into Chests and remained impassable when open
+
+- **Status:** Fixed — awaiting Player retest
+- **Priority:** Critical
+- **Area:** Player chests / map objects / movement
+- **Reported:** 2026-10-08
+- **Cause:** Doors, gates, and chests share the same persistent lock record so they can use one lockpicking engine. The player chest query did not filter the record's `lock_kind`, allowing door invitations to appear as chests. Generated doors can also occupy wall terrain; the movement query continued applying that underlying wall block even after the door lock opened.
+- **Fix:** Player chest invitations now include only genuine chest records. Direct map interaction still uses the shared lockpicking engine but labels the object as a Door or Gate and shows an open-object result rather than loot. An unlocked door/gate now overrides underlying movement and sight blocking in both Player and Control map queries; a locked one remains blocking.
+- **Live-data audit:** Session 11 contains four door lock records and one genuine Weathered Strongbox. Door (5, 6) is unlocked; the strongbox is the only record intended for the party chest list. Existing door invitation rows are harmless and become invisible after reload.
+- **Retest:** Reload Player, open Chests, and confirm only Weathered Strongbox appears. Stand next to a locked door, pick it, close the lock window, and move through its tile. Confirm unopened doors remain impassable.
+- **Retest:** Recheck End Turn first. Then separately reproduce object identification, opening/traversal, exploration movement and Hide with encounter/map IDs recorded.
+
+### SYNC-001 — Control Sindre and status changes may appear delayed outside combat
+
+- **Status:** Deferred
+- **Priority:** Medium
+- **Area:** Control / player live character refresh
+- **Reported:** 2026-10-08
+- **Original report:** Control HP refill updates promptly, while Sindre refill and adding a status can appear not to work until later or after a refresh. Both eventually appeared. Combat status changes update normally.
+- **Decision:** Do not add more polling yet. The current guarded character refresh deliberately avoids overwriting pending player edits, and increasing overlapping reactive polling risks flicker or stale-state races.
+- **Retest:** Outside combat, leave Control and one player open, refill Sindre and add a status, then record the exact delay without manually refreshing. Compare with the same actions during combat before changing code.
+
+### STORY-001 — Picture storyboards report installed but remain unavailable
+
+- **Status:** Fixed — awaiting installed Player retest
+- **Priority:** High
+- **Area:** Player storyboard import / installed app storage
+- **Reported:** 2026-10-08
+- **Original report:** “Blacklyn Lands” uploaded successfully on the player screen but continued to say the DM storyboard was not installed. A simple New Adventure storyboard worked.
+- **Cause:** The Mac Player launcher did not set `DRACHURI_DATA_DIR`. The importer therefore targeted the bundled `/Applications/Drachuri Player.app/.../storyboards` directory. Bundled storyboards could be read, but uploaded manifests and pictures could not be written there. Failed `file.copy()` calls were not checked, so the UI falsely reported success.
+- **Fix:** Mac and Windows launchers now point storyboard storage at the writable per-user Drachuri Player data folder. The installed runner supplies the same fallback. Storyboard storage probes writability, falls back safely, verifies every copied asset and rejects incomplete picture bundles instead of showing a false success message.
+- **Retest:** Reveal Blacklyn Lands, upload its ZIP in an installed Player app, confirm all three illustrated scenes display, close/reopen the app, and confirm the storyboard persists.
+
 ### CTRL-001 — Control dropdown selections flash or revert
 
 - **Status:** Fixed — awaiting real control-app retest

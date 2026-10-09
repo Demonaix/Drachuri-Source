@@ -792,6 +792,40 @@ function spawnCombatTokens(tiles) {
   });
 }
 
+function applyTokenMarkerAppearance(token, tile) {
+  if (!token || !token.userData) return;
+  const isPlayer = String(tile.occupant_type || token.userData.occupant_type || "") === "player";
+  if (!isPlayer) return;
+
+  const rawColour = String(tile.marker_3d_color || token.userData.marker_3d_color || "#77ddff");
+  const colour = /^#[0-9a-f]{6}$/i.test(rawColour) ? parseInt(rawColour.slice(1), 16) : 0x77ddff;
+  const style = ["wisps", "beacon", "subtle"].includes(String(tile.marker_3d_style))
+    ? String(tile.marker_3d_style)
+    : String(token.userData.marker_3d_style || "wisps");
+
+  [token.userData.beamGroup, token.userData.spiralGroup, token.userData.particleGroup, token.userData.glowOrb].forEach(part => {
+    if (!part) return;
+    part.traverse(obj => {
+      const materials = Array.isArray(obj.material) ? obj.material : (obj.material ? [obj.material] : []);
+      materials.forEach(material => { if (material.color) material.color.setHex(colour); });
+    });
+  });
+
+  if (token.userData.beamGroup) token.userData.beamGroup.visible = style !== "subtle";
+  if (token.userData.spiralGroup) token.userData.spiralGroup.visible = style === "wisps";
+  if (token.userData.particleGroup) token.userData.particleGroup.visible = style === "wisps";
+  if (token.userData.glowOrb) {
+    token.userData.glowOrb.visible = true;
+    token.userData.glowOrb.material.opacity = style === "subtle" ? 0.32 : 0.68;
+  }
+  if (token.userData.wispLight) {
+    token.userData.wispLight.color.setHex(colour);
+    token.userData.wispLight.intensity = style === "subtle" ? 0.16 : (isTruthy(tile.is_active_actor) ? 0.85 : 0.34);
+  }
+  token.userData.marker_3d_color = rawColour;
+  token.userData.marker_3d_style = style;
+}
+
 function updateCombatTokens(tiles) {
   const state = window.combat3dState;
   const seen = {};
@@ -833,6 +867,7 @@ function updateCombatTokens(tiles) {
     token.userData.is_active_actor = isTruthy(tile.is_active_actor);
     token.userData.x = Number(tile.x);
     token.userData.y = Number(tile.y);
+    applyTokenMarkerAppearance(token, tile);
 
     if (token.userData.hitbox) {
       token.userData.hitbox.userData = {
@@ -1040,6 +1075,8 @@ hitbox.position.y = 0.68;
     wispLight: light
   };
 
+  applyTokenMarkerAppearance(token, tile);
+
   if (isPlayer) {
     addCharacterModelToToken(token, tile);
   }
@@ -1201,9 +1238,7 @@ async function addCharacterModelToToken(token, tile) {
   token.add(characterGroup);
   token.userData.characterModel = characterGroup;
 
-  if (token.userData.beamGroup) token.userData.beamGroup.visible = false;
-  if (token.userData.spiralGroup) token.userData.spiralGroup.visible = false;
-  if (token.userData.glowOrb) token.userData.glowOrb.visible = false;
+  applyTokenMarkerAppearance(token, tile);
 }
 
 function loadCombatGLTFPromise(path) {
@@ -1940,6 +1975,7 @@ Shiny.addCustomMessageHandler("combat3d-update-tokens", function(message) {
     token.userData.is_active_actor = isTruthy(t.is_active_actor);
     token.userData.x = Number(t.x);
     token.userData.y = Number(t.y);
+    applyTokenMarkerAppearance(token, t);
 
     if (token.userData.hitbox) {
       token.userData.hitbox.userData = {

@@ -37,52 +37,9 @@ server_control <- function(input, output, session) {
     mid
   })
   
-  # ------------------------------------------------------------
-  # Shared session snapshot
-  # ------------------------------------------------------------
-  session_data <- reactive({
-    ctrl$refresh_key
-    
-    sid <- current_session_id()
-    
-    if (is.null(sid) || is.na(sid) || sid < 1) {
-      return(list(
-        session = data.frame(),
-        players = data.frame(),
-        positions = data.frame(),
-        combat = data.frame(),
-        events = data.frame()
-      ))
-    }
-    
-    t0 <- Sys.time()
-    
-    out <- tryCatch(
-      get_session_overview(sid),
-      error = function(e) {
-        list(
-          session = data.frame(),
-          players = data.frame(),
-          positions = data.frame(),
-          combat = data.frame(),
-          events = data.frame(),
-          error = e$message
-        )
-      }
-    )
-    
-    message("get_session_overview took: ", round(as.numeric(Sys.time() - t0, units = "secs"), 3), " sec")
-    
-    out
-  })
-  
-  
-  session_tbl <- reactive({
-    
-    session_data()$session %||% data.frame()
-    
-  })
-  
+  # One compact snapshot feeds every live Control consumer.  The previous
+  # shell also evaluated get_session_overview(), duplicating the session,
+  # position, combat and event queries whenever combat requested a refresh.
   control_live_snapshot<-reactive({
     ctrl$refresh_key
     invalidateLater(3000, session)
@@ -90,27 +47,13 @@ server_control <- function(input, output, session) {
     if(is.null(sid))return(empty_player_live_snapshot())
     tryCatch(get_player_live_snapshot(sid,"__control__",encounter_id=NULL,event_limit=20L),error=function(e){message("Control live snapshot failed: ",e$message);empty_player_live_snapshot()})
   })
+  session_tbl <- reactive({control_live_snapshot()$session%||%data.frame()})
   players_tbl <- reactive({
     control_live_snapshot()$players%||%data.frame()
   })
-  
-  positions_tbl <- reactive({
-    
-    session_data()$positions %||% data.frame()
-    
-  })
-  
-  combat_tbl <- reactive({
-    
-    session_data()$combat %||% data.frame()
-    
-  })
-  
-  events_tbl <- reactive({
-    
-    session_data()$events %||% data.frame()
-    
-  })
+  positions_tbl <- reactive({control_live_snapshot()$positions%||%data.frame()})
+  combat_tbl <- reactive({control_live_snapshot()$combat%||%data.frame()})
+  events_tbl <- reactive({control_live_snapshot()$events%||%data.frame()})
   control_hud_state<-reactiveValues(active_session_id=NULL,active_encounter_id=NULL,char_id="__control__",offline_mode=FALSE)
   observe({control_hud_state$active_session_id<-current_session_id();s<-control_live_snapshot()$session%||%data.frame();eid<-if(nrow(s))suppressWarnings(as.integer(s$active_encounter_id[[1L]]%||%NA))else NA_integer_;control_hud_state$active_encounter_id<-if(is.na(eid))NULL else eid})
   partyHudServer("control_partyhud",control_hud_state,live_snapshot=control_live_snapshot,

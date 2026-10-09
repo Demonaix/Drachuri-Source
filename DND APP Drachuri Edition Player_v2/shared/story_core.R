@@ -7,7 +7,16 @@ storyboard_root <- function(app_root=NULL) {
   if(!nzchar(as.character(app_root[[1L]]))){wd<-getwd();app_root<-if(is.null(wd)||!length(wd))tempdir()else wd}
   path<-file.path(as.character(app_root[[1L]]),"storyboards")
   if(!dir.exists(path))dir.create(path,recursive=TRUE,showWarnings=FALSE)
-  if(!dir.exists(path)){path<-file.path(tempdir(),"Drachuri","storyboards");dir.create(path,recursive=TRUE,showWarnings=FALSE)}
+  writable<-FALSE
+  if(dir.exists(path)){
+    probe<-tempfile(".drachuri-write-test-",tmpdir=path)
+    writable<-isTRUE(tryCatch({ok<-file.create(probe);if(ok)unlink(probe);ok},error=function(e)FALSE))
+  }
+  if(!writable){
+    fallback_root<-if(.Platform$OS.type=="windows")file.path(Sys.getenv("LOCALAPPDATA",tempdir()),"Drachuri Player")else file.path(path.expand("~/Library/Application Support"),"Drachuri Player")
+    path<-file.path(fallback_root,"storyboards");dir.create(path,recursive=TRUE,showWarnings=FALSE)
+    if(!dir.exists(path)||file.access(path,2L)!=0L)stop("The storyboard storage folder is not writable: ",path)
+  }
   normalizePath(path,mustWork=FALSE)
 }
 
@@ -32,8 +41,8 @@ storyboard_copy_image <- function(storyboard_id,datapath,filename,app_root=NULL)
   if(!file.exists(datapath))return("");ext<-tolower(tools::file_ext(filename));if(!ext%in%c("png","jpg","jpeg","gif","webp"))stop("Storyboard pictures must be PNG, JPG, GIF, or WebP files.");assets<-file.path(storyboard_path(storyboard_id,app_root),"assets");dir.create(assets,recursive=TRUE,showWarnings=FALSE);name<-paste0(format(Sys.time(),"%Y%m%d%H%M%S"),"-",sample.int(999999L,1L),".",ext);if(!file.copy(datapath,file.path(assets,name),overwrite=TRUE))stop("Picture could not be copied.");file.path("assets",name)
 }
 
-storyboard_import_zip <- function(zip_path,app_root=NULL) {
-  listing<-utils::unzip(zip_path,list=TRUE)$Name;if(!length(listing)||!"manifest.json"%in%listing)stop("This bundle has no manifest.json file.");if(any(grepl("(^/|^\\\\|(^|/)\\.\\.(/|$))",listing)))stop("Unsafe paths were found in this storyboard bundle.");tmp<-tempfile("storyboard-import-");dir.create(tmp);on.exit(unlink(tmp,recursive=TRUE,force=TRUE),add=TRUE);utils::unzip(zip_path,exdir=tmp);manifest<-tryCatch(jsonlite::fromJSON(file.path(tmp,"manifest.json"),simplifyVector=FALSE),error=function(e)NULL);if(is.null(manifest)||!length(manifest$slides%||%list()))stop("The storyboard manifest is invalid or has no slides.");manifest$storyboard_id<-story_safe_id(manifest$storyboard_id%||%manifest$title);dest<-storyboard_path(manifest$storyboard_id,app_root);if(dir.exists(dest))unlink(dest,recursive=TRUE,force=TRUE);dir.create(dest,recursive=TRUE);files<-list.files(tmp,recursive=TRUE,all.files=TRUE,no..=TRUE);for(rel in files){src<-file.path(tmp,rel);if(dir.exists(src))next;target<-file.path(dest,rel);dir.create(dirname(target),recursive=TRUE,showWarnings=FALSE);file.copy(src,target,overwrite=TRUE)};storyboard_write(manifest,app_root)
+storyboard_import_zip <- function(zip_path,app_root=NULL,storyboard_id_override=NULL) {
+  listing<-utils::unzip(zip_path,list=TRUE)$Name;if(!length(listing)||!"manifest.json"%in%listing)stop("This bundle has no manifest.json file.");if(any(grepl("(^/|^\\\\|(^|/)\\.\\.(/|$))",listing)))stop("Unsafe paths were found in this storyboard bundle.");tmp<-tempfile("storyboard-import-");dir.create(tmp);on.exit(unlink(tmp,recursive=TRUE,force=TRUE),add=TRUE);utils::unzip(zip_path,exdir=tmp);manifest<-tryCatch(jsonlite::fromJSON(file.path(tmp,"manifest.json"),simplifyVector=FALSE),error=function(e)NULL);if(is.null(manifest)||!length(manifest$slides%||%list()))stop("The storyboard manifest is invalid or has no slides.");override<-as.character(storyboard_id_override%||%"");manifest$storyboard_id<-story_safe_id(if(nzchar(override))override else manifest$storyboard_id%||%manifest$title);dest<-storyboard_path(manifest$storyboard_id,app_root);if(dir.exists(dest)&&!isTRUE(unlink(dest,recursive=TRUE,force=TRUE)==0L))stop("The previous storyboard installation could not be replaced.");if(!dir.create(dest,recursive=TRUE,showWarnings=FALSE)&&!dir.exists(dest))stop("The storyboard installation folder could not be created.");files<-list.files(tmp,recursive=TRUE,all.files=TRUE,no..=TRUE);for(rel in files){src<-file.path(tmp,rel);if(dir.exists(src))next;target<-file.path(dest,rel);if(!dir.create(dirname(target),recursive=TRUE,showWarnings=FALSE)&&!dir.exists(dirname(target)))stop("Could not create the storyboard asset folder.");if(!isTRUE(file.copy(src,target,overwrite=TRUE)))stop("Storyboard asset could not be installed: ",rel)};board<-storyboard_write(manifest,app_root);missing<-unique(vapply(board$slides%||%list(),function(slide)as.character(slide$image%||%""),character(1)));missing<-missing[nzchar(missing)&!file.exists(file.path(dest,missing))];if(length(missing))stop("Storyboard installed without required picture(s): ",paste(missing,collapse=", "));board
 }
 
 get_session_story_state <- function(session_id) {

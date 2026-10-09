@@ -652,9 +652,9 @@ get_map_tiles <- function(map_id) {
         t.move_cost,
         t.blocks_movement,
         t.blocks_movement AS terrain_blocks_movement,
-        (t.blocks_vision OR (o.object_type='door' AND COALESCE(c.locked,TRUE))) AS blocks_vision,
+        CASE WHEN o.object_type IN ('door','gate') AND COALESCE(c.locked,FALSE)=FALSE THEN FALSE ELSE (t.blocks_vision OR (o.object_type='door' AND COALESCE(c.locked,TRUE))) END AS blocks_vision,
         COALESCE(o.object_type,'') AS object_type,o.id AS object_id,o.chest_id AS object_chest_id,COALESCE(c.locked,FALSE) AS object_locked,COALESCE(c.name,'') AS object_name,
-        (t.blocks_movement OR o.object_type='chest' OR (o.object_type IN ('door','gate') AND COALESCE(c.locked,TRUE))) AS effective_blocks_movement
+        CASE WHEN o.object_type IN ('door','gate') THEN COALESCE(c.locked,TRUE) ELSE (t.blocks_movement OR o.object_type='chest') END AS effective_blocks_movement
       FROM public.map_tiles t LEFT JOIN map_objects o ON o.map_id=t.map_id AND o.x=t.x AND o.y=t.y LEFT JOIN chests c ON c.id=o.chest_id
       WHERE t.map_id = $1
       ORDER BY y, x

@@ -25,6 +25,13 @@ source(
   file.path(player_app_dir, "shared", "relational_inventory_core.R"),
   local = FALSE
 )
+# The shared party HUD builds the clicked character's deck from the canonical
+# skill catalogue.  Player server.R normally loads this, but Control does not
+# execute player server.R and previously crashed with `SKILLS_LIST` missing.
+source(
+  file.path(player_app_dir, "plug", "skills_data.R"),
+  local = FALSE
+)
 
 # global.R is loaded for both Shiny application layouts. Keep the session and
 # encounter helpers available even when runApp() bypasses app.R in favour of

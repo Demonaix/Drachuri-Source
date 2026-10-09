@@ -205,7 +205,7 @@ create_chest<-function(session_id,name,difficulty="standard",items=list(),locked
 list_session_chests<-function(session_id,available_only=FALSE,portable_only=FALSE){con<-get_db_connection();if(is.null(con))return(data.frame());on.exit(release_db_connection(con),add=TRUE);extra<-if(isTRUE(available_only))" AND status='available'"else"";portable<-if(isTRUE(portable_only))" AND COALESCE(lock_kind,'chest')='chest'"else"";tryCatch(DBI::dbGetQuery(con,paste0("SELECT * FROM chests WHERE session_id=$1",extra,portable," ORDER BY created_at DESC"),params=list(as.integer(session_id))),error=function(e)data.frame())}
 get_chest_bundle<-function(chest_id){con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE);tryCatch({ch<-DBI::dbGetQuery(con,"SELECT * FROM chests WHERE id=$1",params=list(as.integer(chest_id)));if(!nrow(ch))return(NULL);items<-DBI::dbGetQuery(con,"SELECT * FROM chest_items WHERE chest_id=$1 AND quantity>0 ORDER BY id",params=list(as.integer(chest_id)));list(chest=ch[1,,drop=FALSE],items=items)},error=function(e)NULL)}
 invite_players_to_chest<-function(chest_id,character_ids){con<-get_db_connection();if(is.null(con))return(FALSE);on.exit(release_db_connection(con),add=TRUE);ids<-unique(as.character(character_ids));ids<-ids[nzchar(ids)];if(!length(ids))return(FALSE);tryCatch({for(cid in ids)DBI::dbExecute(con,"INSERT INTO chest_invitations(chest_id,character_id,status,pick_damage) VALUES($1,$2,'pending',0) ON CONFLICT(chest_id,character_id) DO UPDATE SET status='pending',pick_damage=0,updated_at=now()",params=list(as.integer(chest_id),cid));TRUE},error=function(e){message("invite_players_to_chest failed: ",e$message);FALSE})}
-get_character_chests<-function(character_id,pending_only=FALSE){con<-get_db_connection();if(is.null(con))return(data.frame());on.exit(release_db_connection(con),add=TRUE);extra<-if(pending_only)" AND i.status='pending'"else"";tryCatch(DBI::dbGetQuery(con,paste0("SELECT i.*,c.name,c.difficulty,c.locked,c.jammed,c.status AS chest_status FROM chest_invitations i JOIN chests c ON c.id=i.chest_id WHERE i.character_id=$1 AND c.status='available'",extra," ORDER BY i.created_at"),params=list(as.character(character_id))),error=function(e)data.frame())}
+get_character_chests<-function(character_id,pending_only=FALSE){con<-get_db_connection();if(is.null(con))return(data.frame());on.exit(release_db_connection(con),add=TRUE);extra<-if(pending_only)" AND i.status='pending'"else"";tryCatch(DBI::dbGetQuery(con,paste0("SELECT i.*,c.name,c.difficulty,c.locked,c.jammed,c.lock_kind,c.status AS chest_status FROM chest_invitations i JOIN chests c ON c.id=i.chest_id WHERE i.character_id=$1 AND c.status='available' AND COALESCE(c.lock_kind,'chest')='chest'",extra," ORDER BY i.created_at"),params=list(as.character(character_id))),error=function(e)data.frame())}
 mark_chest_invitation<-function(chest_id,character_id,status=c("opened","dismissed")){status<-match.arg(status);con<-get_db_connection();if(is.null(con))return(FALSE);on.exit(release_db_connection(con),add=TRUE);tryCatch(DBI::dbExecute(con,"UPDATE chest_invitations SET status=$3,updated_at=now() WHERE chest_id=$1 AND character_id=$2",params=list(as.integer(chest_id),as.character(character_id),status))>0,error=function(e)FALSE)}
 
 list_map_objects<-function(map_id){con<-get_db_connection();if(is.null(con))return(data.frame());on.exit(release_db_connection(con),add=TRUE);tryCatch(DBI::dbGetQuery(con,"SELECT o.*,c.name,c.difficulty,c.locked,c.status AS chest_status FROM map_objects o LEFT JOIN chests c ON c.id=o.chest_id WHERE o.map_id=$1 ORDER BY o.y,o.x",params=list(as.integer(map_id))),error=function(e)data.frame())}
@@ -1127,49 +1127,9 @@ upsert_encounter_actor_position <- function(encounter_id, actor_type, actor_id, 
   if (is.na(x) || is.na(y)) return(FALSE)
   
   tryCatch({
-    existing <- DBI::dbGetQuery(
-      con,
-      "
-      SELECT id
-      FROM encounter_positions
-      WHERE encounter_id = $1
-        AND actor_type = $2
-        AND actor_id = $3
-      ",
-      params = list(encounter_id, actor_type, actor_id)
-    )
-    
-    if (nrow(existing) > 0) {
-      DBI::dbExecute(
-        con,
-        "
-        UPDATE encounter_positions
-        SET x = $1,
-            y = $2,
-            updated_at = NOW()
-        WHERE encounter_id = $3
-          AND actor_type = $4
-          AND actor_id = $5
-        ",
-        params = list(x, y, encounter_id, actor_type, actor_id)
-      )
-    } else {
-      DBI::dbExecute(
-        con,
-        "
-        INSERT INTO encounter_positions (
-          encounter_id,
-          actor_type,
-          actor_id,
-          x,
-          y,
-          updated_at
-        )
-        VALUES ($1, $2, $3, $4, $5, NOW())
-        ",
-        params = list(encounter_id, actor_type, actor_id, x, y)
-      )
-    }
+    # One atomic statement avoids the select/update race and halves the network
+    # round trips for every square of movement.
+    DBI::dbExecute(con,"INSERT INTO encounter_positions(encounter_id,actor_type,actor_id,x,y,updated_at) VALUES($1,$2,$3,$4,$5,NOW()) ON CONFLICT(encounter_id,actor_type,actor_id) DO UPDATE SET x=EXCLUDED.x,y=EXCLUDED.y,updated_at=NOW()",params=list(encounter_id,actor_type,actor_id,x,y))
     
     TRUE
   }, error = function(e) {
@@ -1344,11 +1304,19 @@ advance_turn <- function(encounter_id) {
     # Both Player and Control can end a turn. Serialize those requests so a
     # double click or two connected screens cannot skip an actor.
     DBI::dbGetQuery(con,"SELECT pg_advisory_xact_lock(hashtext($1))",params=list(paste0("advance_turn:",encounter_id)))
-    actors<-get_encounter_actors(encounter_id);combat<-get_combat_state(encounter_id);next_turn<-next_combat_turn(actors,combat)
+    encounter<-DBI::dbGetQuery(con,"SELECT session_id FROM encounters WHERE id=$1",params=list(encounter_id));if(!nrow(encounter))return(FALSE)
+    session_id<-as.integer(encounter$session_id[[1L]])
+    # Keep the entire critical section on this transaction's connection. The
+    # previous implementation held the encounter lock while opening several
+    # nested connections for actors, combat state, updates and logging.
+    actors<-DBI::dbGetQuery(con,"SELECT character_id::text AS actor_id,'player'::text AS actor_type,current_hp,turn_order,is_active FROM session_players WHERE session_id=$1 UNION ALL SELECT enemy_uuid::text,'enemy'::text,hp_current,turn_order,TRUE FROM encounter_enemies WHERE encounter_id=$2 UNION ALL SELECT summon_uuid::text,'summon'::text,hp_current,turn_order,TRUE FROM encounter_summons WHERE encounter_id=$2",params=list(session_id,encounter_id))
+    combat<-DBI::dbGetQuery(con,"SELECT * FROM combat_state WHERE encounter_id=$1 ORDER BY updated_at DESC,id DESC LIMIT 1",params=list(encounter_id));next_turn<-next_combat_turn(actors,combat)
     if(identical(next_turn,FALSE))return(FALSE)
-    ok1<-set_combat_state(encounter_id,next_turn$round_number,next_turn$turn_order,next_turn$actor_id,next_turn$actor_type,"combat")
-    ok2<-log_game_event(encounter_id,"end_turn","system",payload=list(next_turn_order=next_turn$turn_order,next_actor_id=next_turn$actor_id,next_actor_type=next_turn$actor_type,round_number=next_turn$round_number))
-    isTRUE(ok1)&&isTRUE(ok2)
+    changed<-DBI::dbExecute(con,"UPDATE combat_state SET session_id=$2,round_number=$3,current_turn_order=$4,active_actor_type=$5,active_actor_id=$6,phase='combat',updated_at=NOW() WHERE encounter_id=$1",params=list(encounter_id,session_id,next_turn$round_number,next_turn$turn_order,next_turn$actor_type,next_turn$actor_id))
+    if(changed<1L)DBI::dbExecute(con,"INSERT INTO combat_state(session_id,encounter_id,round_number,current_turn_order,active_actor_type,active_actor_id,phase) VALUES($1,$2,$3,$4,$5,$6,'combat')",params=list(session_id,encounter_id,next_turn$round_number,next_turn$turn_order,next_turn$actor_type,next_turn$actor_id))
+    payload<-jsonlite::toJSON(list(next_turn_order=next_turn$turn_order,next_actor_id=next_turn$actor_id,next_actor_type=next_turn$actor_type,round_number=next_turn$round_number),auto_unbox=TRUE,null="null")
+    DBI::dbExecute(con,"INSERT INTO game_events(session_id,encounter_id,event_type,actor_type,payload) VALUES($1,$2,'end_turn','system',$3::jsonb)",params=list(session_id,encounter_id,as.character(payload)))
+    TRUE
   }),error=function(e){message("advance_turn failed: ",e$message);FALSE})
 }
 
@@ -1366,7 +1334,7 @@ end_encounter_combat <- function(encounter_id) {
       DBI::dbExecute(con, "UPDATE encounters SET status = 'completed', updated_at = NOW() WHERE id = $1", list(encounter_id))
       DBI::dbExecute(con, "UPDATE combat_state SET phase = 'ended', active_actor_type = NULL, active_actor_id = NULL, updated_at = NOW() WHERE encounter_id = $1", list(encounter_id))
       DBI::dbExecute(con, "UPDATE game_sessions SET mode = 'exploration', active_encounter_id = NULL, active_actor_type = NULL, active_actor_id = NULL, updated_at = NOW() WHERE id = $1", list(session_id))
-      log_game_event(encounter_id, "end_combat", "control", payload = list(round_number = NA_integer_))
+      DBI::dbExecute(con,"INSERT INTO game_events(session_id,encounter_id,event_type,actor_type,payload) VALUES($1,$2,'end_combat','control',$3::jsonb)",params=list(session_id,encounter_id,as.character(jsonlite::toJSON(list(round_number=NA_integer_),auto_unbox=TRUE,null="null"))))
     })
     TRUE
   }, error = function(e) {
@@ -1637,10 +1605,12 @@ filter_player_snapshot_visibility <- function(snapshot) {
   if(!is.data.frame(enemies)||!nrow(enemies))return(snapshot)
   hidden_ids<-character()
   phase<-if(is.data.frame(combat)&&nrow(combat))tolower(as.character(combat$phase[[1L]]%||%""))else""
-  if(phase=="exploration")hidden_ids<-as.character(enemies$enemy_uuid%||%character())
+  if(!length(phase)||is.na(phase[[1L]]))phase<-""
+  if(identical(phase[[1L]],"exploration"))hidden_ids<-as.character(enemies$enemy_uuid%||%character())
   if(is.data.frame(effects)&&nrow(effects)){
     for(i in seq_len(nrow(effects))){
-      if(as.character(effects$target_actor_type[[i]]%||%"")!="enemy")next
+      target_type<-as.character(effects$target_actor_type[[i]]%||%"");if(!length(target_type)||is.na(target_type[[1L]]))target_type<-""
+      if(!identical(target_type[[1L]],"enemy"))next
       payload<-effects$payload[[i]]%||%list();if(!is.list(payload))payload<-tryCatch(jsonlite::fromJSON(as.character(payload),simplifyVector=FALSE),error=function(e)list())
       condition<-tolower(as.character(payload$condition%||%""));if(condition%in%c("hidden","invisible"))hidden_ids<-c(hidden_ids,as.character(effects$target_actor_id[[i]]%||%""))
     }
@@ -1649,7 +1619,9 @@ filter_player_snapshot_visibility <- function(snapshot) {
   snapshot$enemies<-enemies[!as.character(enemies$enemy_uuid)%in%hidden_ids,,drop=FALSE]
   positions<-snapshot$positions%||%data.frame();if(is.data.frame(positions)&&nrow(positions))snapshot$positions<-positions[!(as.character(positions$actor_type)=="enemy"&as.character(positions$actor_id)%in%hidden_ids),,drop=FALSE]
   events<-snapshot$events%||%data.frame();if(is.data.frame(events)&&nrow(events)){actor_hidden<-as.character(events$actor_id%||%"")%in%hidden_ids;target_hidden<-as.character(events$target_id%||%"")%in%hidden_ids;snapshot$events<-events[!actor_hidden&!target_hidden,,drop=FALSE]}
-  snapshot$effects<-effects[!(as.character(effects$target_actor_type%||%"")=="enemy"&as.character(effects$target_actor_id%||%"")%in%hidden_ids),,drop=FALSE]
+  effect_types<-as.character(effects$target_actor_type%||%rep("",nrow(effects)));effect_types[is.na(effect_types)]<-""
+  effect_targets<-as.character(effects$target_actor_id%||%rep("",nrow(effects)));effect_targets[is.na(effect_targets)]<-""
+  snapshot$effects<-effects[!(effect_types=="enemy"&effect_targets%in%hidden_ids),,drop=FALSE]
   snapshot
 }
 
@@ -1967,13 +1939,34 @@ session_phase_time_remaining <- function(phase_id,character_id) {
   tryCatch({x<-DBI::dbGetQuery(con,"SELECT p.duration_hours-COALESCE(sum(a.hours),0) AS remaining FROM session_time_phases p LEFT JOIN session_phase_actions a ON a.phase_id=p.id AND a.character_id=$2 WHERE p.id=$1 GROUP BY p.id",params=list(as.integer(phase_id),as.character(character_id)));if(nrow(x))max(0,as.numeric(x$remaining[[1L]]))else 0},error=function(e)0)
 }
 
+session_watch_slots <- function(duration_hours, active_player_count) {
+  duration_hours <- suppressWarnings(as.numeric(duration_hours))
+  active_player_count <- suppressWarnings(as.integer(active_player_count))
+  if (is.na(duration_hours) || duration_hours <= 0 || is.na(active_player_count) || active_player_count < 1L) {
+    return(data.frame(start = numeric(), end = numeric(), hours = numeric()))
+  }
+  boundaries <- seq(0, duration_hours, length.out = active_player_count + 1L)
+  starts <- round(boundaries[seq_len(active_player_count)], 2L)
+  ends <- round(boundaries[seq_len(active_player_count) + 1L], 2L)
+  data.frame(start = starts, end = ends, hours = ends - starts)
+}
+
 allocate_session_phase_time <- function(phase_id,character_id,action_type,label,hours,start_offset=NULL,end_offset=NULL,metadata=list()) {
   con<-get_db_connection();if(is.null(con))return(NULL);on.exit(release_db_connection(con),add=TRUE);hours<-as.numeric(hours)
   tryCatch(DBI::dbWithTransaction(con,{
-    phase<-DBI::dbGetQuery(con,"SELECT * FROM session_time_phases WHERE id=$1 AND status='open' FOR UPDATE",params=list(as.integer(phase_id)));if(!nrow(phase)||phase$phase_kind[[1L]]!="rest")stop("Rest Mode is not open.")
-    used<-DBI::dbGetQuery(con,"SELECT COALESCE(sum(hours),0) AS used FROM session_phase_actions WHERE phase_id=$1 AND character_id=$2",params=list(as.integer(phase_id),as.character(character_id)))$used[[1L]]
+    # Different players may allocate concurrently. A shared row lock prevents
+    # phase resolution racing this write without serialising the whole party;
+    # the advisory lock only serialises two actions from the same character.
+    DBI::dbGetQuery(con,"SELECT pg_advisory_xact_lock($1::integer,hashtext($2))",params=list(as.integer(phase_id),as.character(character_id)))
+    phase<-DBI::dbGetQuery(con,"SELECT * FROM session_time_phases WHERE id=$1 AND status='open' FOR SHARE",params=list(as.integer(phase_id)));if(!nrow(phase)||phase$phase_kind[[1L]]!="rest")stop("Rest Mode is not open.")
+    if(action_type=="watch")DBI::dbGetQuery(con,"SELECT pg_advisory_xact_lock($1::integer,hashtext('watch_slots'))",params=list(as.integer(phase_id)))
+    used<-DBI::dbGetQuery(con,"SELECT COALESCE(sum(hours),0) AS used FROM session_phase_actions WHERE phase_id=$1 AND character_id=$2 AND ($3<>'watch' OR action_type<>'watch')",params=list(as.integer(phase_id),as.character(character_id),as.character(action_type)))$used[[1L]]
     if(hours<0||as.numeric(used)+hours>as.numeric(phase$duration_hours[[1L]])+1e-8)stop("Not enough phase time remains.")
-    if(action_type=="watch")DBI::dbExecute(con,"DELETE FROM session_phase_actions WHERE phase_id=$1 AND character_id=$2 AND action_type='watch'",params=list(as.integer(phase_id),as.character(character_id)))
+    if(action_type=="watch"){
+      occupied<-DBI::dbGetQuery(con,"SELECT 1 FROM session_phase_actions WHERE phase_id=$1 AND action_type='watch' AND character_id<>$2 AND abs(start_offset-$3)<0.001 AND abs(end_offset-$4)<0.001 LIMIT 1",params=list(as.integer(phase_id),as.character(character_id),as.numeric(start_offset),as.numeric(end_offset)))
+      if(nrow(occupied))stop("That watch period has just been taken. Choose another period.")
+      DBI::dbExecute(con,"DELETE FROM session_phase_actions WHERE phase_id=$1 AND character_id=$2 AND action_type='watch'",params=list(as.integer(phase_id),as.character(character_id)))
+    }
     DBI::dbGetQuery(con,"INSERT INTO session_phase_actions(phase_id,character_id,action_type,label,hours,start_offset,end_offset,metadata) VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb) RETURNING *",params=list(as.integer(phase_id),as.character(character_id),as.character(action_type),as.character(label),hours,if(is.null(start_offset))NA_real_ else as.numeric(start_offset),if(is.null(end_offset))NA_real_ else as.numeric(end_offset),jsonlite::toJSON(metadata,auto_unbox=TRUE)))[1,,drop=FALSE]
   }),error=function(e)structure(list(),error=e$message))
 }

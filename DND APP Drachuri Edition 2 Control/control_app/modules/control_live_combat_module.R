@@ -835,7 +835,9 @@ limit 1
       model_cols <- c(
         "model_base", "model_hair", "model_body", "model_arms",
         "model_legs", "model_feet", "model_headgear",
-        "model_accessory", "hair_color"
+        "model_accessory", "hair_color",
+        "marker_2d_shape", "marker_2d_color", "marker_2d_symbol",
+        "marker_3d_style", "marker_3d_color"
       )
       
       for (col in model_cols) {
@@ -872,6 +874,11 @@ limit 1
         render_df$model_headgear[i]  <- safe_chr1(char3d$headgear_model)
         render_df$model_accessory[i] <- safe_chr1(char3d$accessory_model)
         render_df$hair_color[i]      <- safe_chr1(char3d$hair_color, "#3b2416")
+        render_df$marker_2d_shape[i] <- safe_chr1(char3d$marker_2d_shape, "circle")
+        render_df$marker_2d_color[i] <- safe_chr1(char3d$marker_2d_color, "#4b91b5")
+        render_df$marker_2d_symbol[i] <- safe_chr1(char3d$marker_2d_symbol, "")
+        render_df$marker_3d_style[i] <- safe_chr1(char3d$marker_3d_style, "wisps")
+        render_df$marker_3d_color[i] <- safe_chr1(char3d$marker_3d_color, "#77ddff")
       }
       
       render_df
@@ -1692,6 +1699,8 @@ limit 1
         target_name = as.character(target_name),
         weapon_id = as.character(weapon_row$id[1] %||% ""),
         weapon_name = as.character(weapon_row$name[1] %||% "Weapon"),
+        range_ft = suppressWarnings(as.integer(weapon_row$range_ft[1] %||% 5L)),
+        long_range_ft = suppressWarnings(as.integer(weapon_row$long_range_ft[1] %||% weapon_row$range_ft[1] %||% 5L)),
         attack_roll = attack_roll,
         attack_rolls = as.integer(attack_roll_obj$rolls),
         attack_bonus = as.integer(attack_bonus),
@@ -1774,6 +1783,8 @@ limit 1
         
         weapon_id = as.character(atk$id %||% "default"),
         weapon_name = as.character(atk$name %||% "Natural / Simple Attack"),
+        range_ft = suppressWarnings(as.integer(atk$range_ft %||% 5L)),
+        long_range_ft = suppressWarnings(as.integer(atk$long_range_ft %||% atk$range_ft %||% 5L)),
         
         attack_roll = attack_roll,
         attack_rolls = as.integer(roll_obj$rolls),
@@ -1830,6 +1841,50 @@ limit 1
         adjusted = adjusted,
         raw_total = as.integer(raw_total)
       )
+    }
+
+    validate_pending_attack_position <- function(preview) {
+      eid <- current_encounter_id()
+      positions <- tryCatch(get_encounter_positions(eid), error = function(e) data.frame())
+      if (!is.data.frame(positions) || !nrow(positions)) {
+        return(list(ok = FALSE, message = "Combat positions could not be refreshed. Roll the attack again."))
+      }
+
+      attacker <- positions[as.character(positions$actor_id) == as.character(preview$attacker_id), , drop = FALSE]
+      target <- positions[as.character(positions$actor_id) == as.character(preview$target_id), , drop = FALSE]
+      if (!nrow(attacker) || !nrow(target)) {
+        return(list(ok = FALSE, message = "The attacker or target no longer has a map position. Roll the attack again."))
+      }
+
+      rolled_positions <- c(
+        suppressWarnings(as.integer(preview$attacker_x %||% NA_integer_)),
+        suppressWarnings(as.integer(preview$attacker_y %||% NA_integer_)),
+        suppressWarnings(as.integer(preview$target_x %||% NA_integer_)),
+        suppressWarnings(as.integer(preview$target_y %||% NA_integer_))
+      )
+      current_positions <- c(
+        suppressWarnings(as.integer(attacker$x[[1L]])),
+        suppressWarnings(as.integer(attacker$y[[1L]])),
+        suppressWarnings(as.integer(target$x[[1L]])),
+        suppressWarnings(as.integer(target$y[[1L]]))
+      )
+      if (anyNA(rolled_positions) || !identical(rolled_positions, current_positions)) {
+        return(list(ok = FALSE, message = "The attacker or target moved after this roll. Roll the attack again from the new positions."))
+      }
+
+      geometry <- combat_attack_geometry(
+        map_tiles_r(), attacker$x[[1L]], attacker$y[[1L]], target$x[[1L]], target$y[[1L]],
+        preview$range_ft %||% 5L,
+        preview$long_range_ft %||% preview$range_ft %||% 5L,
+        map_id = current_map_id()
+      )
+      if (!isTRUE(geometry$in_range)) {
+        return(list(ok = FALSE, message = paste0("Target is now ", geometry$distance_ft, " ft away and outside this attack's range. Roll again after moving.")))
+      }
+      if (!isTRUE(geometry$line_clear)) {
+        return(list(ok = FALSE, message = "The attack line is now blocked. Roll the attack again after repositioning."))
+      }
+      list(ok = TRUE, geometry = geometry)
     }
     
     # --------------------------------------------------
@@ -3563,6 +3618,7 @@ limit 1
     
     observeEvent(input$confirm_attack, {
       removeModal()
+      pending_attack(NULL)
       
       attacker_id <- active_actor_id()
       target_id <- as.character(input$target_id %||% "")
@@ -3634,6 +3690,10 @@ limit 1
         attacker_id = attacker_id,
         target_id = target_id
       )
+      preview$attacker_x <- as.integer(attacker_row$x[[1L]])
+      preview$attacker_y <- as.integer(attacker_row$y[[1L]])
+      preview$target_x <- as.integer(target_row$x[[1L]])
+      preview$target_y <- as.integer(target_row$y[[1L]])
       if (!isTRUE(geometry$normal_range)) log_safe("Target is beyond normal range: the attack has disadvantage.", type = "warning")
       
       pending_attack(preview)
@@ -3642,6 +3702,7 @@ limit 1
     
     observeEvent(input$confirm_enemy_attack, {
       removeModal()
+      pending_attack(NULL)
 
       opportunity_context <- opportunity_attack_context()
       attacker_id <- as.character(opportunity_context$attacker_id %||% active_actor_id() %||% "")
@@ -3709,6 +3770,10 @@ limit 1
         chosen_attack = chosen_attack,
         attack_advantage = if(isTRUE(geometry$normal_range))"Normal" else "Disadvantage"
       )
+      preview$attacker_x <- as.integer(attacker_row$x[[1L]])
+      preview$attacker_y <- as.integer(attacker_row$y[[1L]])
+      preview$target_x <- as.integer(target_row$x[[1L]])
+      preview$target_y <- as.integer(target_row$y[[1L]])
       if(!isTRUE(geometry$normal_range))log_safe("Target is beyond normal range: the enemy attack has disadvantage.",type="warning")
       
       pending_attack(preview)
@@ -3717,6 +3782,14 @@ limit 1
     observeEvent(input$apply_attack_final, {
       preview <- pending_attack()
       if (is.null(preview)) return()
+
+      position_check <- validate_pending_attack_position(preview)
+      if (!isTRUE(position_check$ok)) {
+        pending_attack(NULL)
+        removeModal()
+        log_safe(position_check$message, type = "warning")
+        return()
+      }
       
       apply_sneak <- isTRUE(input$final_apply_sneak %||% FALSE)
       manual_bonus <- suppressWarnings(as.integer(input$final_bonus_damage %||% 0))

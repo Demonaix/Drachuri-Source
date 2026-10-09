@@ -26,6 +26,8 @@ while [ "$#" -gt 0 ]; do
 done
 
 [ -n "$version" ] || { echo "--version is required." >&2; exit 2; }
+# Keep direct command-line use consistent with the friendly desktop publisher.
+printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+$' && version="$version.0"
 printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([._-][A-Za-z0-9.-]+)?$' || { echo "Invalid version: $version" >&2; exit 2; }
 if [ -z "$repository" ] && [ -f "$root/distribution/GITHUB_REPOSITORY" ]; then repository=$(tr -d '\r\n' < "$root/distribution/GITHUB_REPOSITORY"); fi
 printf '%s' "$repository" | grep -Eq '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' || { echo "Use --repository owner/repository the first time." >&2; exit 2; }

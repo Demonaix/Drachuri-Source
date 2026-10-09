@@ -2,6 +2,16 @@ app_dir <- normalizePath(Sys.getenv("DRACHURI_APP_DIR"), mustWork = TRUE)
 install_dir <- normalizePath(Sys.getenv("DRACHURI_INSTALL_DIR"), mustWork = TRUE)
 log_dir <- Sys.getenv("DRACHURI_LOG_DIR", file.path(install_dir, "logs"))
 dir.create(log_dir, recursive = TRUE, showWarnings = FALSE)
+data_dir <- Sys.getenv("DRACHURI_DATA_DIR", "")
+if (!nzchar(data_dir)) {
+  data_dir <- if (.Platform$OS.type == "windows") {
+    file.path(Sys.getenv("LOCALAPPDATA", tempdir()), "Drachuri Player")
+  } else {
+    file.path(path.expand("~/Library/Application Support"), "Drachuri Player")
+  }
+  Sys.setenv(DRACHURI_DATA_DIR = data_dir)
+}
+dir.create(file.path(data_dir, "storyboards"), recursive = TRUE, showWarnings = FALSE)
 log_file <- file.path(log_dir, "player.log")
 app_name <- Sys.getenv("DRACHURI_APP_NAME", "Drachuri Player")
 log_connection <- file(log_file, open = "at", encoding = "UTF-8")
